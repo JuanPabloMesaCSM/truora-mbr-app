@@ -1,0 +1,1 @@
+ALTER TABLE public.mbr_jobs ADD COLUMN report_url text;

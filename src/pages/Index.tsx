@@ -1,0 +1,422 @@
+import { useState, useEffect, useCallback } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
+import { toast } from "sonner";
+import { LeftPanel } from "@/components/report-builder/LeftPanel";
+import { CenterCanvas } from "@/components/report-builder/CenterCanvas";
+import { RightPanel } from "@/components/report-builder/RightPanel";
+import { ClientIdModal } from "@/components/report-builder/ClientIdModal";
+import {
+  MODULES, PRODUCT_WEBHOOKS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
+  parsePeriod, type Product, type CsmRow, type ClienteRow,
+} from "@/components/report-builder/moduleDefinitions";
+
+const Index = () => {
+  const navigate = useNavigate();
+
+  /* ─── Auth state ─── */
+  const [userEmail, setUserEmail] = useState('');
+  const [csmProfile, setCsmProfile] = useState<CsmRow | null>(null);
+  const [clients, setClients] = useState<ClienteRow[]>([]);
+
+  /* ─── UI state ─── */
+  const [product, setProduct] = useState<Product>('DI');
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [periodValue, setPeriodValue] = useState('');
+  const [activeModuleIds, setActiveModuleIds] = useState<string[]>([]);
+  const [insightsAi, setInsightsAi] = useState(true);
+  const [ceFlows, setCeFlows] = useState<{ flow_id: string; flow_name: string; total_procesos: number; tiene_vrf: boolean; tiene_outbound: boolean }[]>([]);
+  const [selectedCeFlows, setSelectedCeFlows] = useState<Set<string>>(new Set());
+  const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
+  const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
+  const [reportUrl, setReportUrl] = useState<string | undefined>();
+  const [clientIdModal, setClientIdModal] = useState<{
+    product: Product; clientId: string; clientName: string;
+  } | null>(null);
+
+  /* ─── BGC Custom Types state ─── */
+  const [customTypes, setCustomTypes] = useState<{ custom_type: string; total_checks: number; pct_total: number }[]>([]);
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set());
+  const [customTypesLoading, setCustomTypesLoading] = useState(false);
+
+  /* ─── DI Flows state ─── */
+  const [diFlows, setDiFlows] = useState<{ FLOW_ID: string; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]>([]);
+  const [selectedDiFlows, setSelectedDiFlows] = useState<Set<string>>(new Set());
+  const [diFlowsLoading, setDiFlowsLoading] = useState(false);
+  const [diFlowsError, setDiFlowsError] = useState(false);
+
+  const loadSessionData = useCallback(async (email: string) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    setUserEmail(normalizedEmail);
+    console.log('Email del usuario:', normalizedEmail);
+
+    const [csmResult, clientsResult] = await Promise.all([
+      supabase
+        .from('csm')
+        .select('*')
+        .ilike('email', normalizedEmail)
+        .eq('activo', true)
+        .maybeSingle(),
+      supabase
+        .from('clientes')
+        .select('*')
+        .eq('activo', true)
+        .order('nombre'),
+    ]);
+
+    if (csmResult.error) console.error('CSM load error:', csmResult.error);
+    if (clientsResult.error) console.error('Clients load error:', clientsResult.error);
+
+    console.log('Clientes cargados:', clientsResult.data?.length ?? 0);
+
+    setCsmProfile((csmResult.data as unknown as CsmRow) ?? null);
+    setClients((clientsResult.data as unknown as ClienteRow[]) ?? []);
+  }, []);
+
+  const syncAuthenticatedUser = useCallback(async (session: Session | null) => {
+    if (!session?.user?.email) {
+      setUserEmail('');
+      setCsmProfile(null);
+      setClients([]);
+      navigate('/login');
+      return;
+    }
+
+    const email = session.user.email;
+    if (!email.endsWith('@truora.com')) {
+      await supabase.auth.signOut();
+      toast.error('Acceso denegado');
+      navigate('/login');
+      return;
+    }
+
+    await loadSessionData(email);
+  }, [loadSessionData, navigate]);
+
+  /* ─── Auth guard + initial session bootstrap ─── */
+  useEffect(() => {
+    let isActive = true;
+
+    const initializeSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!isActive) return;
+      await syncAuthenticatedUser(session);
+    };
+
+    void initializeSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!isActive) return;
+      void syncAuthenticatedUser(session);
+    });
+
+    return () => {
+      isActive = false;
+      subscription.unsubscribe();
+    };
+  }, [syncAuthenticatedUser]);
+
+  /* ─── Reset modules on product change ─── */
+  useEffect(() => {
+    setActiveModuleIds([]);
+    setCustomTypes([]);
+    setSelectedTypes(new Set());
+    setDiFlows([]);
+    setSelectedDiFlows(new Set());
+    setDiFlowsError(false);
+    setCeFlows([]);
+    setSelectedCeFlows(new Set());
+  }, [product]);
+
+  /* ─── Derived state ─── */
+  const selectedClient = clients.find(c => c.id === selectedClientId) || null;
+  const periodData = periodValue ? parsePeriod(periodValue) : null;
+
+  /* ─── Fetch BGC custom types when client + period ready ─── */
+  useEffect(() => {
+    if (product !== 'BGC') return;
+    const clientField = selectedClient?.[PRODUCT_CLIENT_FIELD.BGC];
+    if (!clientField || !periodData) {
+      setCustomTypes([]);
+      setSelectedTypes(new Set());
+      return;
+    }
+    let cancelled = false;
+    setCustomTypesLoading(true);
+    fetch('https://n8n.zapsign.com.br/webhook/report-builder-bgc-types', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        CLIENT_ID: clientField,
+        fecha_inicio: periodData.fechaInicio,
+        fecha_fin: periodData.fechaFin,
+      }),
+    })
+      .then(r => r.json())
+      .then((data: { custom_type: string; total_checks: number; pct_total: number }[]) => {
+        if (cancelled) return;
+        const arr = Array.isArray(data) ? data : [];
+        setCustomTypes(arr);
+        setSelectedTypes(new Set(arr.map(t => t.custom_type)));
+      })
+      .catch(() => {
+        if (!cancelled) { setCustomTypes([]); setSelectedTypes(new Set()); }
+      })
+      .finally(() => { if (!cancelled) setCustomTypesLoading(false); });
+    return () => { cancelled = true; };
+  }, [product, selectedClient, periodData?.fechaInicio, periodData?.fechaFin]);
+
+  /* ─── Fetch DI flows when client or period changes ─── */
+  useEffect(() => {
+    if (product !== 'DI') return;
+    const clientField = selectedClient?.[PRODUCT_CLIENT_FIELD.DI];
+    if (!clientField || !periodData) {
+      setDiFlows([]);
+      setSelectedDiFlows(new Set());
+      setDiFlowsError(false);
+      return;
+    }
+    let cancelled = false;
+    setDiFlowsLoading(true);
+    setDiFlowsError(false);
+    fetch('https://n8n.zapsign.com.br/webhook/report-builder-di-flows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        CLIENT_ID: clientField,
+        fecha_inicio: periodData.fechaInicio,
+        fecha_fin: periodData.fechaFin,
+      }),
+    })
+      .then(r => r.json())
+      .then((data: { FLOW_ID: string; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]) => {
+        if (cancelled) return;
+        const arr = Array.isArray(data) ? data : [];
+        setDiFlows(arr);
+        setSelectedDiFlows(new Set(arr.map(f => f.FLOW_ID)));
+      })
+      .catch(() => {
+        if (!cancelled) { setDiFlows([]); setSelectedDiFlows(new Set()); setDiFlowsError(true); }
+      })
+      .finally(() => { if (!cancelled) setDiFlowsLoading(false); });
+    return () => { cancelled = true; };
+  }, [product, selectedClient, periodData?.fechaInicio, periodData?.fechaFin]);
+
+  /* ─── Fetch CE flows when client or period changes ─── */
+  useEffect(() => {
+    if (product !== 'CE') return;
+    const clientField = selectedClient?.[PRODUCT_CLIENT_FIELD.CE];
+    if (!clientField || !periodData) {
+      setCeFlows([]);
+      setSelectedCeFlows(new Set());
+      return;
+    }
+    let cancelled = false;
+    setCeFlowsLoading(true);
+    fetch('https://n8n.zapsign.com.br/webhook/report-builder-ce-flows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        CLIENT_ID: clientField,
+        fecha_inicio: periodData.fechaInicio,
+        fecha_fin: periodData.fechaFin,
+      }),
+    })
+      .then(r => r.json())
+      .then((data: any) => {
+        if (cancelled) return;
+        const arr = Array.isArray(data?.flujos) ? data.flujos : Array.isArray(data) ? data : [];
+        setCeFlows(arr);
+        setSelectedCeFlows(new Set(arr.map((f: any) => f.flow_id)));
+      })
+      .catch(() => {
+        if (!cancelled) { setCeFlows([]); setSelectedCeFlows(new Set()); }
+      })
+      .finally(() => { if (!cancelled) setCeFlowsLoading(false); });
+    return () => { cancelled = true; };
+  }, [product, selectedClient, periodData?.fechaInicio, periodData?.fechaFin]);
+
+  const canGenerate = !!(
+    selectedClient &&
+    periodValue &&
+    csmProfile &&
+    selectedClient[PRODUCT_CLIENT_FIELD[product]]
+  );
+
+  const toggleModule = useCallback((id: string) => {
+    setActiveModuleIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }, []);
+
+  /* ─── Product change with modal for missing CLIENT_ID ─── */
+  const handleProductChange = (p: Product) => {
+    if (selectedClient && !selectedClient[PRODUCT_CLIENT_FIELD[p]]) {
+      setClientIdModal({
+        product: p,
+        clientId: selectedClient.id,
+        clientName: selectedClient.nombre,
+      });
+      return;
+    }
+    setProduct(p);
+  };
+
+  /* ─── Generate report ─── */
+  const handleGenerate = async () => {
+    if (!canGenerate || !selectedClient || !periodData || !csmProfile) return;
+    setOverlayStatus('generating');
+    setReportUrl(undefined);
+
+    const modules = MODULES[product];
+    const payload: Record<string, any> = {
+      CLIENT_ID: selectedClient[PRODUCT_CLIENT_FIELD[product]],
+      fecha_inicio: periodData.fechaInicio,
+      fecha_fin: periodData.fechaFin,
+      periodo_reporte: periodData.periodoReporte,
+      cliente: selectedClient.nombre,
+      nombre_csm: csmProfile.nombre,
+      csm_email: userEmail,
+      con_ia: insightsAi,
+      base_modules: [modules.base.id],
+      extra_modules: activeModuleIds.map(id => ({ id })),
+      insights_ai: insightsAi,
+    };
+
+    if (product === 'CE' && ceFlows.length > 0) {
+      const selected = ceFlows.filter(f => selectedCeFlows.has(f.flow_id));
+      payload.flujos_seleccionados = selected.map(f => ({
+        flow_id: f.flow_id,
+        flow_name: f.flow_name,
+        tiene_vrf: f.tiene_vrf,
+        tiene_outbound: f.tiene_outbound,
+      }));
+    }
+
+    if (product === 'BGC' && customTypes.length >= 2) {
+      payload.custom_types = selectedTypes.size === customTypes.length
+        ? 'ALL'
+        : Array.from(selectedTypes);
+    }
+
+    if (product === 'DI' && diFlows.length > 0) {
+      payload.flow_ids = selectedDiFlows.size === diFlows.length
+        ? 'ALL'
+        : Array.from(selectedDiFlows);
+    }
+
+    try {
+      console.log('Payload:', payload);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120_000);
+
+      const res = await fetch(PRODUCT_WEBHOOKS[product], {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        let raw = await res.json().catch(() => ({}));
+        if (Array.isArray(raw)) raw = raw[0] ?? {};
+        const url =
+          raw.report_url || raw.url || raw.presentationUrl ||
+          raw.presentation_url || raw.link || raw.slideUrl || raw.slide_url;
+        console.log('Response:', raw, '→ URL:', url);
+        setReportUrl(url);
+        setOverlayStatus('success');
+      } else {
+        console.error('Webhook error:', res.status);
+        setOverlayStatus('error');
+      }
+    } catch (err) {
+      console.error('Fetch error:', err);
+      setOverlayStatus('error');
+    }
+  };
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <LeftPanel
+        product={product}
+        setProduct={handleProductChange}
+        selectedClientId={selectedClientId}
+        setSelectedClientId={setSelectedClientId}
+        periodValue={periodValue}
+        setPeriodValue={setPeriodValue}
+        activeModuleIds={activeModuleIds}
+        toggleModule={toggleModule}
+        csmProfile={csmProfile}
+        clients={clients}
+        userEmail={userEmail}
+        ceFlows={ceFlows}
+        selectedCeFlows={selectedCeFlows}
+        setSelectedCeFlows={setSelectedCeFlows}
+        ceFlowsLoading={ceFlowsLoading}
+        customTypes={customTypes}
+        selectedTypes={selectedTypes}
+        setSelectedTypes={setSelectedTypes}
+        customTypesLoading={customTypesLoading}
+        diFlows={diFlows}
+        selectedDiFlows={selectedDiFlows}
+        setSelectedDiFlows={setSelectedDiFlows}
+        diFlowsLoading={diFlowsLoading}
+        diFlowsError={diFlowsError}
+        onReloadClients={() => loadSessionData(userEmail)}
+      />
+
+      <CenterCanvas
+        product={product}
+        clientName={selectedClient?.nombre || null}
+        periodLabel={periodData?.periodoReporte || ''}
+        activeModuleIds={activeModuleIds}
+        insightsAi={insightsAi}
+        overlayStatus={overlayStatus}
+        reportUrl={reportUrl}
+        onOverlayClose={() => setOverlayStatus(null)}
+        onRetry={handleGenerate}
+      />
+
+      <RightPanel
+        product={product}
+        clientName={selectedClient?.nombre || null}
+        periodLabel={periodData?.periodoReporte || ''}
+        csmName={csmProfile?.nombre || userEmail}
+        activeModuleIds={activeModuleIds}
+        insightsAi={insightsAi}
+        setInsightsAi={setInsightsAi}
+        canGenerate={canGenerate}
+        overlayStatus={overlayStatus}
+        reportUrl={reportUrl}
+        onGenerate={handleGenerate}
+        onClose={() => setOverlayStatus(null)}
+      />
+
+      {clientIdModal && (
+        <ClientIdModal
+          key={`${clientIdModal.clientId}-${clientIdModal.product}`}
+          open
+          onClose={() => setClientIdModal(null)}
+          product={clientIdModal.product}
+          clientId={clientIdModal.clientId}
+          clientName={clientIdModal.clientName}
+          onSuccess={(clienteId, campo, nuevoId) => {
+            setClients((prev) =>
+              prev.map((client) =>
+                client.id === clienteId
+                  ? ({ ...client, [campo]: nuevoId } as ClienteRow)
+                  : client
+              )
+            );
+            setProduct(clientIdModal.product);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Index;
