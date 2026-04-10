@@ -8,9 +8,6 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { PRODUCT_COLORS, ADMIN_EMAIL, type Product } from "@/components/report-builder/moduleDefinitions";
 
-const SUPABASE_URL = "https://cjrhxmfnmajxiwiiuwym.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqcmh4bWZubWFqeGl3aWl1d3ltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzOTI2OTIsImV4cCI6MjA4ODk2ODY5Mn0.6q8_uL8wOmgX1jDyQ8qbENRrC7vJRCcD0CBtQAVPoHw";
-
 type FeedbackStatus = "pendiente" | "en_revision" | "implementado" | "descartado";
 type FeedbackType = "nueva_metrica" | "voto" | "error_numerico";
 
@@ -68,12 +65,11 @@ export default function AdminPage() {
   const [expandedAi, setExpandedAi] = useState<Set<string>>(new Set());
 
   const loadFeedbacks = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || SUPABASE_ANON;
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback?select=*&order=creado_en.desc`, {
-      headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) setFeedbacks(await res.json());
+    const { data } = await supabase
+      .from("feedback")
+      .select("*")
+      .order("creado_en", { ascending: false });
+    if (data) setFeedbacks(data as Feedback[]);
   }, []);
 
   useEffect(() => {
@@ -88,19 +84,11 @@ export default function AdminPage() {
   }, [navigate, loadFeedbacks]);
 
   const updateStatus = async (id: string, estado: FeedbackStatus) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || SUPABASE_ANON;
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/feedback?id=eq.${id}`, {
-      method: "PATCH",
-      headers: {
-        apikey: SUPABASE_ANON,
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({ estado }),
-    });
-    if (res.ok) {
+    const { error } = await supabase
+      .from("feedback")
+      .update({ estado })
+      .eq("id", id);
+    if (!error) {
       setFeedbacks(prev => prev.map(f => f.id === id ? { ...f, estado } : f));
       toast.success("Estado actualizado");
     } else {

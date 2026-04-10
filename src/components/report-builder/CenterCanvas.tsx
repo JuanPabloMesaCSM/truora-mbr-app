@@ -1,7 +1,8 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { MODULES, PRODUCT_COLORS, type Product, type ModuleDef } from "./moduleDefinitions";
+import { MODULES, PRODUCT_COLORS, type Product, type ModuleDef, type ModuleInsight } from "./moduleDefinitions";
 import { AnimatedCanvasChart } from "./AnimatedChartPreview";
 import { GeneratingOverlay } from "./GeneratingOverlay";
+import { SlideCanvas, type ReportData, type Theme } from "./SlideCanvas";
 
 interface CenterCanvasProps {
   product: Product;
@@ -9,8 +10,11 @@ interface CenterCanvasProps {
   periodLabel: string;
   activeModuleIds: string[];
   insightsAi: boolean;
+  moduleInsights?: Record<string, ModuleInsight>;
   overlayStatus: "generating" | "success" | "error" | null;
   reportUrl?: string;
+  reportData?: ReportData | null;
+  theme: Theme;
   onOverlayClose: () => void;
   onRetry: () => void;
 }
@@ -20,8 +24,19 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsAi,
-  overlayStatus, reportUrl, onOverlayClose, onRetry,
+  moduleInsights = {}, overlayStatus, reportUrl, reportData, theme, onOverlayClose, onRetry,
 }: CenterCanvasProps) {
+  const getSlideInsight = (id: string): { insightText?: string; insightSource?: 'ai' | 'manual' } => {
+    const mi = moduleInsights[id];
+    if (!mi || !mi.mode) return {};
+    if (mi.mode === 'manual' && mi.text) return { insightText: mi.text, insightSource: 'manual' };
+    if (mi.mode === 'ai') {
+      const rows = reportData && reportData.data ? reportData.data['insight_' + id] : undefined;
+      const text = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
+      if (text) return { insightText: text, insightSource: 'ai' };
+    }
+    return {};
+  };
   const color = PRODUCT_COLORS[product];
   const modules = MODULES[product];
 
@@ -131,6 +146,59 @@ export function CenterCanvas({
             {insightsAi ? "Truora AI · " : ""}Updates · Cierre — siempre incluidos
           </p>
         </div>
+
+        {/* ─── Canvas MBR real — se muestra cuando hay datos del webhook ─── */}
+        {reportData && clientName && (
+          <div id="canvas-mbr-slides" className="mt-8 space-y-6">
+            <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-3">
+              Canvas generado
+            </p>
+
+            {/* Base module slide */}
+            <div className="overflow-x-auto rounded-xl shadow-2xl">
+              <SlideCanvas
+                slideId={modules.base.id}
+                product={product}
+                data={reportData.data}
+                theme={theme}
+                clientName={clientName}
+                periodLabel={periodLabel}
+                pageNum={4}
+                totalPages={4 + activeModuleIds.length}
+              />
+            </div>
+
+            {/* Optional module slides */}
+            {activeModuleIds.map((id, idx) => {
+              const insight = getSlideInsight(id);
+              return (
+                <div key={id} className="overflow-x-auto rounded-xl shadow-2xl">
+                  <SlideCanvas
+                    slideId={id}
+                    product={product}
+                    data={reportData.data}
+                    theme={theme}
+                    clientName={clientName}
+                    periodLabel={periodLabel}
+                    pageNum={5 + idx}
+                    totalPages={4 + activeModuleIds.length}
+                    {...insight}
+                  />
+                </div>
+              );
+            })}
+
+            {/* Warnings */}
+            {reportData.warnings && reportData.warnings.length > 0 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-1">
+                <p className="text-xs font-semibold text-amber-400">Alertas de datos</p>
+                {reportData.warnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-300/80">{w}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Generating overlay */}
@@ -139,6 +207,7 @@ export function CenterCanvas({
           <GeneratingOverlay
             status={overlayStatus}
             reportUrl={reportUrl}
+            hasData={!!reportData}
             onClose={onOverlayClose}
             onRetry={onRetry}
           />

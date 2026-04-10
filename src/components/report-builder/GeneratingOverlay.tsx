@@ -14,11 +14,12 @@ const STEPS = [
 interface GeneratingOverlayProps {
   status: "generating" | "success" | "error";
   reportUrl?: string;
+  hasData?: boolean;
   onClose: () => void;
   onRetry: () => void;
 }
 
-export function GeneratingOverlay({ status, reportUrl, onClose, onRetry }: GeneratingOverlayProps) {
+export function GeneratingOverlay({ status, reportUrl, hasData, onClose, onRetry }: GeneratingOverlayProps) {
   const [progress, setProgress] = useState(0);
   const [completedSteps, setCompletedSteps] = useState(0);
 
@@ -182,11 +183,15 @@ export function GeneratingOverlay({ status, reportUrl, onClose, onRetry }: Gener
 
               <div className="space-y-2">
                 <h2 className="text-lg font-bold text-white">¡Reporte generado con éxito!</h2>
-                <p className="text-sm text-white/40">Tu presentación está lista en Google Drive</p>
+                <p className="text-sm text-white/40">
+                  {hasData
+                    ? "Los datos están listos — el canvas se renderizó abajo"
+                    : "Tu presentación está lista en Google Drive"}
+                </p>
               </div>
 
               <div className="space-y-3">
-                {reportUrl && (
+                {reportUrl && !hasData && (
                   <Button
                     size="lg"
                     className="w-full gap-2 bg-white text-[#0B0F2E] hover:bg-white/90 font-semibold"
@@ -199,9 +204,13 @@ export function GeneratingOverlay({ status, reportUrl, onClose, onRetry }: Gener
                   variant="ghost"
                   size="sm"
                   onClick={onClose}
-                  className="w-full text-white/40 hover:text-white/70 hover:bg-white/5"
+                  className={`w-full font-semibold hover:bg-white/5 ${
+                    hasData
+                      ? "text-white bg-white/10 hover:bg-white/20"
+                      : "text-white/40 hover:text-white/70"
+                  }`}
                 >
-                  Generar otro reporte
+                  {hasData ? "Ver canvas ↓" : "Generar otro reporte"}
                 </Button>
               </div>
             </motion.div>

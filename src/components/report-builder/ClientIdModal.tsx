@@ -50,36 +50,14 @@ export function ClientIdModal({
     setErrorMessage("");
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session) throw new Error("Sin sesión");
-
       const campo = CLIENT_ID_FIELDS[product];
 
-      const response = await fetch(
-        `https://cjrhxmfnmajxiwiiuwym.supabase.co/rest/v1/clientes?id=eq.${clientId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            apikey:
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqcmh4bWZubWFqeGl3aWl1d3ltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzOTI2OTIsImV4cCI6MjA4ODk2ODY5Mn0.6q8_uL8wOmgX1jDyQ8qbENRrC7vJRCcD0CBtQAVPoHw",
-            Authorization: `Bearer ${session.access_token}`,
-            Prefer: "return=representation",
-          },
-          body: JSON.stringify({ [campo]: nuevoId }),
-        }
-      );
+      const { error } = await supabase
+        .from("clientes")
+        .update({ [campo]: nuevoId })
+        .eq("id", clientId);
 
-      console.log('Status:', response.status);
-      const result = await response.json();
-      console.log('Result:', result);
-
-      if (!response.ok) {
-        throw new Error(JSON.stringify(result));
-      }
+      if (error) throw new Error(error.message);
 
       onSuccess(clientId, campo, nuevoId);
       setNuevoClientId("");

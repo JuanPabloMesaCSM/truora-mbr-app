@@ -2,6 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+@media print {
+  body * { visibility: hidden; }
+  #canvas-mbr-slides,
+  #canvas-mbr-slides * { visibility: visible; }
+  #canvas-mbr-slides {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1280px;
+  }
+  .slide-page {
+    page-break-after: always;
+    page-break-inside: avoid;
+    display: block !important;
+  }
+}
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @layer base {

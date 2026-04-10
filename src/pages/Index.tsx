@@ -9,8 +9,9 @@ import { RightPanel } from "@/components/report-builder/RightPanel";
 import { ClientIdModal } from "@/components/report-builder/ClientIdModal";
 import {
   MODULES, PRODUCT_WEBHOOKS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
-  parsePeriod, type Product, type CsmRow, type ClienteRow,
+  parsePeriod, type Product, type CsmRow, type ClienteRow, type ModuleInsight,
 } from "@/components/report-builder/moduleDefinitions";
+import type { Theme, ReportData } from "@/components/report-builder/SlideCanvas";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -26,11 +27,17 @@ const Index = () => {
   const [periodValue, setPeriodValue] = useState('');
   const [activeModuleIds, setActiveModuleIds] = useState<string[]>([]);
   const [insightsAi, setInsightsAi] = useState(true);
+  const [moduleInsights, setModuleInsights] = useState<Record<string, ModuleInsight>>({});
+  const setModuleInsight = (id: string, mode: 'ai' | 'manual' | null, text?: string) => {
+    setModuleInsights(prev => ({ ...prev, [id]: { mode, text: text !== undefined ? text : (prev[id]?.text ?? '') } }));
+  };
   const [ceFlows, setCeFlows] = useState<{ flow_id: string; flow_name: string; total_procesos: number; tiene_vrf: boolean; tiene_outbound: boolean }[]>([]);
   const [selectedCeFlows, setSelectedCeFlows] = useState<Set<string>>(new Set());
   const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
   const [reportUrl, setReportUrl] = useState<string | undefined>();
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [theme, setTheme] = useState<Theme>('dark');
   const [clientIdModal, setClientIdModal] = useState<{
     product: Product; clientId: string; clientName: string;
   } | null>(null);
@@ -268,6 +275,7 @@ const Index = () => {
     if (!canGenerate || !selectedClient || !periodData || !csmProfile) return;
     setOverlayStatus('generating');
     setReportUrl(undefined);
+    setReportData(null);
 
     const modules = MODULES[product];
     const payload: Record<string, any> = {
@@ -282,6 +290,15 @@ const Index = () => {
       base_modules: [modules.base.id],
       extra_modules: activeModuleIds.map(id => ({ id })),
       insights_ai: insightsAi,
+      modulos: [
+        { id: modules.base.id, activo: true, insight_mode: null, insight_text: null },
+        ...activeModuleIds.map(id => ({
+          id,
+          activo: true,
+          insight_mode: moduleInsights[id]?.mode ?? null,
+          insight_text: moduleInsights[id]?.mode === 'manual' ? (moduleInsights[id]?.text || null) : null,
+        })),
+      ],
     };
 
     if (product === 'CE' && ceFlows.length > 0) {
@@ -322,12 +339,21 @@ const Index = () => {
       if (res.ok) {
         let raw = await res.json().catch(() => ({}));
         if (Array.isArray(raw)) raw = raw[0] ?? {};
-        const url =
-          raw.report_url || raw.url || raw.presentationUrl ||
-          raw.presentation_url || raw.link || raw.slideUrl || raw.slide_url;
-        console.log('Response:', raw, '→ URL:', url);
-        setReportUrl(url);
-        setOverlayStatus('success');
+
+        // New canvas flow: webhook returns { status, data, warnings }
+        if (raw.status === 'success' && raw.data) {
+          console.log('Response (canvas):', raw);
+          setReportData(raw as ReportData);
+          setOverlayStatus('success');
+        } else {
+          // Legacy flow: webhook returns a URL for Google Slides
+          const url =
+            raw.report_url || raw.url || raw.presentationUrl ||
+            raw.presentation_url || raw.link || raw.slideUrl || raw.slide_url;
+          console.log('Response (legacy):', raw, '→ URL:', url);
+          setReportUrl(url);
+          setOverlayStatus('success');
+        }
       } else {
         console.error('Webhook error:', res.status);
         setOverlayStatus('error');
@@ -336,6 +362,39 @@ const Index = () => {
       console.error('Fetch error:', err);
       setOverlayStatus('error');
     }
+  };
+
+  /* ─── Dev mock ─── */
+  const loadMock = () => {
+    setTheme('dark');
+    setOverlayStatus(null);
+    setReportData({
+      status: 'success',
+      data: {
+        '1_metricas_generales': [{
+          bloque: '1_metricas_generales',
+          col1: '26603',
+          col2: '20995',
+          col3: '4891',
+          col4: '2318',
+          col5: '1876',
+          col6: '697',
+          col7: '523',
+          col8: '78.9',
+          col9: '24100',
+          col10: '18800',
+          col11: '78.0',
+          col_extra1: '10.4',
+        }],
+        '2_usuarios_reintentos': [{
+          bloque: '2_usuarios_reintentos',
+          col1: '18450',
+          col2: '14600',
+          col3: '79.1',
+        }],
+      },
+      warnings: [],
+    });
   };
 
   return (
@@ -349,6 +408,8 @@ const Index = () => {
         setPeriodValue={setPeriodValue}
         activeModuleIds={activeModuleIds}
         toggleModule={toggleModule}
+        moduleInsights={moduleInsights}
+        setModuleInsight={setModuleInsight}
         csmProfile={csmProfile}
         clients={clients}
         userEmail={userEmail}
@@ -368,14 +429,31 @@ const Index = () => {
         onReloadClients={() => loadSessionData(userEmail)}
       />
 
+      {import.meta.env.DEV && (
+        <button
+          onClick={loadMock}
+          style={{
+            position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 9999, background: '#6B4EFF', color: '#fff',
+            border: 'none', borderRadius: 8, padding: '8px 18px',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: 0.9,
+          }}
+        >
+          🧪 Ver Canvas Mock
+        </button>
+      )}
+
       <CenterCanvas
         product={product}
-        clientName={selectedClient?.nombre || null}
+        clientName={selectedClient?.nombre || 'Cliente Demo'}
         periodLabel={periodData?.periodoReporte || ''}
         activeModuleIds={activeModuleIds}
         insightsAi={insightsAi}
+        moduleInsights={moduleInsights}
         overlayStatus={overlayStatus}
         reportUrl={reportUrl}
+        reportData={reportData}
+        theme={theme}
         onOverlayClose={() => setOverlayStatus(null)}
         onRetry={handleGenerate}
       />
@@ -388,9 +466,12 @@ const Index = () => {
         activeModuleIds={activeModuleIds}
         insightsAi={insightsAi}
         setInsightsAi={setInsightsAi}
+        theme={theme}
+        setTheme={setTheme}
         canGenerate={canGenerate}
         overlayStatus={overlayStatus}
         reportUrl={reportUrl}
+        hasData={!!reportData}
         onGenerate={handleGenerate}
         onClose={() => setOverlayStatus(null)}
       />

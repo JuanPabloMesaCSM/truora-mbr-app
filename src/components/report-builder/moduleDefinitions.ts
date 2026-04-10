@@ -38,6 +38,13 @@ export interface ModuleDef {
   isBase?: boolean;
   hasFlowIdInput?: boolean;
   hasFlowSelector?: boolean;
+  insightMode?: 'ai' | 'manual' | null;
+  insightText?: string;
+}
+
+export interface ModuleInsight {
+  mode: 'ai' | 'manual' | null;
+  text: string;
 }
 
 export const MODULES: Record<Product, { base: ModuleDef; optional: ModuleDef[] }> = {
