@@ -2896,6 +2896,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, theme, clientName
         case "5_flujos":                  return <Di5Slide  {...p} />;
         case "6_funnel":                  return <Di6Slide  {...p} />;
         case "7_razones_doc":             return <Di78Slide {...p} />;
+        case "8_razones_rostro":          return <Di78Slide {...p} />;
         case "9_abandono":                return <Di9Slide  {...p} />;
         case "11_friccion_usuario":       return <Di10Slide {...p} />;
         default:                          return null;

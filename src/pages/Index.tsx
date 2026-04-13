@@ -445,7 +445,8 @@ const Index = () => {
         overlayStatus={overlayStatus}
         reportData={reportData}
         theme={theme}
-        onOverlayClose={() => { setOverlayStatus(null); setReportData(null); }}
+        onOverlayClose={() => setOverlayStatus(null)}
+        onNewReport={() => { setOverlayStatus(null); setReportData(null); }}
         onRetry={handleGenerate}
       />
 
