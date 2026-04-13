@@ -339,20 +339,12 @@ const Index = () => {
       if (res.ok) {
         let raw = await res.json().catch(() => ({}));
         if (Array.isArray(raw)) raw = raw[0] ?? {};
-
-        // New canvas flow: webhook returns { status, data, warnings }
+        console.log('Response:', raw);
         if (raw.status === 'success' && raw.data) {
-          console.log('Response (canvas):', raw);
-          setReportData(raw as ReportData);
+          setReportData(raw);
           setOverlayStatus('success');
         } else {
-          // Legacy flow: webhook returns a URL for Google Slides
-          const url =
-            raw.report_url || raw.url || raw.presentationUrl ||
-            raw.presentation_url || raw.link || raw.slideUrl || raw.slide_url;
-          console.log('Response (legacy):', raw, '→ URL:', url);
-          setReportUrl(url);
-          setOverlayStatus('success');
+          setOverlayStatus('error');
         }
       } else {
         console.error('Webhook error:', res.status);
@@ -451,10 +443,9 @@ const Index = () => {
         insightsAi={insightsAi}
         moduleInsights={moduleInsights}
         overlayStatus={overlayStatus}
-        reportUrl={reportUrl}
         reportData={reportData}
         theme={theme}
-        onOverlayClose={() => setOverlayStatus(null)}
+        onOverlayClose={() => { setOverlayStatus(null); setReportData(null); }}
         onRetry={handleGenerate}
       />
 

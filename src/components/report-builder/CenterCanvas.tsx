@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MODULES, PRODUCT_COLORS, type Product, type ModuleDef, type ModuleInsight } from "./moduleDefinitions";
 import { AnimatedCanvasChart } from "./AnimatedChartPreview";
 import { GeneratingOverlay } from "./GeneratingOverlay";
-import { SlideCanvas, type ReportData, type Theme } from "./SlideCanvas";
+import { SlideCanvas, type Theme, type CeFlowData } from "./SlideCanvas";
 
 interface CenterCanvasProps {
   product: Product;
@@ -12,8 +12,7 @@ interface CenterCanvasProps {
   insightsAi: boolean;
   moduleInsights?: Record<string, ModuleInsight>;
   overlayStatus: "generating" | "success" | "error" | null;
-  reportUrl?: string;
-  reportData?: ReportData | null;
+  reportData?: any;
   theme: Theme;
   onOverlayClose: () => void;
   onRetry: () => void;
@@ -24,7 +23,7 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsAi,
-  moduleInsights = {}, overlayStatus, reportUrl, reportData, theme, onOverlayClose, onRetry,
+  moduleInsights = {}, overlayStatus, reportData, theme, onOverlayClose, onRetry,
 }: CenterCanvasProps) {
   const getSlideInsight = (id: string): { insightText?: string; insightSource?: 'ai' | 'manual' } => {
     const mi = moduleInsights[id];
@@ -39,6 +38,61 @@ export function CenterCanvas({
   };
   const color = PRODUCT_COLORS[product];
   const modules = MODULES[product];
+
+  if (reportData?.status === 'success') {
+    const theme: Theme = 'dark';
+    const data = reportData.data ?? {};
+    const ceFlows: CeFlowData[] = reportData.ceFlows ?? [];
+    const meta = reportData.meta ?? {};
+    const slideIds: string[] = [modules.base.id];
+    for (const mod of modules.optional) {
+      if (activeModuleIds.includes(mod.id)) slideIds.push(mod.id);
+    }
+    if (product === 'CE' && ceFlows.length > 0) {
+      for (let i = 0; i < ceFlows.length; i++) {
+        slideIds.push(`ce_sep_${i}`);
+        slideIds.push(`ce_otb_${i}`);
+        slideIds.push(`ce_steps_${i}`);
+        if (ceFlows[i].tiene_vrf) slideIds.push(`ce_vrf_${i}`);
+      }
+    }
+    const totalPages = slideIds.length;
+    return (
+      <div className="flex-1 min-w-0 h-screen flex flex-col overflow-hidden" style={{ background: '#0B0F2E' }}>
+        <div className="flex items-center justify-between px-6 py-3 shrink-0" style={{ borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-3">
+            <span className="text-white font-semibold text-sm">{meta.cliente || clientName}</span>
+            <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full text-white" style={{ background: color }}>
+              {meta.periodo_reporte || periodLabel}
+            </span>
+            <span className="text-white/30 text-xs">{totalPages} slides</span>
+          </div>
+          <button onClick={onOverlayClose} className="text-xs text-white/30 hover:text-white/60 transition-colors px-3 py-1.5">
+            ← Nuevo reporte
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex flex-col items-center gap-6">
+            {slideIds.map((slideId, idx) => (
+              <div key={slideId} className="rounded-xl overflow-hidden shadow-2xl" style={{ width: 1280, height: 720, flexShrink: 0 }}>
+                <SlideCanvas
+                  slideId={slideId}
+                  product={product}
+                  data={data}
+                  ceFlows={ceFlows}
+                  theme={theme}
+                  clientName={meta.cliente || clientName || ''}
+                  periodLabel={meta.periodo_reporte || periodLabel}
+                  pageNum={idx + 1}
+                  totalPages={totalPages}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const fixedOpening = ["Portada", "Agenda", "Separador"];
   const fixedClosing = insightsAi
@@ -147,58 +201,6 @@ export function CenterCanvas({
           </p>
         </div>
 
-        {/* ─── Canvas MBR real — se muestra cuando hay datos del webhook ─── */}
-        {reportData && clientName && (
-          <div id="canvas-mbr-slides" className="mt-8 space-y-6">
-            <p className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-3">
-              Canvas generado
-            </p>
-
-            {/* Base module slide */}
-            <div className="overflow-x-auto rounded-xl shadow-2xl">
-              <SlideCanvas
-                slideId={modules.base.id}
-                product={product}
-                data={reportData.data}
-                theme={theme}
-                clientName={clientName}
-                periodLabel={periodLabel}
-                pageNum={4}
-                totalPages={4 + activeModuleIds.length}
-              />
-            </div>
-
-            {/* Optional module slides */}
-            {activeModuleIds.map((id, idx) => {
-              const insight = getSlideInsight(id);
-              return (
-                <div key={id} className="overflow-x-auto rounded-xl shadow-2xl">
-                  <SlideCanvas
-                    slideId={id}
-                    product={product}
-                    data={reportData.data}
-                    theme={theme}
-                    clientName={clientName}
-                    periodLabel={periodLabel}
-                    pageNum={5 + idx}
-                    totalPages={4 + activeModuleIds.length}
-                    {...insight}
-                  />
-                </div>
-              );
-            })}
-
-            {/* Warnings */}
-            {reportData.warnings && reportData.warnings.length > 0 && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-1">
-                <p className="text-xs font-semibold text-amber-400">Alertas de datos</p>
-                {reportData.warnings.map((w, i) => (
-                  <p key={i} className="text-xs text-amber-300/80">{w}</p>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Generating overlay */}
@@ -206,8 +208,6 @@ export function CenterCanvas({
         {overlayStatus && (
           <GeneratingOverlay
             status={overlayStatus}
-            reportUrl={reportUrl}
-            hasData={!!reportData}
             onClose={onOverlayClose}
             onRetry={onRetry}
           />
