@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, RefreshCw, X } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const STEPS = [
@@ -13,12 +13,11 @@ const STEPS = [
 
 interface GeneratingOverlayProps {
   status: "generating" | "success" | "error";
-  reportUrl?: string;
   onClose: () => void;
   onRetry: () => void;
 }
 
-export function GeneratingOverlay({ status, reportUrl, onClose, onRetry }: GeneratingOverlayProps) {
+export function GeneratingOverlay({ status, onClose, onRetry }: GeneratingOverlayProps) {
   const [progress, setProgress] = useState(0);
   const [completedSteps, setCompletedSteps] = useState(0);
 
@@ -181,27 +180,17 @@ export function GeneratingOverlay({ status, reportUrl, onClose, onRetry }: Gener
               </motion.div>
 
               <div className="space-y-2">
-                <h2 className="text-lg font-bold text-white">¡Reporte generado con éxito!</h2>
-                <p className="text-sm text-white/40">Tu presentación está lista en Google Drive</p>
+                <h2 className="text-lg font-bold text-white">¡Reporte generado!</h2>
+                <p className="text-sm text-white/40">Los slides están listos en el canvas</p>
               </div>
 
               <div className="space-y-3">
-                {reportUrl && (
-                  <Button
-                    size="lg"
-                    className="w-full gap-2 bg-white text-[#0B0F2E] hover:bg-white/90 font-semibold"
-                    onClick={() => window.open(reportUrl, "_blank")}
-                  >
-                    <ExternalLink className="h-4 w-4" /> Abrir presentación
-                  </Button>
-                )}
                 <Button
-                  variant="ghost"
-                  size="sm"
+                  size="lg"
+                  className="w-full font-semibold bg-white text-[#0B0F2E] hover:bg-white/90"
                   onClick={onClose}
-                  className="w-full text-white/40 hover:text-white/70 hover:bg-white/5"
                 >
-                  Generar otro reporte
+                  Ver slides →
                 </Button>
               </div>
             </motion.div>

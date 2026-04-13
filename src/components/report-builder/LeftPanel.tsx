@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   MODULES, PRODUCT_COLORS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
-  generatePeriods, type Product, type CsmRow, type ClienteRow,
+  generatePeriods, type Product, type CsmRow, type ClienteRow, type ModuleInsight,
 } from "./moduleDefinitions";
 import { ChartIcon } from "./ChartIcon";
 import { FeedbackModal } from "./FeedbackModal";
@@ -32,6 +32,8 @@ interface LeftPanelProps {
   setPeriodValue: (v: string) => void;
   activeModuleIds: string[];
   toggleModule: (id: string) => void;
+  moduleInsights: Record<string, ModuleInsight>;
+  setModuleInsight: (id: string, mode: 'ai' | 'manual' | null, text?: string) => void;
   csmProfile: CsmRow | null;
   clients: ClienteRow[];
   userEmail: string;
@@ -56,6 +58,7 @@ export function LeftPanel({
   selectedClientId, setSelectedClientId,
   periodValue, setPeriodValue,
   activeModuleIds, toggleModule,
+  moduleInsights, setModuleInsight,
   csmProfile, clients, userEmail,
   ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
@@ -280,6 +283,7 @@ export function LeftPanel({
           {/* Optional modules */}
           {modules.optional.map(mod => {
             const isActive = activeModuleIds.includes(mod.id);
+            const insight: ModuleInsight = moduleInsights[mod.id] ?? { mode: null, text: '' };
             return (
               <div key={mod.id}>
                 <div
@@ -287,6 +291,7 @@ export function LeftPanel({
                   style={{
                     border: `0.5px solid ${isActive ? `${color}40` : 'rgba(0,0,0,0.06)'}`,
                     background: isActive ? `${color}08` : 'transparent',
+                    borderRadius: isActive && insight.mode ? '6px 6px 0 0' : undefined,
                   }}
                   onClick={() => toggleModule(mod.id)}
                 >
@@ -295,6 +300,17 @@ export function LeftPanel({
                     <p className="text-xs font-medium text-foreground leading-tight">{mod.label}</p>
                     <p className="text-[10px] text-muted-foreground leading-snug">{mod.description}</p>
                   </div>
+                  {isActive && insight.mode && (
+                    <span
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                      style={{
+                        background: insight.mode === 'ai' ? `${color}20` : 'rgba(34,197,94,0.15)',
+                        color: insight.mode === 'ai' ? color : '#16A34A',
+                      }}
+                    >
+                      ✦ {insight.mode === 'ai' ? 'IA' : 'Manual'}
+                    </span>
+                  )}
                   <Switch
                     checked={isActive}
                     onCheckedChange={() => toggleModule(mod.id)}
@@ -302,6 +318,72 @@ export function LeftPanel({
                     className="scale-75 shrink-0"
                   />
                 </div>
+
+                {/* Insight accordion — only for active optional modules */}
+                {isActive && (
+                  <div
+                    className="px-3 py-2.5"
+                    style={{
+                      background: `${color}06`,
+                      borderLeft: `2px solid ${color}30`,
+                      borderRight: `0.5px solid ${color}40`,
+                      borderBottom: `0.5px solid ${color}40`,
+                      borderRadius: '0 0 6px 6px',
+                      marginBottom: 2,
+                    }}
+                  >
+                    <p className="text-[10px] font-semibold mb-2" style={{ color: '#64748B' }}>
+                      ✦ ¿Agregar insight a este slide?
+                    </p>
+                    <div className="flex gap-1">
+                      {(['ai', 'manual', null] as const).map(m => {
+                        const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo yo' : 'Sin insight';
+                        const active = insight.mode === m;
+                        return (
+                          <button
+                            key={String(m)}
+                            onClick={e => { e.stopPropagation(); setModuleInsight(mod.id, m); }}
+                            className="flex-1 py-1 text-[10px] font-semibold rounded transition-all"
+                            style={{
+                              background: active
+                                ? m === null ? 'rgba(0,0,0,0.07)' : color
+                                : 'rgba(0,0,0,0.04)',
+                              color: active
+                                ? m === null ? '#64748B' : '#fff'
+                                : '#94A3B8',
+                              border: `1px solid ${active
+                                ? m === null ? 'rgba(0,0,0,0.1)' : color
+                                : 'rgba(0,0,0,0.06)'}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {insight.mode === 'manual' && (
+                      <textarea
+                        placeholder="Escribe tu análisis de esta métrica..."
+                        maxLength={280}
+                        value={insight.text}
+                        onChange={e => setModuleInsight(mod.id, 'manual', e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        className="w-full mt-2 text-[11px] p-2 rounded border resize-none"
+                        style={{
+                          height: 68, fontFamily: 'inherit',
+                          borderColor: '#E2E8F0', color: '#0D1137',
+                          background: '#fff', boxSizing: 'border-box',
+                        }}
+                      />
+                    )}
+                    {insight.mode === 'ai' && (
+                      <p className="text-[10px] mt-1.5" style={{ color: '#94A3B8' }}>
+                        El análisis llegará de n8n con el reporte.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {mod.hasFlowSelector && isActive && (
                   <CEFlowSelector
                     flows={ceFlows}
