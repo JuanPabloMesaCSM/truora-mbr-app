@@ -353,7 +353,6 @@ export function ReportCarrete({
   /* ── reconciliation ── */
   const reconciliacion = hasData ? reportData.reconciliacion : null;
   const analisisEstrategico = hasData ? reportData.analisis_estrategico : null;
-  const meta = hasData ? (reportData.meta ?? {}) : {};
 
   /* Intercept overlay close to show recon panel if needed */
   const handleOverlayClose = () => {
