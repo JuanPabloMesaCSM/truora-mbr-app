@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { RAZONES_DI, getLabelBGC, FALLOS_CE } from "@/utils/razonesDict";
 import {
   Chart,
   ArcElement,
@@ -94,6 +95,36 @@ function tok(theme: Theme) {
     gaugeBg:      d ? "#0D1137"                            : "#E2E8F0",
     histBar:      d ? "#3D5A99"                            : "#94A3B8",
   };
+}
+
+/* ─── RazonRechazo card ─── */
+
+interface RazonRechazoProps {
+  codigo: string;
+  descripcion: string;
+  tema: Theme;
+  esAlerta?: boolean;
+}
+
+function RazonRechazo({ codigo, descripcion, tema, esAlerta }: RazonRechazoProps) {
+  return (
+    <div style={{
+      padding: '8px 12px',
+      borderRadius: 8,
+      background: esAlerta
+        ? 'rgba(239,68,68,0.08)'
+        : tema === 'dark' ? 'rgba(255,255,255,0.04)' : '#F8F9FA',
+      borderLeft: esAlerta ? '3px solid #EF4444' : '3px solid transparent',
+      marginBottom: 6,
+    }}>
+      <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748B', letterSpacing: '0.02em', marginBottom: 2 }}>
+        {esAlerta ? '⚠️ ' : ''}{codigo}
+      </div>
+      <div style={{ fontSize: 13, color: tema === 'dark' ? '#E2E8F0' : '#334155', lineHeight: 1.4 }}>
+        {descripcion}
+      </div>
+    </div>
+  );
 }
 
 /* ─── Delta badge ─── */
@@ -731,7 +762,24 @@ function Di78Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
             display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>{col.label}</p>
-            <HBarChart rows={col.rows} theme={theme} />
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {col.rows.map(r => {
+                const codigo = r.col1 || "";
+                const count  = parseInt(r.col2 || "0", 10);
+                const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+                return (
+                  <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                      color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                      {count.toLocaleString("es-CO")}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
@@ -832,9 +880,16 @@ function Di10Slide({ data, theme, clientName, periodLabel, pageNum = 10 }: {
   const t = tok(theme);
 
   const rows   = data["11_friccion_usuario"] || [];
-  const labels = rows.map(r => formatLabel(r.col1 || ""));
+  const labels = rows.map(r => {
+    const codigo = r.col1 || "";
+    const info = RAZONES_DI[codigo];
+    return info ? info.descripcion : formatLabel(codigo);
+  });
   const values = rows.map(r => parseInt(r.col2 || "0", 10));
-  const colors = rows.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length]);
+  const colors = rows.map(r => {
+    const info = RAZONES_DI[r.col1 || ""];
+    return info && info.esAlerta ? "#EF4444" : BAR_PALETTE[0];
+  });
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -1195,9 +1250,13 @@ function Bgc4Slide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
   const anomalies  = highRows.filter(r => r.col5 === "1");
   const anomalyN   = anomalies.reduce((s, r) => s + parseInt(r.col4 || "0", 10), 0);
 
-  const chartLabels = labelsRows.map(r => r.col1 || "");
+  const chartLabels = labelsRows.map(r => {
+    const info = getLabelBGC(r.col1 || "");
+    return info.descripcion;
+  });
+  const chartRawCodes = labelsRows.map(r => r.col1 || "");
   const chartValues = labelsRows.map(r => parseInt(r.col3 || "0", 10));
-  const chartColors = chartLabels.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length]);
+  const chartColors = chartRawCodes.map(code => getLabelBGC(code).esAlerta ? "#EF4444" : BAR_PALETTE[0]);
   const depKey = JSON.stringify([chartLabels, chartValues]);
 
   useEffect(() => {
@@ -1862,7 +1921,11 @@ function Ce3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
   const exitosPrev = parseInt(first?.col10 || "0", 10);
 
   const truncate = (s: string, n: number) => s.length > n ? s.slice(0, n) + "…" : s;
-  const reasonLabels = rows.map(r => truncate(r.col1 || "", 26));
+  const reasonLabels = rows.map(r => {
+    const codigo = r.col1 || "";
+    const info = FALLOS_CE[codigo];
+    return info ? truncate(info.descripcion, 42) : truncate(codigo, 42);
+  });
   const actualData   = rows.map(r => parseInt(r.col2 || "0", 10));
   const prevData     = rows.map(r => parseInt(r.col4 || "0", 10));
 
@@ -1947,7 +2010,7 @@ function Ce3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
           </div>
         </div>
         <p style={{ margin: "0 0 2px", fontSize: 10, color: t.textMuted, fontStyle: "italic", flexShrink: 0 }}>
-          "Message Undeliverable" es la única categoría donde se pueden aplicar estrategias de reintento de envío
+          "El número no existe, bloqueado o sin WhatsApp" es la única categoría donde se pueden aplicar estrategias de reintento de envío
         </p>
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Fallos Outbound" />

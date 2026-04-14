@@ -18,6 +18,7 @@ interface CenterCanvasProps {
   onOverlayClose: () => void;
   onNewReport: () => void;
   onRetry: () => void;
+  onBack?: () => void;
 }
 
 const cardTransitionEnter = { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] as const };
@@ -25,7 +26,7 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsAi,
-  moduleInsights = {}, overlayStatus, reportData, theme, onOverlayClose, onNewReport, onRetry,
+  moduleInsights = {}, overlayStatus, reportData, theme, onOverlayClose, onNewReport, onRetry, onBack,
 }: CenterCanvasProps) {
   const getSlideInsight = (id: string): { insightText?: string; insightSource?: 'ai' | 'manual' } => {
     const mi = moduleInsights[id];
@@ -89,6 +90,11 @@ export function CenterCanvas({
             >
               ↓ Exportar PDF
             </button>
+            {onBack && (
+              <button onClick={onBack} className="text-xs text-white/30 hover:text-white/60 transition-colors px-3 py-1.5">
+                ← Volver al constructor
+              </button>
+            )}
             <button onClick={onNewReport} className="text-xs text-white/30 hover:text-white/60 transition-colors px-3 py-1.5">
               ← Nuevo reporte
             </button>

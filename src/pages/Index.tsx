@@ -3,18 +3,26 @@ import type { Session } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "sonner";
+import { MeshBackground } from "@/components/report-builder/MeshBackground";
+import { WelcomeStep } from "@/components/report-builder/WelcomeStep";
+import { ConfigStep } from "@/components/report-builder/ConfigStep";
 import { LeftPanel } from "@/components/report-builder/LeftPanel";
+import { ReportCarrete } from "@/components/report-builder/ReportCarrete";
 import { CenterCanvas } from "@/components/report-builder/CenterCanvas";
-import { RightPanel } from "@/components/report-builder/RightPanel";
 import { ClientIdModal } from "@/components/report-builder/ClientIdModal";
 import {
   MODULES, PRODUCT_WEBHOOKS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
   parsePeriod, type Product, type CsmRow, type ClienteRow, type ModuleInsight,
 } from "@/components/report-builder/moduleDefinitions";
-import type { Theme, ReportData } from "@/components/report-builder/SlideCanvas";
+import type { Theme, ReportData, CeFlowData } from "@/components/report-builder/SlideCanvas";
+
+type AppStep = 'welcome' | 'config' | 'builder' | 'canvas';
 
 const Index = () => {
   const navigate = useNavigate();
+
+  /* ─── Step state ─── */
+  const [step, setStep] = useState<AppStep>('welcome');
 
   /* ─── Auth state ─── */
   const [userEmail, setUserEmail] = useState('');
@@ -35,7 +43,6 @@ const Index = () => {
   const [selectedCeFlows, setSelectedCeFlows] = useState<Set<string>>(new Set());
   const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
-  const [reportUrl, setReportUrl] = useState<string | undefined>();
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
   const [clientIdModal, setClientIdModal] = useState<{
@@ -48,11 +55,32 @@ const Index = () => {
   const [customTypesLoading, setCustomTypesLoading] = useState(false);
 
   /* ─── DI Flows state ─── */
-  const [diFlows, setDiFlows] = useState<{ FLOW_ID: string; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]>([]);
+  const [diFlows, setDiFlows] = useState<{ FLOW_ID: string; FLOW_NAME?: string | null; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]>([]);
   const [selectedDiFlows, setSelectedDiFlows] = useState<Set<string>>(new Set());
   const [diFlowsLoading, setDiFlowsLoading] = useState(false);
   const [diFlowsError, setDiFlowsError] = useState(false);
 
+  /* ─── Derived state ─── */
+  const selectedClient = clients.find(c => c.id === selectedClientId) || null;
+  const periodData = periodValue ? parsePeriod(periodValue) : null;
+  const isAdmin = userEmail === ADMIN_EMAIL;
+  const isLoading = diFlowsLoading || customTypesLoading || ceFlowsLoading;
+
+  const canGenerate = !!(
+    selectedClient &&
+    periodValue &&
+    csmProfile &&
+    selectedClient[PRODUCT_CLIENT_FIELD[product]]
+  );
+
+  const canContinue = !!(
+    selectedClientId &&
+    periodValue &&
+    csmProfile &&
+    selectedClient?.[PRODUCT_CLIENT_FIELD[product]]
+  );
+
+  /* ─── Data loading ─── */
   const loadSessionData = useCallback(async (email: string) => {
     const normalizedEmail = email.trim().toLowerCase();
     setUserEmail(normalizedEmail);
@@ -136,10 +164,6 @@ const Index = () => {
     setSelectedCeFlows(new Set());
   }, [product]);
 
-  /* ─── Derived state ─── */
-  const selectedClient = clients.find(c => c.id === selectedClientId) || null;
-  const periodData = periodValue ? parsePeriod(periodValue) : null;
-
   /* ─── Fetch BGC custom types when client + period ready ─── */
   useEffect(() => {
     if (product !== 'BGC') return;
@@ -197,7 +221,7 @@ const Index = () => {
       }),
     })
       .then(r => r.json())
-      .then((data: { FLOW_ID: string; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]) => {
+      .then((data: { FLOW_ID: string; FLOW_NAME?: string | null; TOTAL_PROCESOS: number; USUARIOS_UNICOS: number; ULTIMO_USO: string }[]) => {
         if (cancelled) return;
         const arr = Array.isArray(data) ? data : [];
         setDiFlows(arr);
@@ -244,37 +268,54 @@ const Index = () => {
     return () => { cancelled = true; };
   }, [product, selectedClient, periodData?.fechaInicio, periodData?.fechaFin]);
 
-  const canGenerate = !!(
-    selectedClient &&
-    periodValue &&
-    csmProfile &&
-    selectedClient[PRODUCT_CLIENT_FIELD[product]]
-  );
-
+  /* ─── Module toggle ─── */
   const toggleModule = useCallback((id: string) => {
     setActiveModuleIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   }, []);
 
-  /* ─── Product change with modal for missing CLIENT_ID ─── */
-  const handleProductChange = (p: Product) => {
-    if (selectedClient && !selectedClient[PRODUCT_CLIENT_FIELD[p]]) {
-      setClientIdModal({
-        product: p,
-        clientId: selectedClient.id,
-        clientName: selectedClient.nombre,
-      });
-      return;
-    }
+  /* ─── Step transitions ─── */
+  const handleSelectProduct = (p: Product) => {
     setProduct(p);
+    setStep('config');
+  };
+
+  const handleBackToWelcome = () => {
+    setStep('welcome');
+  };
+
+  const handleContinueToBuilder = () => {
+    setStep('builder');
+  };
+
+  const handleBackToConfig = () => {
+    setStep('config');
+  };
+
+  const handleViewPresentation = () => {
+    setStep('canvas');
+  };
+
+  const handleBackToBuilder = () => {
+    setStep('builder');
+  };
+
+  const handleNewReport = () => {
+    setReportData(null);
+    setOverlayStatus(null);
+    setStep('builder');
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate('/login');
   };
 
   /* ─── Generate report ─── */
   const handleGenerate = async () => {
     if (!canGenerate || !selectedClient || !periodData || !csmProfile) return;
     setOverlayStatus('generating');
-    setReportUrl(undefined);
     setReportData(null);
 
     const modules = MODULES[product];
@@ -360,114 +401,140 @@ const Index = () => {
   const loadMock = () => {
     setTheme('dark');
     setOverlayStatus(null);
+    setStep('builder');
     setReportData({
       status: 'success',
       data: {
         '1_metricas_generales': [{
           bloque: '1_metricas_generales',
-          col1: '26603',
-          col2: '20995',
-          col3: '4891',
-          col4: '2318',
-          col5: '1876',
-          col6: '697',
-          col7: '523',
-          col8: '78.9',
-          col9: '24100',
-          col10: '18800',
-          col11: '78.0',
-          col_extra1: '10.4',
+          col1: '26603', col2: '20995', col3: '4891', col4: '2318',
+          col5: '1876', col6: '697', col7: '523', col8: '78.9',
+          col9: '24100', col10: '18800', col11: '78.0', col_extra1: '10.4',
         }],
         '2_usuarios_reintentos': [{
           bloque: '2_usuarios_reintentos',
-          col1: '18450',
-          col2: '14600',
-          col3: '79.1',
+          col1: '18450', col2: '14600', col3: '79.1',
         }],
       },
       warnings: [],
     });
   };
 
-  return (
-    <div className="flex h-screen overflow-hidden">
-      <LeftPanel
-        product={product}
-        setProduct={handleProductChange}
-        selectedClientId={selectedClientId}
-        setSelectedClientId={setSelectedClientId}
-        periodValue={periodValue}
-        setPeriodValue={setPeriodValue}
-        activeModuleIds={activeModuleIds}
-        toggleModule={toggleModule}
-        moduleInsights={moduleInsights}
-        setModuleInsight={setModuleInsight}
-        csmProfile={csmProfile}
-        clients={clients}
-        userEmail={userEmail}
-        ceFlows={ceFlows}
-        selectedCeFlows={selectedCeFlows}
-        setSelectedCeFlows={setSelectedCeFlows}
-        ceFlowsLoading={ceFlowsLoading}
-        customTypes={customTypes}
-        selectedTypes={selectedTypes}
-        setSelectedTypes={setSelectedTypes}
-        customTypesLoading={customTypesLoading}
-        diFlows={diFlows}
-        selectedDiFlows={selectedDiFlows}
-        setSelectedDiFlows={setSelectedDiFlows}
-        diFlowsLoading={diFlowsLoading}
-        diFlowsError={diFlowsError}
-        onReloadClients={() => loadSessionData(userEmail)}
-      />
+  /* ─── Selected CE flows for carrete (cast to satisfy CeFlowData shape) ─── */
+  const selectedCeFlowsForCarrete = ceFlows
+    .filter(f => selectedCeFlows.has(f.flow_id)) as unknown as CeFlowData[];
 
-      {import.meta.env.DEV && (
-        <button
-          onClick={loadMock}
-          style={{
-            position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-            zIndex: 9999, background: '#6B4EFF', color: '#fff',
-            border: 'none', borderRadius: 8, padding: '8px 18px',
-            fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: 0.9,
-          }}
-        >
-          🧪 Ver Canvas Mock
-        </button>
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
+      <MeshBackground />
+
+      {/* ── Paso 1: Welcome ── */}
+      {step === 'welcome' && (
+        <WelcomeStep
+          csmProfile={csmProfile}
+          userEmail={userEmail}
+          onSelectProduct={handleSelectProduct}
+          onLogout={handleLogout}
+        />
       )}
 
-      <CenterCanvas
-        product={product}
-        clientName={selectedClient?.nombre || 'Cliente Demo'}
-        periodLabel={periodData?.periodoReporte || ''}
-        activeModuleIds={activeModuleIds}
-        insightsAi={insightsAi}
-        moduleInsights={moduleInsights}
-        overlayStatus={overlayStatus}
-        reportData={reportData}
-        theme={theme}
-        onOverlayClose={() => setOverlayStatus(null)}
-        onNewReport={() => { setOverlayStatus(null); setReportData(null); }}
-        onRetry={handleGenerate}
-      />
+      {/* ── Paso 2: Config ── */}
+      {step === 'config' && (
+        <ConfigStep
+          product={product}
+          csmProfile={csmProfile}
+          userEmail={userEmail}
+          clients={clients}
+          selectedClientId={selectedClientId}
+          setSelectedClientId={setSelectedClientId}
+          periodValue={periodValue}
+          setPeriodValue={setPeriodValue}
+          isLoading={isLoading}
+          canContinue={canContinue}
+          isAdmin={isAdmin}
+          onBack={handleBackToWelcome}
+          onContinue={handleContinueToBuilder}
+          onReloadClients={() => loadSessionData(userEmail)}
+        />
+      )}
 
-      <RightPanel
-        product={product}
-        clientName={selectedClient?.nombre || null}
-        periodLabel={periodData?.periodoReporte || ''}
-        csmName={csmProfile?.nombre || userEmail}
-        activeModuleIds={activeModuleIds}
-        insightsAi={insightsAi}
-        setInsightsAi={setInsightsAi}
-        theme={theme}
-        setTheme={setTheme}
-        canGenerate={canGenerate}
-        overlayStatus={overlayStatus}
-        reportUrl={reportUrl}
-        hasData={!!reportData}
-        onGenerate={handleGenerate}
-        onClose={() => setOverlayStatus(null)}
-      />
+      {/* ── Paso 3: Builder (LeftPanel + ReportCarrete) ── */}
+      {step === 'builder' && (
+        <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', position: 'relative', zIndex: 1 }}>
+          <LeftPanel
+            product={product}
+            clientName={selectedClient?.nombre || ''}
+            periodLabel={periodData?.periodoReporte || ''}
+            csmProfile={csmProfile}
+            userEmail={userEmail}
+            activeModuleIds={activeModuleIds}
+            toggleModule={toggleModule}
+            moduleInsights={moduleInsights}
+            setModuleInsight={setModuleInsight}
+            insightsAi={insightsAi}
+            setInsightsAi={setInsightsAi}
+            theme={theme}
+            setTheme={setTheme}
+            ceFlows={ceFlows}
+            selectedCeFlows={selectedCeFlows}
+            setSelectedCeFlows={setSelectedCeFlows}
+            ceFlowsLoading={ceFlowsLoading}
+            customTypes={customTypes}
+            selectedTypes={selectedTypes}
+            setSelectedTypes={setSelectedTypes}
+            customTypesLoading={customTypesLoading}
+            diFlows={diFlows}
+            selectedDiFlows={selectedDiFlows}
+            setSelectedDiFlows={setSelectedDiFlows}
+            diFlowsLoading={diFlowsLoading}
+            diFlowsError={diFlowsError}
+            canGenerate={canGenerate}
+            overlayStatus={overlayStatus}
+            onGenerate={handleGenerate}
+            onBack={handleBackToConfig}
+          />
+          <ReportCarrete
+            product={product}
+            clientName={selectedClient?.nombre || ''}
+            periodLabel={periodData?.periodoReporte || ''}
+            csmName={csmProfile?.nombre || userEmail}
+            activeModuleIds={activeModuleIds}
+            insightsAi={insightsAi}
+            moduleInsights={moduleInsights}
+            ceFlows={selectedCeFlowsForCarrete}
+            theme={theme}
+            reportData={reportData}
+            overlayStatus={overlayStatus}
+            onOverlayClose={() => setOverlayStatus(null)}
+            onRetry={handleGenerate}
+            onViewPresentation={handleViewPresentation}
+            onNewReport={handleNewReport}
+          />
+        </div>
+      )}
 
+      {/* ── Paso 4: Canvas (full-screen presentation) ── */}
+      {step === 'canvas' && (
+        <div style={{ position: 'relative', zIndex: 1, height: '100vh' }}>
+          <CenterCanvas
+            product={product}
+            clientName={selectedClient?.nombre || 'Cliente Demo'}
+            periodLabel={periodData?.periodoReporte || ''}
+            activeModuleIds={activeModuleIds}
+            insightsAi={insightsAi}
+            moduleInsights={moduleInsights}
+            overlayStatus={overlayStatus}
+            reportData={reportData}
+            theme={theme}
+            onOverlayClose={() => setOverlayStatus(null)}
+            onNewReport={handleNewReport}
+            onRetry={handleGenerate}
+            onBack={handleBackToBuilder}
+          />
+        </div>
+      )}
+
+      {/* ── ClientIdModal (global) ── */}
       {clientIdModal && (
         <ClientIdModal
           key={`${clientIdModal.clientId}-${clientIdModal.product}`}
@@ -484,9 +551,24 @@ const Index = () => {
                   : client
               )
             );
-            setProduct(clientIdModal.product);
+            setClientIdModal(null);
           }}
         />
+      )}
+
+      {/* ── Dev mock button ── */}
+      {import.meta.env.DEV && (
+        <button
+          onClick={loadMock}
+          style={{
+            position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 9999, background: '#6B4EFF', color: '#fff',
+            border: 'none', borderRadius: 8, padding: '8px 18px',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: 0.9,
+          }}
+        >
+          🧪 Mock Builder
+        </button>
       )}
     </div>
   );
