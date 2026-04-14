@@ -15,6 +15,7 @@ interface DiFlowSelectorProps {
   setSelectedFlows: (s: Set<string>) => void;
   loading: boolean;
   error: boolean;
+  dark?: boolean;
 }
 
 function formatNumber(n: number) {
@@ -31,17 +32,22 @@ function formatDate(iso: string) {
 }
 
 export function DiFlowSelector({
-  flows, selectedFlows, setSelectedFlows, loading, error,
+  flows, selectedFlows, setSelectedFlows, loading, error, dark = false,
 }: DiFlowSelectorProps) {
+  const tc = dark ? '#8892B8' : undefined;
+  const bc = dark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const bg = dark ? '#161C38' : 'transparent';
+  const activeBg = dark ? '#00C9A712' : '#00C9A708';
+  const activeBorder = dark ? '#00C9A750' : '#00C9A740';
+
   if (loading) {
     return (
       <div className="space-y-2">
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+        <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: dark ? '#4A5580' : undefined }}>
           Flujos
         </p>
-        <Skeleton className="h-8 w-full rounded-md" />
-        <Skeleton className="h-8 w-full rounded-md" />
-        <Skeleton className="h-8 w-full rounded-md" />
+        <Skeleton className="h-8 w-full rounded-md" style={{ background: dark ? '#161C38' : undefined } as any} />
+        <Skeleton className="h-8 w-full rounded-md" style={{ background: dark ? '#161C38' : undefined } as any} />
       </div>
     );
   }
@@ -49,7 +55,7 @@ export function DiFlowSelector({
   if (error && flows.length === 0) {
     return (
       <div className="space-y-2">
-        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+        <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: dark ? '#4A5580' : undefined }}>
           Flujos
         </p>
         <p className="text-[10px] text-yellow-500">
@@ -79,7 +85,7 @@ export function DiFlowSelector({
 
   return (
     <div className="space-y-2">
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: tc ?? undefined, ...(tc ? {} : { color: undefined }) }} {...(!tc ? { className: 'text-[10px] font-semibold text-muted-foreground uppercase tracking-widest' } : {})}>
         Flujos
       </p>
 
@@ -91,8 +97,8 @@ export function DiFlowSelector({
               key={f.FLOW_ID}
               className="flex items-start gap-2.5 p-2 rounded-md cursor-pointer transition-all duration-150"
               style={{
-                border: `0.5px solid ${checked ? '#00C9A740' : 'rgba(0,0,0,0.06)'}`,
-                background: checked ? '#00C9A708' : 'transparent',
+                border: `0.5px solid ${checked ? activeBorder : bc}`,
+                background: checked ? activeBg : bg,
               }}
             >
               <div className="pt-0.5">
@@ -102,10 +108,10 @@ export function DiFlowSelector({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] text-foreground truncate leading-tight">
+                <p className="text-[13px] truncate leading-tight" style={{ color: dark ? '#EEF0FF' : undefined }}>
                   {f.FLOW_NAME ? f.FLOW_NAME : f.FLOW_ID.length > 12 ? f.FLOW_ID.slice(0, 12) + '…' : f.FLOW_ID}
                 </p>
-                <p className="text-[11px] leading-snug mt-0.5" style={{ color: '#94a3b8' }}>
+                <p className="text-[11px] leading-snug mt-0.5" style={{ color: '#8892B8' }}>
                   {formatNumber(f.TOTAL_PROCESOS)} procesos en el período
                 </p>
               </div>
@@ -116,7 +122,8 @@ export function DiFlowSelector({
 
       <button
         onClick={toggleAll}
-        className="text-[10px] text-muted-foreground hover:text-foreground transition-colors pl-1"
+        className="text-[10px] transition-colors pl-1"
+        style={{ color: dark ? '#4A5580' : undefined }}
       >
         {allSelected ? "Deseleccionar todos" : "Seleccionar todos"}
       </button>

@@ -1,40 +1,83 @@
-import { useState } from "react";
-import { LogOut, Lock, Lightbulb, RefreshCw } from "lucide-react";
+/* ─────────────────────────────────────────────────────────
+   LeftPanel (ModulePanel) — Paso 3: Constructor
+   Panel izquierdo oscuro con módulos, insights, tema,
+   Truora AI, flujos/types y botón generar.
+   Producto, cliente y periodo ya fueron seleccionados.
+───────────────────────────────────────────────────────── */
 
-import { motion } from "framer-motion";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Lock, Lightbulb, ArrowLeft, Sparkles, Moon, Sun, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { Switch } from "@/components/ui/switch";
 import {
-  Select, SelectContent, SelectGroup, SelectItem,
-  SelectLabel, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  MODULES, PRODUCT_COLORS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
-  generatePeriods, type Product, type CsmRow, type ClienteRow,
+  MODULES, PRODUCT_COLORS, PRODUCT_LABELS,
+  type Product, type CsmRow, type ClienteRow, type ModuleInsight,
 } from "./moduleDefinitions";
-import { ChartIcon } from "./ChartIcon";
 import { FeedbackModal } from "./FeedbackModal";
 import { BgcCustomTypes, type CustomTypeRow } from "./BgcCustomTypes";
 import { DiFlowSelector, type DiFlowRow } from "./DiFlowSelector";
 import { CEFlowSelector, type CEFlowRow } from "./CEFlowSelector";
+import type { Theme } from "./SlideCanvas";
 
-const PRODUCTS: Product[] = ['DI', 'BGC', 'CE'];
-const PERIODS = generatePeriods();
+/* ── dark shell palette ── */
+const S = {
+  bg:       '#080C1F',
+  panel:    '#0B0F2A',
+  surface:  '#0F1428',
+  surface2: '#161C38',
+  surface3: '#1E2548',
+  border:   'rgba(255,255,255,0.07)',
+  borderAct:'rgba(255,255,255,0.14)',
+  text:     '#EEF0FF',
+  muted:    '#8892B8',
+  dim:      '#4A5580',
+};
+
+/* ── custom toggle ── */
+function DarkSwitch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      style={{
+        width: 36, height: 20, borderRadius: 10,
+        background: checked ? '#7C4DFF' : S.surface3,
+        border: `1px solid ${checked ? '#7C4DFF' : S.border}`,
+        position: 'relative', cursor: 'pointer',
+        transition: 'all 0.2s', flexShrink: 0,
+        outline: 'none',
+      }}
+    >
+      <motion.div
+        animate={{ x: checked ? 18 : 2 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+        style={{
+          position: 'absolute', top: 2,
+          width: 14, height: 14, borderRadius: 7,
+          background: '#fff',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+        }}
+      />
+    </button>
+  );
+}
 
 interface LeftPanelProps {
   product: Product;
-  setProduct: (p: Product) => void;
-  selectedClientId: string | null;
-  setSelectedClientId: (id: string | null) => void;
-  periodValue: string;
-  setPeriodValue: (v: string) => void;
+  clientName: string;
+  periodLabel: string;
+  csmProfile: CsmRow | null;
+  userEmail: string;
   activeModuleIds: string[];
   toggleModule: (id: string) => void;
-  csmProfile: CsmRow | null;
-  clients: ClienteRow[];
-  userEmail: string;
+  moduleInsights: Record<string, ModuleInsight>;
+  setModuleInsight: (id: string, mode: 'ai' | 'manual' | null, text?: string) => void;
+  insightsAi: boolean;
+  setInsightsAi: (v: boolean) => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
   ceFlows: CEFlowRow[];
   selectedCeFlows: Set<string>;
   setSelectedCeFlows: (s: Set<string>) => void;
@@ -48,280 +91,441 @@ interface LeftPanelProps {
   setSelectedDiFlows: (s: Set<string>) => void;
   diFlowsLoading: boolean;
   diFlowsError: boolean;
-  onReloadClients: () => void;
+  canGenerate: boolean;
+  overlayStatus: 'generating' | 'success' | 'error' | null;
+  onGenerate: () => void;
+  onBack: () => void;
 }
 
 export function LeftPanel({
-  product, setProduct,
-  selectedClientId, setSelectedClientId,
-  periodValue, setPeriodValue,
+  product, clientName, periodLabel,
+  csmProfile, userEmail,
   activeModuleIds, toggleModule,
-  csmProfile, clients, userEmail,
+  moduleInsights, setModuleInsight,
+  insightsAi, setInsightsAi,
+  theme, setTheme,
   ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
   diFlows, selectedDiFlows, setSelectedDiFlows, diFlowsLoading, diFlowsError,
-  onReloadClients,
+  canGenerate, overlayStatus,
+  onGenerate, onBack,
 }: LeftPanelProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const selectedClient = clients.find(c => c.id === selectedClientId) || null;
-  const getNickname = (fullName: string) => {
-    const nickMap: Record<string, string> = {
-      'Juan Pablo': 'Juanpa',
-      'Natalia': 'Nata',
-    };
-    for (const [key, nick] of Object.entries(nickMap)) {
-      if (fullName.startsWith(key)) return nick;
-    }
-    return fullName.split(' ')[0];
-  };
-
-  const initials = csmProfile
-    ? csmProfile.nombre.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
-    : userEmail.slice(0, 2).toUpperCase();
-  const greeting = csmProfile ? `¡Hola, ${getNickname(csmProfile.nombre)}! 👋` : userEmail;
-  const color = PRODUCT_COLORS[product];
+  const [themeOpen, setThemeOpen] = useState(false);
+  const color  = PRODUCT_COLORS[product];
   const modules = MODULES[product];
-  const isAdmin = userEmail === ADMIN_EMAIL;
+  const isGenerating = overlayStatus === 'generating';
 
-  const clientGroups = isAdmin
-    ? clients.reduce<Record<string, ClienteRow[]>>((acc, c) => {
-        (acc[c.csm_email] = acc[c.csm_email] || []).push(c);
-        return acc;
-      }, {})
-    : null;
-
-  const isProductDisabled = (p: Product) => {
-    if (!selectedClient) return false;
-    return !selectedClient[PRODUCT_CLIENT_FIELD[p]];
-  };
-
-  const getDisabledTooltip = (p: Product) =>
-    `Configura el CLIENT_ID de ${p} para este cliente`;
-
-  
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/login';
   };
 
+  /* ── Divider ── */
+  const Divider = () => (
+    <div style={{ height: 0.5, background: S.border, margin: '4px 0' }} />
+  );
+
   return (
     <div
-      className="w-[280px] shrink-0 h-screen overflow-y-auto"
-      style={{ borderRight: '0.5px solid rgba(0,0,0,0.06)', background: '#F4F6FC' }}
+      style={{
+        width: 300, flexShrink: 0,
+        height: '100vh', display: 'flex', flexDirection: 'column',
+        background: S.panel,
+        borderRight: `0.5px solid ${S.border}`,
+        overflow: 'hidden',
+      }}
     >
-      <div className="p-4 space-y-5">
-        {/* ── CSM Header ── */}
-        <div className="flex items-center gap-3">
-          <Avatar className="h-9 w-9">
-            <AvatarFallback className="text-white text-xs font-semibold" style={{ background: color }}>
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-foreground truncate">
-              {greeting}
-            </p>
-            <p className="text-[10px] text-muted-foreground truncate">{userEmail}</p>
-          </div>
+      {/* ── Header ── */}
+      <div style={{
+        padding: '14px 16px',
+        borderBottom: `0.5px solid ${S.border}`,
+        flexShrink: 0,
+      }}>
+        {/* Back + product */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <button
-            onClick={handleLogout}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted"
+            onClick={onBack}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 11, color: S.dim, background: 'transparent',
+              border: 'none', cursor: 'pointer', padding: '3px 0',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = S.muted)}
+            onMouseLeave={e => (e.currentTarget.style.color = S.dim)}
           >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* ── Product Tabs ── */}
-        <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">
-            Producto
-          </p>
-          <div className="flex gap-1">
-            {PRODUCTS.map(p => {
-              const disabled = isProductDisabled(p);
-              const isActive = product === p;
-              const tab = (
-                <button
-                  onClick={() => setProduct(p)}
-                  className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all duration-200 ${
-                    disabled
-                      ? 'opacity-40 bg-muted text-muted-foreground'
-                      : isActive
-                        ? 'text-white shadow-sm'
-                        : 'bg-muted/60 text-muted-foreground hover:bg-muted'
-                  }`}
-                  style={isActive && !disabled ? { background: PRODUCT_COLORS[p] } : undefined}
-                >
-                  {p}
-                </button>
-              );
-              if (disabled) {
-                return (
-                  <Tooltip key={p}>
-                    <TooltipTrigger asChild>{tab}</TooltipTrigger>
-                    <TooltipContent side="bottom" className="text-xs">
-                      {getDisabledTooltip(p)}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              }
-              return <span key={p} className="flex-1 flex">{tab}</span>;
-            })}
-          </div>
-        </div>
-
-        {/* ── Configuration ── */}
-        <div className="space-y-3">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+            <ArrowLeft size={12} />
             Configuración
-          </p>
+          </button>
 
-          {/* Client */}
-          <div className="space-y-1">
-            <label className="text-[11px] text-muted-foreground">Cliente</label>
-            <Select value={selectedClientId || ''} onValueChange={v => setSelectedClientId(v || null)}>
-              <SelectTrigger className="text-xs h-9">
-                <SelectValue placeholder="Seleccionar cliente" />
-              </SelectTrigger>
-              <SelectContent>
-                {isAdmin && clientGroups ? (
-                  Object.entries(clientGroups).map(([csmEmail, groupClients]) => (
-                    <SelectGroup key={csmEmail}>
-                      <SelectLabel className="text-[10px] text-muted-foreground">{csmEmail}</SelectLabel>
-                      {groupClients.map(c => (
-                        <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))
-                ) : (
-                  clients.map(c => (
-                    <SelectItem key={c.id} value={c.id} className="text-xs">{c.nombre}</SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            {clients.length === 0 && (
-              <button
-                onClick={onReloadClients}
-                className="flex items-center gap-1.5 text-[11px] font-medium mt-1.5 px-2 py-1 rounded-md transition-colors text-amber-600 hover:bg-amber-50"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Recargar clientes
-              </button>
-            )}
-          </div>
-
-          {/* Period */}
-          <div className="space-y-1">
-            <label className="text-[11px] text-muted-foreground">Periodo</label>
-            <Select value={periodValue} onValueChange={setPeriodValue}>
-              <SelectTrigger className="text-xs h-9">
-                <SelectValue placeholder="Seleccionar periodo" />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIODS.map(p => (
-                  <SelectItem key={p.value} value={p.value} className="text-xs">{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* CSM (read-only) */}
-          <div className="space-y-1">
-            <label className="text-[11px] text-muted-foreground">CSM</label>
-            <div className="text-xs px-3 py-2 rounded-md bg-muted/50 text-foreground">
-              {csmProfile?.nombre || userEmail}
-            </div>
-          </div>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+            padding: '3px 9px', borderRadius: 12,
+            background: `${color}18`, color: color,
+            border: `1px solid ${color}30`,
+          }}>
+            {product} · {PRODUCT_LABELS[product]}
+          </span>
         </div>
+
+        {/* Client + period */}
+        <p style={{ fontSize: 14, fontWeight: 700, color: S.text, margin: '0 0 2px', lineHeight: 1.2 }}>
+          {clientName}
+        </p>
+        <p style={{ fontSize: 11, color: S.muted, margin: 0 }}>
+          {periodLabel} · {csmProfile?.nombre || userEmail}
+        </p>
+      </div>
+
+      {/* ── Scrollable body ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
 
         {/* ── DI Flow Selector ── */}
         {product === 'DI' && (
-          <DiFlowSelector
-            flows={diFlows}
-            selectedFlows={selectedDiFlows}
-            setSelectedFlows={setSelectedDiFlows}
-            loading={diFlowsLoading}
-            error={diFlowsError}
-          />
+          <>
+            <div style={{ padding: '0 16px 8px' }}>
+              <DiFlowSelector
+                flows={diFlows}
+                selectedFlows={selectedDiFlows}
+                setSelectedFlows={setSelectedDiFlows}
+                loading={diFlowsLoading}
+                error={diFlowsError}
+                dark
+              />
+            </div>
+            <Divider />
+          </>
         )}
 
         {/* ── BGC Custom Types ── */}
-        {product === 'BGC' && (
-          <BgcCustomTypes
-            customTypes={customTypes}
-            selectedTypes={selectedTypes}
-            setSelectedTypes={setSelectedTypes}
-            loading={customTypesLoading}
-          />
+        {product === 'BGC' && customTypes.length >= 2 && (
+          <>
+            <div style={{ padding: '0 16px 8px' }}>
+              <BgcCustomTypes
+                customTypes={customTypes}
+                selectedTypes={selectedTypes}
+                setSelectedTypes={setSelectedTypes}
+                loading={customTypesLoading}
+                dark
+              />
+            </div>
+            <Divider />
+          </>
         )}
 
         {/* ── Modules ── */}
-        <div className="space-y-2">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-            Módulos
+        <div style={{ padding: '8px 16px' }}>
+          <p style={{
+            fontSize: 10, fontWeight: 600, color: S.dim,
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            marginBottom: 8,
+          }}>
+            Módulos del reporte
           </p>
 
           {/* Base module (fixed) */}
-          <div
-            className="flex items-center gap-3 p-3 rounded-md"
-            style={{ border: `0.5px solid ${color}30`, background: `${color}08` }}
-          >
-            <ChartIcon chart={modules.base.chart} color={color} size={28} />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground leading-tight">{modules.base.label}</p>
-              <p className="text-[10px] text-muted-foreground leading-snug">{modules.base.description}</p>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 12px', borderRadius: 10, marginBottom: 4,
+            background: `${color}10`, border: `1px solid ${color}25`,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: S.text, margin: '0 0 1px', lineHeight: 1.2 }}>
+                {modules.base.label}
+              </p>
+              <p style={{ fontSize: 10, color: S.muted, margin: 0, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                {modules.base.description}
+              </p>
             </div>
-            <span className="text-[9px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
-              <Lock className="h-2.5 w-2.5" /> FIJO
-            </span>
+            <div style={{
+              flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+              fontSize: 9, fontWeight: 700, color: S.dim,
+              background: S.surface3, padding: '2px 6px', borderRadius: 6,
+            }}>
+              <Lock size={8} /> FIJO
+            </div>
           </div>
 
           {/* Optional modules */}
           {modules.optional.map(mod => {
             const isActive = activeModuleIds.includes(mod.id);
+            const insight: ModuleInsight = moduleInsights[mod.id] ?? { mode: null, text: '' };
+
             return (
-              <div key={mod.id}>
+              <div key={mod.id} style={{ marginBottom: 4 }}>
+                {/* Module row */}
                 <div
-                  className="flex items-center gap-3 p-3 rounded-md transition-all duration-200 cursor-pointer"
-                  style={{
-                    border: `0.5px solid ${isActive ? `${color}40` : 'rgba(0,0,0,0.06)'}`,
-                    background: isActive ? `${color}08` : 'transparent',
-                  }}
                   onClick={() => toggleModule(mod.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px',
+                    borderRadius: isActive && insight.mode ? '10px 10px 0 0' : 10,
+                    background: isActive ? `${color}10` : 'transparent',
+                    border: `1px solid ${isActive ? `${color}30` : S.border}`,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
                 >
-                  <ChartIcon chart={mod.chart} color={isActive ? color : '#9CA3AF'} size={28} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground leading-tight">{mod.label}</p>
-                    <p className="text-[10px] text-muted-foreground leading-snug">{mod.description}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: isActive ? S.text : S.muted, margin: 0, lineHeight: 1.2 }}>
+                        {mod.label}
+                      </p>
+                      {isActive && insight.mode && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700,
+                          padding: '1px 5px', borderRadius: 4,
+                          background: insight.mode === 'ai' ? `${color}25` : 'rgba(34,197,94,0.15)',
+                          color: insight.mode === 'ai' ? color : '#22C55E',
+                        }}>
+                          ✦ {insight.mode === 'ai' ? 'IA' : 'Manual'}
+                        </span>
+                      )}
+                    </div>
+                    {isActive && (
+                      <p style={{ fontSize: 10, color: S.muted, margin: 0, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {mod.description}
+                      </p>
+                    )}
                   </div>
-                  <Switch
-                    checked={isActive}
-                    onCheckedChange={() => toggleModule(mod.id)}
-                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                    className="scale-75 shrink-0"
-                  />
+                  <DarkSwitch checked={isActive} onChange={() => toggleModule(mod.id)} />
                 </div>
-                {mod.hasFlowSelector && isActive && (
-                  <CEFlowSelector
-                    flows={ceFlows}
-                    selectedFlows={selectedCeFlows}
-                    setSelectedFlows={setSelectedCeFlows}
-                    loading={ceFlowsLoading}
-                  />
-                )}
+
+                {/* Insight accordion */}
+                <AnimatePresence>
+                  {isActive && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <div style={{
+                        padding: '10px 12px',
+                        background: `${color}06`,
+                        borderLeft: `2px solid ${color}30`,
+                        borderRight: `1px solid ${color}30`,
+                        borderBottom: `1px solid ${color}30`,
+                        borderRadius: '0 0 10px 10px',
+                        marginBottom: 2,
+                      }}>
+                        <p style={{ fontSize: 10, fontWeight: 600, color: S.muted, marginBottom: 7 }}>
+                          ✦ ¿Agregar insight a este slide?
+                        </p>
+                        <div style={{ display: 'flex', gap: 5 }}>
+                          {(['ai', 'manual', null] as const).map(m => {
+                            const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo' : 'Sin insight';
+                            const active = insight.mode === m;
+                            return (
+                              <button
+                                key={String(m)}
+                                onClick={e => { e.stopPropagation(); setModuleInsight(mod.id, m); }}
+                                style={{
+                                  flex: 1, padding: '5px 0', borderRadius: 6,
+                                  fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                                  background: active ? (m === null ? S.surface3 : color) : S.surface2,
+                                  color: active ? (m === null ? S.muted : '#fff') : S.dim,
+                                  border: `1px solid ${active ? (m === null ? S.border : color) : S.border}`,
+                                  transition: 'all 0.12s',
+                                }}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {insight.mode === 'manual' && (
+                          <textarea
+                            placeholder="Escribe tu análisis..."
+                            maxLength={280}
+                            value={insight.text}
+                            onChange={e => setModuleInsight(mod.id, 'manual', e.target.value)}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                              width: '100%', marginTop: 8,
+                              fontSize: 11, padding: '8px 10px',
+                              borderRadius: 7, border: `1px solid ${S.border}`,
+                              resize: 'none', height: 60,
+                              background: S.surface2, color: S.text,
+                              fontFamily: 'inherit', boxSizing: 'border-box',
+                              outline: 'none',
+                            }}
+                          />
+                        )}
+                        {insight.mode === 'ai' && (
+                          <p style={{ fontSize: 10, marginTop: 6, color: S.dim }}>
+                            El análisis llegará de n8n con el reporte.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* CE Flow Selector inline */}
+                      {mod.hasFlowSelector && (
+                        <div style={{
+                          paddingLeft: 12, paddingRight: 12, paddingBottom: 4,
+                          borderLeft: `2px solid ${color}20`,
+                          marginLeft: 0,
+                          background: S.surface,
+                          borderRight: `1px solid ${color}20`,
+                          borderBottom: `1px solid ${color}20`,
+                          borderRadius: '0 0 8px 8px',
+                        }}>
+                          <CEFlowSelector
+                            flows={ceFlows}
+                            selectedFlows={selectedCeFlows}
+                            setSelectedFlows={setSelectedCeFlows}
+                            loading={ceFlowsLoading}
+                            dark
+                          />
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             );
           })}
         </div>
 
-        {/* ── Feedback Button ── */}
+        <Divider />
+
+        {/* ── Truora AI ── */}
+        <div style={{ padding: '10px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Sparkles size={14} color={color} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Truora AI</span>
+            </div>
+            <DarkSwitch checked={insightsAi} onChange={() => setInsightsAi(!insightsAi)} />
+          </div>
+          <p style={{ fontSize: 10, color: S.dim, marginTop: 4 }}>
+            Slide de análisis estratégico con IA
+          </p>
+        </div>
+
+        <Divider />
+
+        {/* ── Theme ── */}
+        <div style={{ padding: '10px 16px' }}>
+          <button
+            onClick={() => setThemeOpen(o => !o)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              {theme === 'dark' ? <Moon size={14} color={S.muted} /> : <Sun size={14} color={S.muted} />}
+              <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>
+                Tema: {theme === 'dark' ? 'Dark' : 'Light'}
+              </span>
+            </div>
+            {themeOpen ? <ChevronUp size={13} color={S.dim} /> : <ChevronDown size={13} color={S.dim} />}
+          </button>
+
+          <AnimatePresence>
+            {themeOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  {(['dark', 'light'] as Theme[]).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setTheme(t)}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', gap: 7,
+                        padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${theme === t ? color : S.border}`,
+                        background: theme === t ? `${color}15` : S.surface2,
+                        color: theme === t ? color : S.muted,
+                        fontSize: 12, fontWeight: 600,
+                        transition: 'all 0.12s',
+                      }}
+                    >
+                      <span style={{
+                        width: 12, height: 12, borderRadius: 3, flexShrink: 0,
+                        background: t === 'dark' ? '#0D1137' : '#F5F5F7',
+                        border: t === 'dark' ? '1px solid rgba(255,255,255,0.15)' : '1px solid #E2E8F0',
+                      }} />
+                      {t === 'dark' ? 'Dark' : 'Light'}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <Divider />
+
+        {/* ── Feedback ── */}
         <button
           onClick={() => setFeedbackOpen(true)}
-          className="flex items-center gap-2 w-full p-3 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-all"
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 16px', background: 'transparent', border: 'none',
+            cursor: 'pointer', fontSize: 12, color: S.dim,
+            transition: 'color 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.color = S.muted)}
+          onMouseLeave={e => (e.currentTarget.style.color = S.dim)}
         >
-          <Lightbulb className="h-4 w-4" style={{ color }} />
-          Feedback
+          <Lightbulb size={14} color={color} />
+          Metrics Lab · Feedback
+        </button>
+
+        <Divider />
+
+        {/* Dev mock spacer */}
+        <div style={{ height: 8 }} />
+      </div>
+
+      {/* ── Sticky generate button ── */}
+      <div style={{
+        padding: '12px 16px',
+        borderTop: `0.5px solid ${S.border}`,
+        flexShrink: 0,
+        background: S.panel,
+      }}>
+        <button
+          disabled={!canGenerate || isGenerating}
+          onClick={onGenerate}
+          style={{
+            width: '100%', padding: '13px 20px',
+            borderRadius: 12, border: 'none',
+            cursor: canGenerate && !isGenerating ? 'pointer' : 'not-allowed',
+            background: canGenerate && !isGenerating
+              ? 'linear-gradient(135deg, #7C4DFF, #4B6FFF)'
+              : S.surface2,
+            color: canGenerate && !isGenerating ? '#fff' : S.dim,
+            fontSize: 14, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'all 0.2s',
+            boxShadow: canGenerate && !isGenerating ? '0 4px 20px rgba(124,77,255,0.35)' : 'none',
+            opacity: !canGenerate && !isGenerating ? 0.5 : 1,
+          }}
+          onMouseEnter={e => { if (canGenerate && !isGenerating) e.currentTarget.style.opacity = '0.9'; }}
+          onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
+        >
+          {isGenerating ? (
+            <>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }}
+              />
+              Generando...
+            </>
+          ) : (
+            <>Generar Reporte ✦</>
+          )}
         </button>
       </div>
 

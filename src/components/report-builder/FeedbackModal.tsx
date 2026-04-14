@@ -12,8 +12,6 @@ import { MODULES, PRODUCT_COLORS, type Product } from "./moduleDefinitions";
 type FeedbackType = "nueva_metrica" | "voto" | "error_numerico";
 type Voto = "util" | "no_util";
 
-const SUPABASE_URL = "https://cjrhxmfnmajxiwiiuwym.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqcmh4bWZubWFqeGl3aWl1d3ltIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMzOTI2OTIsImV4cCI6MjA4ODk2ODY5Mn0.6q8_uL8wOmgX1jDyQ8qbENRrC7vJRCcD0CBtQAVPoHw";
 const N8N_WEBHOOK = "https://n8n.zapsign.com.br/webhook/metrics-lab";
 
 const TYPE_CARDS: { type: FeedbackType; label: string; desc: string; Icon: typeof Sparkles }[] = [
@@ -92,22 +90,13 @@ export function FeedbackModal({ open, onClose, product, userEmail }: Props) {
     };
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const authToken = session?.access_token || SUPABASE_ANON;
+      const { data: inserted, error } = await supabase
+        .from("feedback")
+        .insert(body)
+        .select()
+        .single();
 
-      const supaRes = await fetch(`${SUPABASE_URL}/rest/v1/feedback`, {
-        method: "POST",
-        headers: {
-          apikey: SUPABASE_ANON,
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!supaRes.ok) throw new Error(`Supabase: ${supaRes.status}`);
-      const [inserted] = await supaRes.json();
+      if (error) throw new Error(error.message);
 
       // Fire-and-forget webhook
       fetch(N8N_WEBHOOK, {
