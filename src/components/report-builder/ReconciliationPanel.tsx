@@ -4,7 +4,7 @@
    entre Snowflake, ClickHouse y Sheet.
 ───────────────────────────────────────────────────────── */
 
-import { useState } from "react";
+import { useState, Component, type ErrorInfo, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Database, Info } from "lucide-react";
 
@@ -46,24 +46,84 @@ interface ReconciliationPanelProps {
   onContinue: () => void;
 }
 
-function getSeverity(pct: number): { color: string; label: string } {
-  if (Math.abs(pct) >= 20) return { color: '#EF4444', label: 'Alta' };
-  if (Math.abs(pct) >= 10) return { color: '#F59E0B', label: 'Media' };
-  return { color: '#22C55E', label: 'Baja' };
+/* ── Error boundary — catches any render crash inside the panel ── */
+interface EBState { hasError: boolean; message: string }
+class PanelErrorBoundary extends Component<{ children: ReactNode; onContinue: () => void }, EBState> {
+  state: EBState = { hasError: false, message: '' };
+  static getDerivedStateFromError(error: Error): EBState {
+    return { hasError: true, message: error?.message ?? 'Error desconocido' };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[ReconciliationPanel] render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 20, background: S.bg,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          gap: 16, padding: 32,
+        }}>
+          <AlertTriangle size={32} color="#F59E0B" />
+          <p style={{ fontSize: 14, color: S.muted, textAlign: 'center', maxWidth: 400 }}>
+            Hubo un problema al mostrar el panel de reconciliación.<br />
+            <span style={{ fontSize: 11, color: S.dim }}>{this.state.message}</span>
+          </p>
+          <button
+            onClick={this.props.onContinue}
+            style={{
+              padding: '10px 24px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              background: 'linear-gradient(135deg, #7C4DFF, #4B6FFF)',
+              color: '#fff', fontSize: 13, fontWeight: 700,
+            }}
+          >
+            Continuar al reporte →
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
-function fmt(n: number) {
+/* ── Safe helpers ── */
+function toNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+function fmt(v: unknown): string {
+  const n = toNum(v);
+  if (n == null) return '—';
   return n.toLocaleString('es-CL');
 }
 
+function fmtPct(v: unknown, showSign = true): string {
+  const n = toNum(v);
+  if (n == null) return '—';
+  return `${showSign && n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+}
+
+function getSeverity(pct: unknown): { color: string; label: string } {
+  const n = toNum(pct);
+  const abs = n != null ? Math.abs(n) : 0;
+  if (abs >= 20) return { color: '#EF4444', label: 'Alta' };
+  if (abs >= 10) return { color: '#F59E0B', label: 'Media' };
+  return { color: '#22C55E', label: 'Baja' };
+}
+
+/* ── AlertaRow ── */
 function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
   const [open, setOpen] = useState(false);
-  const chSev = getSeverity(alerta.diferencia_ch_pct);
-  const shSev = alerta.diferencia_sheet_pct != null ? getSeverity(alerta.diferencia_sheet_pct) : null;
-  const maxSev = getSeverity(Math.max(
-    Math.abs(alerta.diferencia_ch_pct),
-    Math.abs(alerta.diferencia_sheet_pct ?? 0)
-  ));
+
+  const chPct  = toNum(alerta.diferencia_ch_pct);
+  const shPct  = toNum(alerta.diferencia_sheet_pct);
+  const chSev  = getSeverity(chPct);
+  const shSev  = shPct != null ? getSeverity(shPct) : null;
+  const maxAbs = Math.max(Math.abs(chPct ?? 0), Math.abs(shPct ?? 0));
+  const maxSev = getSeverity(maxAbs);
+  const hasSheet = toNum(alerta.sheet) != null;
 
   return (
     <motion.div
@@ -90,7 +150,7 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
           background: maxSev.color, boxShadow: `0 0 6px ${maxSev.color}80`,
         }} />
         <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: S.text }}>
-          {alerta.metrica}
+          {alerta.metrica ?? '—'}
         </span>
         <span style={{
           fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
@@ -100,19 +160,20 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
           {maxSev.label}
         </span>
         {open
-          ? <ChevronUp size={14} color={S.dim} style={{ flexShrink: 0 }} />
+          ? <ChevronUp  size={14} color={S.dim} style={{ flexShrink: 0 }} />
           : <ChevronDown size={14} color={S.dim} style={{ flexShrink: 0 }} />
         }
       </button>
 
       {/* Expanded detail */}
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {open && (
           <motion.div
+            key="detail"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
             style={{ overflow: 'hidden' }}
           >
             <div style={{ padding: '0 16px 16px' }}>
@@ -175,7 +236,7 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
                   </div>
                   <span style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(alerta.clickhouse_original)}</span>
                   <span style={{ textAlign: 'right', color: chSev.color, fontWeight: 600 }}>
-                    {alerta.diferencia_ch_pct > 0 ? '+' : ''}{alerta.diferencia_ch_pct.toFixed(1)}%
+                    {fmtPct(chPct)}
                   </span>
                   <span style={{ textAlign: 'right' }}>
                     <span style={{
@@ -186,7 +247,7 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
                 </div>
 
                 {/* Sheet row (if available) */}
-                {alerta.sheet != null && (
+                {hasSheet && (
                   <div style={{
                     display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
                     padding: '10px 14px', gap: 8,
@@ -199,9 +260,7 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
                     </div>
                     <span style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(alerta.sheet)}</span>
                     <span style={{ textAlign: 'right', color: shSev?.color ?? S.muted, fontWeight: 600 }}>
-                      {alerta.diferencia_sheet_pct != null
-                        ? `${alerta.diferencia_sheet_pct > 0 ? '+' : ''}${alerta.diferencia_sheet_pct.toFixed(1)}%`
-                        : '—'}
+                      {fmtPct(shPct)}
                     </span>
                     <span style={{ textAlign: 'right' }}>
                       {shSev && (
@@ -216,9 +275,11 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
               </div>
 
               {/* Mensaje */}
-              <p style={{ fontSize: 11, color: S.muted, lineHeight: 1.5, margin: 0 }}>
-                {alerta.mensaje}
-              </p>
+              {alerta.mensaje && (
+                <p style={{ fontSize: 11, color: S.muted, lineHeight: 1.5, margin: 0 }}>
+                  {alerta.mensaje}
+                </p>
+              )}
             </div>
           </motion.div>
         )}
@@ -227,8 +288,11 @@ function AlertaRow({ alerta }: { alerta: AlertaRecon }) {
   );
 }
 
-export function ReconciliationPanel({ reconciliacion, clientName, periodLabel, onContinue }: ReconciliationPanelProps) {
+/* ── Panel inner content ── */
+function ReconciliationPanelInner({ reconciliacion, clientName, periodLabel, onContinue }: ReconciliationPanelProps) {
   const hasSheet = reconciliacion.fuentes?.sheet != null;
+  const alertas: AlertaRecon[] = Array.isArray(reconciliacion.alertas) ? reconciliacion.alertas : [];
+  const totalAlertas = toNum(reconciliacion.total_alertas) ?? alertas.length;
 
   return (
     <motion.div
@@ -267,7 +331,7 @@ export function ReconciliationPanel({ reconciliacion, clientName, periodLabel, o
               <AlertTriangle size={28} color="#F59E0B" style={{ flexShrink: 0, marginTop: 2 }} />
               <div>
                 <h1 style={{ fontSize: 22, fontWeight: 800, color: S.text, margin: '0 0 6px', lineHeight: 1.2 }}>
-                  Se encontraron {reconciliacion.total_alertas} diferencia{reconciliacion.total_alertas !== 1 ? 's' : ''} entre fuentes
+                  Se encontraron {totalAlertas} diferencia{totalAlertas !== 1 ? 's' : ''} entre fuentes
                 </h1>
                 <p style={{ fontSize: 13, color: S.muted, margin: 0, lineHeight: 1.5 }}>
                   Revisa las diferencias antes de continuar. El reporte usará <strong style={{ color: '#C4B3FF' }}>Snowflake</strong> como fuente oficial.
@@ -304,10 +368,10 @@ export function ReconciliationPanel({ reconciliacion, clientName, periodLabel, o
         </div>
 
         {/* ── Alertas ── */}
-        {reconciliacion.tiene_alertas && (
+        {reconciliacion.tiene_alertas && alertas.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 32 }}>
-            {reconciliacion.alertas.map((alerta, i) => (
-              <AlertaRow key={i} alerta={alerta} />
+            {alertas.map((alerta, i) => (
+              <AlertaRow key={`${alerta.metrica ?? i}-${i}`} alerta={alerta} />
             ))}
           </div>
         )}
@@ -339,5 +403,14 @@ export function ReconciliationPanel({ reconciliacion, clientName, periodLabel, o
         </div>
       </div>
     </motion.div>
+  );
+}
+
+/* ── Public export — wrapped in error boundary ── */
+export function ReconciliationPanel(props: ReconciliationPanelProps) {
+  return (
+    <PanelErrorBoundary onContinue={props.onContinue}>
+      <ReconciliationPanelInner {...props} />
+    </PanelErrorBoundary>
   );
 }
