@@ -9,7 +9,7 @@ export function MeshBackground() {
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 0,
-        overflow: 'hidden', background: '#080C1F',
+        overflow: 'hidden', background: '#0D1B2E',
         pointerEvents: 'none',
       }}
     >

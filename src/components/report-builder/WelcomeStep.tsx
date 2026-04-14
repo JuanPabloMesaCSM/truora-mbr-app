@@ -11,8 +11,8 @@ import { FeedbackModal } from "./FeedbackModal";
 
 /* ── paleta shell ── */
 const S = {
-  surface: '#0F1428',
-  border:  'rgba(255,255,255,0.07)',
+  surface: '#172840',
+  border:  'rgba(255,255,255,0.09)',
   text:    '#EEF0FF',
   muted:   '#8892B8',
   dim:     '#4A5580',

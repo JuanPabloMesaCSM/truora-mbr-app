@@ -14,12 +14,12 @@ import {
 } from "./moduleDefinitions";
 
 const S = {
-  bg:       '#080C1F',
-  surface:  '#0F1428',
-  surface2: '#161C38',
-  surface3: '#1E2548',
-  border:   'rgba(255,255,255,0.07)',
-  borderHov:'rgba(255,255,255,0.14)',
+  bg:       '#0D1B2E',
+  surface:  '#172840',
+  surface2: '#1D3050',
+  surface3: '#253C60',
+  border:   'rgba(255,255,255,0.09)',
+  borderHov:'rgba(255,255,255,0.16)',
   text:     '#EEF0FF',
   muted:    '#8892B8',
   dim:      '#4A5580',
@@ -155,6 +155,8 @@ interface ConfigStepProps {
   setSelectedClientId: (id: string | null) => void;
   periodValue: string;
   setPeriodValue: (v: string) => void;
+  sheetUrl: string;
+  setSheetUrl: (v: string) => void;
   /* loading state from parent (flujos/types being fetched) */
   isLoading: boolean;
   canContinue: boolean;
@@ -169,6 +171,7 @@ export function ConfigStep({
   product, csmProfile, userEmail,
   clients, selectedClientId, setSelectedClientId,
   periodValue, setPeriodValue,
+  sheetUrl, setSheetUrl,
   isLoading, canContinue, isAdmin,
   onBack, onContinue, onReloadClients, onConfigureClientId,
 }: ConfigStepProps) {
@@ -322,6 +325,33 @@ export function ConfigStep({
             options={periodOptions}
             color={color}
           />
+        </div>
+
+        {/* Google Sheet URL (opcional) */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: S.muted, marginBottom: 4, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Google Sheet del cliente <span style={{ color: S.dim, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— opcional</span>
+          </label>
+          <input
+            type="url"
+            value={sheetUrl}
+            onChange={e => setSheetUrl(e.target.value)}
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            style={{
+              width: '100%', padding: '11px 14px',
+              background: S.surface2,
+              border: `1px solid ${sheetUrl ? `${color}50` : S.border}`,
+              borderRadius: 10, fontSize: 12, color: sheetUrl ? S.text : S.muted,
+              outline: 'none', fontFamily: 'monospace',
+              transition: 'border-color 0.15s',
+              boxSizing: 'border-box',
+            }}
+            onFocus={e => { e.target.style.borderColor = `${color}70`; }}
+            onBlur={e => { if (!sheetUrl) e.target.style.borderColor = S.border; }}
+          />
+          <p style={{ fontSize: 10, color: S.dim, marginTop: 5, lineHeight: 1.5 }}>
+            Si agregas el sheet del front de Truora, el sistema comparará los datos contra Snowflake y ClickHouse para darte mayor confianza en los números.
+          </p>
         </div>
 
         {/* Missing CLIENT_ID warning */}

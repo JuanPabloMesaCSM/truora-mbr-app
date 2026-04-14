@@ -35,6 +35,8 @@ const Index = () => {
   const [periodValue, setPeriodValue] = useState('');
   const [activeModuleIds, setActiveModuleIds] = useState<string[]>([]);
   const [insightsAi, setInsightsAi] = useState(true);
+  const [insightsActivos, setInsightsActivos] = useState<Record<string, boolean>>({});
+  const [sheetUrl, setSheetUrl] = useState('');
   const [moduleInsights, setModuleInsights] = useState<Record<string, ModuleInsight>>({});
   const setModuleInsight = (id: string, mode: 'ai' | 'manual' | null, text?: string) => {
     setModuleInsights(prev => ({ ...prev, [id]: { mode, text: text !== undefined ? text : (prev[id]?.text ?? '') } }));
@@ -162,6 +164,7 @@ const Index = () => {
     setDiFlowsError(false);
     setCeFlows([]);
     setSelectedCeFlows(new Set());
+    setInsightsActivos({});
   }, [product]);
 
   /* ─── Fetch BGC custom types when client + period ready ─── */
@@ -337,6 +340,8 @@ const Index = () => {
       nombre_csm: csmProfile.nombre,
       csm_email: userEmail,
       con_ia: insightsAi,
+      insights_activos: insightsActivos,
+      ...(sheetUrl.trim() && { sheet_url: sheetUrl.trim() }),
       base_modules: [modules.base.id],
       extra_modules: activeModuleIds.map(id => ({ id })),
       insights_ai: insightsAi,
@@ -461,6 +466,8 @@ const Index = () => {
           isLoading={isLoading}
           canContinue={canContinue}
           isAdmin={isAdmin}
+          sheetUrl={sheetUrl}
+          setSheetUrl={setSheetUrl}
           onBack={handleBackToWelcome}
           onContinue={handleContinueToBuilder}
           onReloadClients={() => loadSessionData(userEmail)}
@@ -483,6 +490,8 @@ const Index = () => {
             setModuleInsight={setModuleInsight}
             insightsAi={insightsAi}
             setInsightsAi={setInsightsAi}
+            insightsActivos={insightsActivos}
+            setInsightsActivos={setInsightsActivos}
             theme={theme}
             setTheme={setTheme}
             ceFlows={ceFlows}

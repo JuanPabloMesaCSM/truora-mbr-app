@@ -21,13 +21,13 @@ import type { Theme } from "./SlideCanvas";
 
 /* ── dark shell palette ── */
 const S = {
-  bg:       '#080C1F',
-  panel:    '#0B0F2A',
-  surface:  '#0F1428',
-  surface2: '#161C38',
-  surface3: '#1E2548',
-  border:   'rgba(255,255,255,0.07)',
-  borderAct:'rgba(255,255,255,0.14)',
+  bg:       '#0D1B2E',
+  panel:    '#112030',
+  surface:  '#172840',
+  surface2: '#1D3050',
+  surface3: '#253C60',
+  border:   'rgba(255,255,255,0.09)',
+  borderAct:'rgba(255,255,255,0.16)',
   text:     '#EEF0FF',
   muted:    '#8892B8',
   dim:      '#4A5580',
@@ -64,6 +64,29 @@ function DarkSwitch({ checked, onChange }: { checked: boolean; onChange: () => v
   );
 }
 
+const AI_METRICAS: Record<Product, { id: string; label: string }[]> = {
+  DI: [
+    { id: 'volumen',                    label: 'Volumen de procesos' },
+    { id: 'conversion_global',          label: 'Conversión global' },
+    { id: 'conversion_promedio_flujos', label: 'Promedio de conversión por flujo' },
+    { id: 'declinados',                 label: 'Declinados' },
+    { id: 'rechazados',                 label: 'Rechazos doc / rostro' },
+    { id: 'reintentos',                 label: 'Reintentos' },
+  ],
+  BGC: [
+    { id: 'volumen',              label: 'Volumen de checks' },
+    { id: 'distribucion_labels',  label: 'Distribución de labels' },
+    { id: 'custom_types',         label: 'Custom types' },
+  ],
+  CE: [
+    { id: 'consumo_total',        label: 'Consumo total' },
+    { id: 'eficiencia_campanas',  label: 'Eficiencia de campañas' },
+    { id: 'fallos_outbound',      label: 'Fallos outbound' },
+    { id: 'inbound',              label: 'Flujo inbound' },
+    { id: 'agentes',              label: 'Agentes' },
+  ],
+};
+
 interface LeftPanelProps {
   product: Product;
   clientName: string;
@@ -76,6 +99,8 @@ interface LeftPanelProps {
   setModuleInsight: (id: string, mode: 'ai' | 'manual' | null, text?: string) => void;
   insightsAi: boolean;
   setInsightsAi: (v: boolean) => void;
+  insightsActivos: Record<string, boolean>;
+  setInsightsActivos: (v: Record<string, boolean>) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
   ceFlows: CEFlowRow[];
@@ -103,6 +128,7 @@ export function LeftPanel({
   activeModuleIds, toggleModule,
   moduleInsights, setModuleInsight,
   insightsAi, setInsightsAi,
+  insightsActivos, setInsightsActivos,
   theme, setTheme,
   ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
@@ -129,7 +155,7 @@ export function LeftPanel({
   return (
     <div
       style={{
-        width: 300, flexShrink: 0,
+        width: 360, flexShrink: 0,
         height: '100vh', display: 'flex', flexDirection: 'column',
         background: S.panel,
         borderRight: `0.5px solid ${S.border}`,
@@ -393,16 +419,94 @@ export function LeftPanel({
 
         {/* ── Truora AI ── */}
         <div style={{ padding: '10px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* General toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <Sparkles size={14} color={color} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Truora AI</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Análisis con IA</span>
             </div>
             <DarkSwitch checked={insightsAi} onChange={() => setInsightsAi(!insightsAi)} />
           </div>
-          <p style={{ fontSize: 10, color: S.dim, marginTop: 4 }}>
-            Slide de análisis estratégico con IA
+          <p style={{ fontSize: 10, color: S.dim, marginBottom: insightsAi ? 12 : 0, lineHeight: 1.4 }}>
+            Slide estratégico + insights por métrica
           </p>
+
+          {/* Per-metric checkboxes */}
+          <AnimatePresence>
+            {insightsAi && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <div style={{
+                  padding: '10px 12px', borderRadius: 10,
+                  background: `${color}08`, border: `1px solid ${color}25`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <p style={{ fontSize: 10, fontWeight: 600, color: S.muted, margin: 0 }}>
+                      ¿Qué métricas analizar?
+                    </p>
+                    <button
+                      onClick={() => {
+                        const all = AI_METRICAS[product];
+                        const allActive = all.every(m => insightsActivos[m.id]);
+                        const next: Record<string, boolean> = {};
+                        all.forEach(m => { next[m.id] = !allActive; });
+                        setInsightsActivos(next);
+                      }}
+                      style={{
+                        fontSize: 9, fontWeight: 600, color: S.dim,
+                        background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                        transition: 'color 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.color = S.muted)}
+                      onMouseLeave={e => (e.currentTarget.style.color = S.dim)}
+                    >
+                      {AI_METRICAS[product].every(m => insightsActivos[m.id]) ? 'Quitar todos' : 'Seleccionar todos'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {AI_METRICAS[product].map(m => {
+                      const checked = !!insightsActivos[m.id];
+                      return (
+                        <label
+                          key={m.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            cursor: 'pointer', padding: '5px 6px', borderRadius: 7,
+                            background: checked ? `${color}12` : 'transparent',
+                            border: `1px solid ${checked ? `${color}30` : 'transparent'}`,
+                            transition: 'all 0.12s',
+                          }}
+                          onClick={() => setInsightsActivos({ ...insightsActivos, [m.id]: !checked })}
+                        >
+                          <div style={{
+                            width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                            background: checked ? color : S.surface2,
+                            border: `1px solid ${checked ? color : S.border}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s',
+                          }}>
+                            {checked && (
+                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                                <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 11, color: checked ? S.text : S.muted, lineHeight: 1.3 }}>
+                            {m.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <Divider />

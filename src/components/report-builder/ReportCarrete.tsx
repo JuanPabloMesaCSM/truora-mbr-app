@@ -13,24 +13,43 @@
 
 import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Presentation, Download, RefreshCw } from "lucide-react";
+import { Presentation, Download, Lightbulb } from "lucide-react";
 import {
   SlideCanvas,
   PortadaSlide, AgendaSlide, SeparadorSlide,
   InsightsFinalesSlide, UpdatesSlide, CierreSlide,
+  AnalisisEstrategicoSlide,
   type Theme, type CeFlowData,
 } from "./SlideCanvas";
 import { GeneratingOverlay } from "./GeneratingOverlay";
+import { ReconciliationPanel } from "./ReconciliationPanel";
 import { MODULES, PRODUCT_COLORS, type Product, type ModuleInsight } from "./moduleDefinitions";
 import { exportPDF } from "@/utils/exportPDF";
 
 const S = {
-  bg:      '#080C1F',
-  surface: '#0F1428',
-  border:  'rgba(255,255,255,0.07)',
+  bg:      '#0D1B2E',
+  surface: '#172840',
+  border:  'rgba(255,255,255,0.09)',
   text:    '#EEF0FF',
   muted:   '#8892B8',
   dim:     '#4A5580',
+};
+
+/* ── Mapping: metric key → slide IDs que reciben ese insight ── */
+const INSIGHT_TO_SLIDES: Record<string, string[]> = {
+  volumen:                    ['1_metricas_generales', '1_resumen_general', '1_consumo_total'],
+  conversion_global:          ['1_metricas_generales'],
+  conversion_promedio_flujos: ['1_metricas_generales', '5_flujos'],
+  reintentos:                 ['2_usuarios_reintentos'],
+  declinados:                 ['10_declinados'],
+  rechazados:                 ['7_razones_doc', '8_razones_rostro'],
+  distribucion_labels:        ['5_labels'],
+  custom_types:               ['3_por_tipo'],
+  eficiencia_campanas:        ['2_eficiencia_campanas'],
+  fallos_outbound:            ['3_fallos_outbound'],
+  inbound:                    ['5_flujo_inbound'],
+  agentes:                    ['6_agentes_general'],
+  consumo_total:              ['1_consumo_total'],
 };
 
 /* ────────────────────────────────────────────────────────
@@ -78,7 +97,7 @@ function ShimmerSlide() {
   return (
     <div style={{
       width: '100%', height: '100%',
-      background: '#0D1235',
+      background: '#111E30',
       display: 'flex', flexDirection: 'column',
       padding: '28px 32px',
     }}>
@@ -91,20 +110,20 @@ function ShimmerSlide() {
       {/* Header shimmer */}
       <div style={{
         height: 20, width: '50%', borderRadius: 5, marginBottom: 8,
-        background: 'linear-gradient(90deg, #161C38 25%, #222A50 50%, #161C38 75%)',
+        background: 'linear-gradient(90deg, #1C2D42 25%, #253C60 50%, #1C2D42 75%)',
         backgroundSize: '600px 100%',
         animation: 'shimmerSlide 1.8s linear infinite',
       }} />
       <div style={{
         height: 13, width: '30%', borderRadius: 4, marginBottom: 24,
-        background: 'linear-gradient(90deg, #161C38 25%, #222A50 50%, #161C38 75%)',
+        background: 'linear-gradient(90deg, #1C2D42 25%, #253C60 50%, #1C2D42 75%)',
         backgroundSize: '600px 100%',
         animation: 'shimmerSlide 1.8s linear infinite 0.1s',
       }} />
       {/* Body shimmer */}
       <div style={{
         flex: 1, borderRadius: 10,
-        background: 'linear-gradient(90deg, #141830 25%, #1E2548 50%, #141830 75%)',
+        background: 'linear-gradient(90deg, #172840 25%, #1D3050 50%, #172840 75%)',
         backgroundSize: '600px 100%',
         animation: 'shimmerSlide 2s linear infinite 0.2s',
       }} />
@@ -201,6 +220,54 @@ function DataSlide({
 }
 
 /* ────────────────────────────────────────────────────────
+   MetricInsightPanel — toggleable insight under a slide
+──────────────────────────────────────────────────────── */
+function MetricInsightPanel({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 11, fontWeight: 600,
+          color: open ? '#C4B3FF' : S.dim,
+          background: open ? 'rgba(124,77,255,0.12)' : 'transparent',
+          border: `1px solid ${open ? 'rgba(124,77,255,0.3)' : S.border}`,
+          borderRadius: 8, padding: '5px 10px',
+          cursor: 'pointer', transition: 'all 0.15s',
+        }}
+        onMouseEnter={e => { if (!open) e.currentTarget.style.color = S.muted; }}
+        onMouseLeave={e => { if (!open) e.currentTarget.style.color = S.dim; }}
+      >
+        <Lightbulb size={12} />
+        {open ? 'Ocultar insight' : '💡 Ver insight IA'}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div style={{
+              marginTop: 6, padding: '12px 14px', borderRadius: 10,
+              background: 'rgba(124,77,255,0.08)',
+              border: '1px solid rgba(124,77,255,0.22)',
+              fontSize: 12, color: '#C4B3FF', lineHeight: 1.6,
+            }}>
+              ✦ {text}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────
    Props del carrete
 ──────────────────────────────────────────────────────── */
 interface ReportCarreteProps {
@@ -242,6 +309,7 @@ export function ReportCarrete({
   const effectiveCsm    = meta.nombre_csm || csmName;
 
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showRecon, setShowRecon] = useState(false);
 
   /* ── build dataSlideIds (same logic as CenterCanvas) ── */
   const dataSlideIds: string[] = [modules.base.id];
@@ -272,6 +340,29 @@ export function ReportCarrete({
     return {};
   };
 
+  /* ── per-metric insight helper (insights_por_metrica from response) ── */
+  const insightsPorMetrica: Record<string, string> = hasData ? (reportData.insights_por_metrica ?? {}) : {};
+  const getMetricInsight = (slideId: string): string | null => {
+    for (const [metrica, texto] of Object.entries(insightsPorMetrica)) {
+      const slides = INSIGHT_TO_SLIDES[metrica] ?? [];
+      if (slides.includes(slideId)) return texto as string;
+    }
+    return null;
+  };
+
+  /* ── reconciliation ── */
+  const reconciliacion = hasData ? reportData.reconciliacion : null;
+  const analisisEstrategico = hasData ? reportData.analisis_estrategico : null;
+  const meta = hasData ? (reportData.meta ?? {}) : {};
+
+  /* Intercept overlay close to show recon panel if needed */
+  const handleOverlayClose = () => {
+    if (overlayStatus === 'success' && reconciliacion?.tiene_alertas) {
+      setShowRecon(true);
+    }
+    onOverlayClose();
+  };
+
   const handleExportPDF = () => {
     exportPDF(effectiveClient, effectivePeriod, () => setExportingPdf(true), () => setExportingPdf(false));
   };
@@ -291,7 +382,7 @@ export function ReportCarrete({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '10px 20px', flexShrink: 0,
         borderBottom: `0.5px solid ${S.border}`,
-        background: 'rgba(8,12,31,0.8)', backdropFilter: 'blur(12px)',
+        background: 'rgba(13,27,46,0.85)', backdropFilter: 'blur(12px)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: S.text }}>
@@ -404,6 +495,7 @@ export function ReportCarrete({
                   : slideId;
             const num = nextNum();
             const insight = getSlideInsight(slideId);
+            const metricInsightText = hasData ? getMetricInsight(slideId) : null;
 
             return (
               <CarreteItem key={slideId} num={num} label={label} animate={!hasData} animDelay={idx * 0.05}>
@@ -414,6 +506,7 @@ export function ReportCarrete({
                       product={product}
                       data={data}
                       ceFlows={ceFlowsData}
+                      meta={meta}
                       theme={theme}
                       clientName={effectiveClient}
                       periodLabel={effectivePeriod}
@@ -423,6 +516,10 @@ export function ReportCarrete({
                     />
                   </DataSlide>
                 </ScaledSlide>
+                {/* Per-metric insight toggle */}
+                {metricInsightText && insightsAi && (
+                  <MetricInsightPanel text={metricInsightText} />
+                )}
               </CarreteItem>
             );
           })}
@@ -443,6 +540,22 @@ export function ReportCarrete({
                 />
               </DataSlide>
             </CarreteItem>
+
+            {/* Análisis Estratégico IA */}
+            {analisisEstrategico && (
+              <CarreteItem num={nextNum()} label="Análisis Estratégico IA">
+                <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 240} shimmerLabel="Análisis IA">
+                  <AnalisisEstrategicoSlide
+                    analisis={analisisEstrategico}
+                    theme={theme}
+                    clientName={effectiveClient}
+                    periodLabel={effectivePeriod}
+                    pageNum={slideNum}
+                    totalPages={totalSlides}
+                  />
+                </DataSlide>
+              </CarreteItem>
+            )}
           </>
         )}
 
@@ -470,8 +583,20 @@ export function ReportCarrete({
         {overlayStatus && (
           <GeneratingOverlay
             status={overlayStatus}
-            onClose={onOverlayClose}
+            onClose={handleOverlayClose}
             onRetry={onRetry}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Panel de reconciliación ── */}
+      <AnimatePresence>
+        {showRecon && reconciliacion && (
+          <ReconciliationPanel
+            reconciliacion={reconciliacion}
+            clientName={effectiveClient}
+            periodLabel={effectivePeriod}
+            onContinue={() => setShowRecon(false)}
           />
         )}
       </AnimatePresence>

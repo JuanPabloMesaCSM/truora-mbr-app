@@ -232,9 +232,10 @@ const bodyStyle: React.CSSProperties = {
    DI-1 | Métricas generales
 ══════════════════════════════════════════════════════════════ */
 
-function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1, convTotalGlobal, convPromedioPorFlujo }: {
   data: Record<string, BlockRow[]>; theme: Theme;
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+  convTotalGlobal?: string; convPromedioPorFlujo?: string;
 }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
@@ -287,6 +288,32 @@ function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
           <KpiCard label="Tasa de conversión" value={`${num(b1?.col8, 1)}%`} valueColor="#00C9A7" footnote={`Anterior: ${convPrev.toFixed(1)}%`} theme={theme} />
           <KpiCard label="Usuarios únicos" value={usuariosUnicos !== null ? usuariosUnicos.toLocaleString("es-CO") : "—"}
             footnote={convUsuarioPct ? `${num(convUsuarioPct, 1)}% conversión por usuario` : undefined} theme={theme} />
+          {(convTotalGlobal || convPromedioPorFlujo) && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 12,
+              background: t.cardBg, border: t.cardBorder,
+              fontSize: 11,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: '#00C9A7', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>
+                Conversión — dos vistas
+              </p>
+              {convTotalGlobal && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                  <span style={{ color: t.textMuted, fontSize: 11 }}>Global (exitosos/total)</span>
+                  <span style={{ fontWeight: 700, color: t.textPrimary }}>{convTotalGlobal}%</span>
+                </div>
+              )}
+              {convPromedioPorFlujo && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: t.textMuted, fontSize: 11 }}>Promedio por flujo</span>
+                  <span style={{ fontWeight: 700, color: t.textPrimary }}>{convPromedioPorFlujo}%</span>
+                </div>
+              )}
+              <p style={{ fontSize: 9, color: t.textMuted, margin: 0, lineHeight: 1.4, opacity: 0.8 }}>
+                La global mide sobre el total. El promedio por flujo es la media simple de cada flujo — la diferencia refleja el peso del volumen.
+              </p>
+            </div>
+          )}
         </div>
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
           borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center",
@@ -2894,6 +2921,176 @@ function CierreSlide({ csmName }: { csmName: string }) {
 
 export { PortadaSlide, AgendaSlide, SeparadorSlide, InsightsFinalesSlide, UpdatesSlide, CierreSlide };
 
+/* ════════════════════════════════════════════════════════════
+   AnalisisEstrategicoSlide — solo si con_ia = true
+   Renderiza analisis_estrategico del response
+══════════════════════════════════════════════════════════════ */
+
+export interface AnalisisEstrategicoData {
+  resumen_ejecutivo?: string;
+  highlights_positivos?: string[];
+  highlights_negativos?: string[];
+  alertas?: { nivel?: string; mensaje?: string }[];
+  talking_points?: string[];
+  recomendaciones?: string[];
+}
+
+export function AnalisisEstrategicoSlide({
+  analisis, theme, clientName, periodLabel, pageNum = 1, totalPages = 1,
+}: {
+  analisis: AnalisisEstrategicoData;
+  theme: Theme;
+  clientName: string;
+  periodLabel: string;
+  pageNum?: number;
+  totalPages?: number;
+}) {
+  const t = tok(theme);
+  const d = theme === 'dark';
+
+  const badgeColor: Record<string, string> = {
+    alto: '#EF4444', high: '#EF4444',
+    medio: '#F59E0B', medium: '#F59E0B',
+    bajo: '#22C55E', low: '#22C55E',
+  };
+
+  return (
+    <SlideShell id="ANALISIS-IA" theme={theme}>
+      <SlideHeader title="Análisis Estratégico IA" subtitle={`${clientName} · ${periodLabel}`} theme={theme} />
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '0 20px 8px', overflow: 'hidden' }}>
+
+        {/* Left column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+          {/* Resumen ejecutivo */}
+          {analisis.resumen_ejecutivo && (
+            <div style={{
+              padding: '12px 14px', borderRadius: 12,
+              background: d ? 'rgba(124,77,255,0.10)' : '#F3F0FF',
+              border: `1px solid ${d ? 'rgba(124,77,255,0.25)' : '#C4B5FD'}`,
+              flex: 1, overflow: 'hidden',
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#9B7FFF', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                Resumen ejecutivo
+              </p>
+              <p style={{
+                fontSize: 12, color: t.textPrimary, lineHeight: 1.6, margin: 0,
+                display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              } as React.CSSProperties}>
+                {analisis.resumen_ejecutivo}
+              </p>
+            </div>
+          )}
+
+          {/* Talking points */}
+          {analisis.talking_points && analisis.talking_points.length > 0 && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 12,
+              background: t.cardBg, border: t.cardBorder,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                💬 Lo que puedes decir en la reunión
+              </p>
+              <ol style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {analisis.talking_points.slice(0, 3).map((tp, i) => (
+                  <li key={i} style={{ fontSize: 11, color: t.textPrimary, lineHeight: 1.4 }}>{tp}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+
+        {/* Right column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+          {/* Highlights positivos */}
+          {analisis.highlights_positivos && analisis.highlights_positivos.length > 0 && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 12,
+              background: d ? 'rgba(34,197,94,0.08)' : '#F0FDF4',
+              border: `1px solid ${d ? 'rgba(34,197,94,0.2)' : '#BBF7D0'}`,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#22C55E', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                ✅ Positivos
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {analisis.highlights_positivos.slice(0, 3).map((h, i) => (
+                  <li key={i} style={{ fontSize: 11, color: t.textPrimary, lineHeight: 1.4 }}>{h}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Highlights negativos */}
+          {analisis.highlights_negativos && analisis.highlights_negativos.length > 0 && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 12,
+              background: d ? 'rgba(239,68,68,0.07)' : '#FFF1F2',
+              border: `1px solid ${d ? 'rgba(239,68,68,0.2)' : '#FECDD3'}`,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                ⚠️ A mejorar
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {analisis.highlights_negativos.slice(0, 3).map((h, i) => (
+                  <li key={i} style={{ fontSize: 11, color: t.textPrimary, lineHeight: 1.4 }}>{h}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Recomendaciones */}
+          {analisis.recomendaciones && analisis.recomendaciones.length > 0 && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 12,
+              background: t.cardBg, border: t.cardBorder,
+              flex: 1,
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+                Recomendaciones
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {analisis.recomendaciones.slice(0, 3).map((r, i) => (
+                  <div key={i} style={{
+                    padding: '5px 8px', borderRadius: 8, fontSize: 11, color: t.textPrimary, lineHeight: 1.4,
+                    background: d ? 'rgba(255,255,255,0.04)' : '#F8FAFC',
+                    border: `1px solid ${d ? 'rgba(255,255,255,0.07)' : '#E2E8F0'}`,
+                  }}>
+                    {i + 1}. {r}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alertas de análisis */}
+          {analisis.alertas && analisis.alertas.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {analisis.alertas.slice(0, 2).map((a, i) => {
+                const nivel = (a.nivel || 'bajo').toLowerCase();
+                const bc = badgeColor[nivel] || '#94A3B8';
+                return (
+                  <div key={i} style={{
+                    padding: '6px 10px', borderRadius: 8,
+                    background: `${bc}12`, border: `1px solid ${bc}35`,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 6,
+                      background: `${bc}25`, color: bc, flexShrink: 0,
+                    }}>{(a.nivel || 'bajo').toUpperCase()}</span>
+                    <span style={{ fontSize: 11, color: t.textPrimary, lineHeight: 1.4 }}>{a.mensaje}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="IA · Análisis estratégico" />
+    </SlideShell>
+  );
+}
+
 /* ─── Insight Panel ─── */
 
 function InsightPanel({ text, source, theme }: { text: string; source: 'ai' | 'manual'; theme: Theme }) {
@@ -2937,6 +3134,7 @@ interface SlideCanvasProps {
   product: "DI" | "BGC" | "CE";
   data: Record<string, BlockRow[]>;
   ceFlows?: CeFlowData[];
+  meta?: Record<string, any>;
   theme: Theme;
   clientName: string;
   periodLabel: string;
@@ -2946,13 +3144,13 @@ interface SlideCanvasProps {
   insightSource?: 'ai' | 'manual';
 }
 
-export function SlideCanvas({ slideId, product, data, ceFlows, theme, clientName, periodLabel, pageNum = 1, totalPages = 1, insightText, insightSource }: SlideCanvasProps) {
+export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clientName, periodLabel, pageNum = 1, totalPages = 1, insightText, insightSource }: SlideCanvasProps) {
   const p = { data, theme, clientName, periodLabel, pageNum, totalPages };
 
   const resolveSlide = (): React.ReactElement | null => {
     if (product === "DI") {
       switch (slideId) {
-        case "1_metricas_generales":      return <Di1Slide  {...p} />;
+        case "1_metricas_generales":      return <Di1Slide  {...p} convTotalGlobal={meta?.conversion_total_global} convPromedioPorFlujo={meta?.conversion_promedio_flujos} />;
         case "2_usuarios_reintentos":     return <Di2Slide  {...p} />;
         case "3_validaciones_doc_rostro": return <Di3Slide  {...p} />;
         case "4_historico_3meses":        return <Di4Slide  {...p} />;
