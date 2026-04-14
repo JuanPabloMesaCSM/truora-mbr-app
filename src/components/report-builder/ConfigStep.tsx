@@ -162,6 +162,7 @@ interface ConfigStepProps {
   onBack: () => void;
   onContinue: () => void;
   onReloadClients: () => void;
+  onConfigureClientId: () => void;
 }
 
 export function ConfigStep({
@@ -169,7 +170,7 @@ export function ConfigStep({
   clients, selectedClientId, setSelectedClientId,
   periodValue, setPeriodValue,
   isLoading, canContinue, isAdmin,
-  onBack, onContinue, onReloadClients,
+  onBack, onContinue, onReloadClients, onConfigureClientId,
 }: ConfigStepProps) {
   const color = PRODUCT_COLORS[product];
 
@@ -333,12 +334,32 @@ export function ConfigStep({
               style={{
                 padding: '12px 14px',
                 borderRadius: 10,
-                background: 'rgba(239,68,68,0.08)',
+                background: 'rgba(239,68,68,0.06)',
                 border: '1px solid rgba(239,68,68,0.25)',
                 fontSize: 12, color: '#FCA5A5', lineHeight: 1.5,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
               }}
             >
-              <strong>{selectedClient?.nombre}</strong> no tiene un CLIENT_ID configurado para {product}. Configúralo en el panel de administración.
+              <span>
+                <strong>{selectedClient?.nombre}</strong> no tiene CLIENT_ID para {product}.
+              </span>
+              <button
+                onClick={onConfigureClientId}
+                style={{
+                  flexShrink: 0,
+                  fontSize: 11, fontWeight: 700,
+                  padding: '5px 12px', borderRadius: 8,
+                  background: 'rgba(239,68,68,0.15)',
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  color: '#FCA5A5', cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; }}
+              >
+                Configurar →
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

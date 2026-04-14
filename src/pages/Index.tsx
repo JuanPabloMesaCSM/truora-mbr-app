@@ -312,6 +312,15 @@ const Index = () => {
     navigate('/login');
   };
 
+  const handleConfigureClientId = () => {
+    if (!selectedClient) return;
+    setClientIdModal({
+      product,
+      clientId: selectedClient.id,
+      clientName: selectedClient.nombre,
+    });
+  };
+
   /* ─── Generate report ─── */
   const handleGenerate = async () => {
     if (!canGenerate || !selectedClient || !periodData || !csmProfile) return;
@@ -455,6 +464,7 @@ const Index = () => {
           onBack={handleBackToWelcome}
           onContinue={handleContinueToBuilder}
           onReloadClients={() => loadSessionData(userEmail)}
+          onConfigureClientId={handleConfigureClientId}
         />
       )}
 
