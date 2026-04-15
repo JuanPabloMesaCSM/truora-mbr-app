@@ -823,20 +823,49 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
   const t = tok(theme);
+  const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["7_razones_doc"] || [];
   return (
     <SlideShell id="DI-7" theme={theme}>
-      <SlideHeader title={`Top 5 Rechazos: Documento — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
-      <div style={{ ...bodyStyle }}>
+      <SlideHeader title={`Documento — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={bodyStyle}>
+        {/* Left: gauge documento */}
+        <GaugeColumn
+          label="Documento"
+          pct={parseFloat(b?.col3 || "0")}
+          total={parseInt(b?.col1 || "0", 10)}
+          exitosas={parseInt(b?.col2 || "0", 10)}
+          expirados={parseInt(b?.col11 || "0", 10)}
+          declinados={parseInt(b?.col_extra1 || "0", 10)}
+          theme={theme}
+        />
+        {/* Right: razones de rechazo */}
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
-          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
+          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
           display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones · Documento</p>
-          <RejectionList rows={rows} theme={theme} />
+          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
+            {rows.map(r => {
+              const codigo = r.col1 || "";
+              const count  = parseInt(r.col2 || "0", 10);
+              const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+              return (
+                <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                    color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                    {count.toLocaleString("es-CO")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Rechazos Documento" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Documento" />
     </SlideShell>
   );
 }
@@ -846,20 +875,49 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
   const t = tok(theme);
+  const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["8_razones_rostro"] || [];
   return (
     <SlideShell id="DI-8" theme={theme}>
-      <SlideHeader title={`Top 5 Rechazos: Rostro — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
-      <div style={{ ...bodyStyle }}>
+      <SlideHeader title={`Rostro — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={bodyStyle}>
+        {/* Left: gauge rostro */}
+        <GaugeColumn
+          label="Rostro"
+          pct={parseFloat(b?.col8 || "0")}
+          total={parseInt(b?.col6 || "0", 10)}
+          exitosas={parseInt(b?.col7 || "0", 10)}
+          expirados={parseInt(b?.col_extra2 || "0", 10)}
+          declinados={parseInt(b?.col_extra3 || "0", 10)}
+          theme={theme}
+        />
+        {/* Right: razones de rechazo */}
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
-          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
+          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
           display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones · Reconocimiento Facial</p>
-          <RejectionList rows={rows} theme={theme} />
+          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
+            {rows.map(r => {
+              const codigo = r.col1 || "";
+              const count  = parseInt(r.col2 || "0", 10);
+              const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+              return (
+                <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                    color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                    {count.toLocaleString("es-CO")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Rechazos Rostro" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Rostro" />
     </SlideShell>
   );
 }
