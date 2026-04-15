@@ -4,72 +4,94 @@ import jsPDF from 'jspdf';
 const SLIDE_W = 1280;
 const SLIDE_H = 720;
 
-interface Saved {
-  el: HTMLElement;
-  props: Partial<CSSStyleDeclaration>;
-}
-
-function saveAndSet(el: HTMLElement, overrides: Partial<CSSStyleDeclaration>): Saved {
-  const props: Partial<CSSStyleDeclaration> = {};
-  for (const key of Object.keys(overrides) as (keyof CSSStyleDeclaration)[]) {
-    props[key] = el.style[key] as string;
-  }
-  Object.assign(el.style, overrides);
-  return { el, props };
-}
-
-function restoreAll(saved: Saved[]): void {
-  for (const { el, props } of saved) {
-    Object.assign(el.style, props);
-  }
+/**
+ * Copy Chart.js canvas pixel data from the original slide to its clone.
+ * cloneNode(true) copies the <canvas> element but NOT its pixel data —
+ * Chart.js renders at runtime so we must copy it manually.
+ */
+function copyCanvasData(from: HTMLElement, to: HTMLElement): void {
+  const origCanvases = from.querySelectorAll<HTMLCanvasElement>('canvas');
+  const cloneCanvases = to.querySelectorAll<HTMLCanvasElement>('canvas');
+  origCanvases.forEach((orig, i) => {
+    const dest = cloneCanvases[i];
+    if (!dest || orig.width === 0 || orig.height === 0) return;
+    dest.width = orig.width;
+    dest.height = orig.height;
+    const ctx = dest.getContext('2d');
+    if (ctx) ctx.drawImage(orig, 0, 0);
+  });
 }
 
 /**
- * Batch-prepare the container for PDF export:
- *  - Remove transform:scale from all [data-pdf-inner] elements (ScaledSlide inner)
- *  - Expand [data-pdf-outer] containers to 1280×720 and clear overflow
- *  - Clear overflow clips on the main container
+ * Capture a slide at native 1280×720 WITHOUT touching the original DOM.
  *
- * Returns a restore function. Call once BEFORE capturing any slide,
- * call restore once AFTER all slides are captured.
+ * Strategy:
+ *  1. Clone the slide element (no pixel data for canvases yet)
+ *  2. Copy Chart.js canvas pixel data from original → clone
+ *  3. Place clone in an off-screen fixed container at 1280×720
+ *  4. Release overflow clips on all clone descendants
+ *  5. Capture with html2canvas
+ *  6. Remove the off-screen container
+ *
+ * The original DOM is never modified, so no layout thrashing,
+ * no ResizeObserver re-triggers, and no page-bugging after export.
  */
-function prepareForExport(container: HTMLElement): () => void {
-  const saved: Saved[] = [];
+async function captureNative(slide: HTMLElement): Promise<HTMLCanvasElement> {
+  // 1. Clone
+  const clone = slide.cloneNode(true) as HTMLElement;
 
-  // 1. All ScaledSlide inner divs — remove the scale transform
-  container.querySelectorAll<HTMLElement>('[data-pdf-inner]').forEach(inner => {
-    saved.push(saveAndSet(inner, {
-      transform: 'none',
-      width: SLIDE_W + 'px',
-      height: SLIDE_H + 'px',
-    }));
+  // 2. Set clone to native 1280×720, no transforms
+  clone.style.position = 'absolute';
+  clone.style.top = '0';
+  clone.style.left = '0';
+  clone.style.width = SLIDE_W + 'px';
+  clone.style.height = SLIDE_H + 'px';
+  clone.style.transform = 'none';
+  clone.style.overflow = 'hidden';
+
+  // 3. Off-screen host
+  const host = document.createElement('div');
+  host.style.cssText = [
+    'position:fixed',
+    'top:-9999px',
+    'left:0',
+    `width:${SLIDE_W}px`,
+    `height:${SLIDE_H}px`,
+    'overflow:visible',
+    'z-index:-9999',
+    'pointer-events:none',
+  ].join(';');
+  host.appendChild(clone);
+  document.body.appendChild(host);
+
+  // 4. Release overflow clips inside clone (now that it's in the document,
+  //    computed styles are available)
+  clone.querySelectorAll<HTMLElement>('*').forEach(el => {
+    const ov = window.getComputedStyle(el).overflow;
+    if (ov === 'hidden' || ov === 'clip') el.style.overflow = 'visible';
   });
 
-  // 2. All ScaledSlide outer divs — expand to full slide size
-  container.querySelectorAll<HTMLElement>('[data-pdf-outer]').forEach(outer => {
-    saved.push(saveAndSet(outer, {
-      width: SLIDE_W + 'px',
-      height: SLIDE_H + 'px',
-      minHeight: SLIDE_H + 'px',
-      overflow: 'visible',
-    }));
-  });
+  // 5. Copy canvas pixel data AFTER the clone is in the document
+  copyCanvasData(slide, clone);
 
-  // 3. Release overflow clip on the scroll container itself
-  saved.push(saveAndSet(container, { overflow: 'visible' }));
+  // 6. One rAF so the browser has painted the off-screen clone
+  await new Promise<void>(resolve => requestAnimationFrame(resolve));
 
-  return () => restoreAll(saved);
-}
-
-/**
- * Wait until every <img> inside `el` is fully decoded.
- */
-function waitForImages(el: HTMLElement): Promise<void> {
-  const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img'));
-  const promises = imgs
-    .filter(img => !img.complete)
-    .map(img => img.decode().catch(() => undefined));
-  return Promise.all(promises).then(() => undefined);
+  try {
+    return await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      scrollX: 0,
+      scrollY: 0,
+      width: SLIDE_W,
+      height: SLIDE_H,
+      windowWidth: SLIDE_W,
+      windowHeight: SLIDE_H,
+    });
+  } finally {
+    document.body.removeChild(host);
+  }
 }
 
 export const exportPDF = (
@@ -81,7 +103,7 @@ export const exportPDF = (
   const container = document.getElementById('canvas-mbr-slides');
   if (!container) return;
 
-  // Collect slides: .slide-with-insight wrappers + standalone .slide-page
+  // Collect slides: .slide-with-insight wrappers + standalone .slide-page elements
   const slides: HTMLElement[] = [];
   container.querySelectorAll<HTMLElement>('.slide-with-insight, .slide-page').forEach(el => {
     if (el.classList.contains('slide-page') && el.closest('.slide-with-insight')) return;
@@ -102,68 +124,9 @@ export const exportPDF = (
     compress: true,
   });
 
-  // ── PHASE 1: Prepare the entire DOM in one pass ────────────────
-  // Suppress ScaledSlide ResizeObservers so React doesn't re-render charts
-  (window as any).__pdfExporting = true;
-
-  // Expand all ScaledSlide containers at once (one layout reflow, not 30)
-  const restore = prepareForExport(container);
-
-  // Wait for all images in the whole container + 500ms for layout/paint to settle
-  // (one-time wait, not per-slide)
-  const ready = waitForImages(container).then(
-    () => new Promise<void>(resolve => setTimeout(resolve, 500)),
-  );
-
-  // ── PHASE 2: Capture slides sequentially (no delays between them) ──
-  const captureSlide = (slide: HTMLElement): Promise<HTMLCanvasElement> => {
-    slide.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
-
-    return html2canvas(slide, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      scrollX: -window.scrollX,
-      scrollY: -window.scrollY,
-      width: SLIDE_W,
-      height: SLIDE_H,
-      windowWidth: SLIDE_W,
-      windowHeight: SLIDE_H,
-      onclone: (_doc, clonedEl) => {
-        // Safety net on the clone itself
-        clonedEl.style.width = SLIDE_W + 'px';
-        clonedEl.style.height = SLIDE_H + 'px';
-        clonedEl.style.transform = 'none';
-        clonedEl.style.position = 'relative';
-        clonedEl.style.overflow = 'hidden';
-
-        // Clear any remaining transforms / tight constraints in clone ancestors
-        let parent = clonedEl.parentElement;
-        while (parent) {
-          parent.style.transform = 'none';
-          parent.style.overflow = 'visible';
-          parent.style.maxWidth = 'none';
-          if (parseInt(parent.style.width || '0', 10) > 0 && parseInt(parent.style.width, 10) < SLIDE_W) {
-            parent.style.width = SLIDE_W + 'px';
-            parent.style.height = SLIDE_H + 'px';
-          }
-          parent = parent.parentElement;
-        }
-
-        // Release overflow clips inside the slide
-        clonedEl.querySelectorAll<HTMLElement>('*').forEach(child => {
-          const ov = window.getComputedStyle(child).overflow;
-          if (ov === 'hidden' || ov === 'clip') {
-            child.style.overflow = 'visible';
-          }
-        });
-      },
-    });
-  };
-
   const captureNext = (index: number): Promise<void> => {
     if (index >= slides.length) return Promise.resolve();
-    return captureSlide(slides[index]).then(canvas => {
+    return captureNative(slides[index]).then(canvas => {
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
       if (index > 0) pdf.addPage([SLIDE_W, SLIDE_H], 'landscape');
       pdf.addImage(imgData, 'JPEG', 0, 0, SLIDE_W, SLIDE_H);
@@ -171,13 +134,10 @@ export const exportPDF = (
     });
   };
 
-  ready
-    .then(() => captureNext(0))
+  captureNext(0)
     .then(() => pdf.save(nombreArchivo))
     .catch(err => console.error('exportPDF error:', err))
     .finally(() => {
-      restore();
-      (window as any).__pdfExporting = false;
       if (onEnd) onEnd();
     });
 };

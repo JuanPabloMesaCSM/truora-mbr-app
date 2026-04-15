@@ -63,9 +63,6 @@ function ScaledSlide({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(entries => {
-      // Suppress updates while PDF export is modifying the DOM to avoid
-      // destroying and recreating Chart.js instances mid-capture
-      if ((window as any).__pdfExporting) return;
       const w = entries[0]?.contentRect.width;
       if (w) setScale(w / 1280);
     });
@@ -76,12 +73,12 @@ function ScaledSlide({ children }: { children: React.ReactNode }) {
   const height = Math.round(720 * scale);
 
   return (
-    <div ref={containerRef} data-pdf-outer style={{
+    <div ref={containerRef} style={{
       width: '100%', height, position: 'relative',
       overflow: 'hidden', borderRadius: 12,
       boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
     }}>
-      <div data-pdf-inner style={{
+      <div style={{
         width: 1280, height: 720,
         transform: `scale(${scale})`,
         transformOrigin: 'top left',
