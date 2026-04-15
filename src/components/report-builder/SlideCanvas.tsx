@@ -771,49 +771,95 @@ function HBarChart({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
   );
 }
 
-function Di78Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
+/* helper compartido para la lista de razones de rechazo */
+function RejectionList({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
+  const t = tok(theme);
+  return (
+    <div style={{ display: "flex", gap: 24, flex: 1 }}>
+      {/* Columna izquierda */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0 }}>
+        {rows.slice(0, Math.ceil(rows.length / 2)).map(r => {
+          const codigo = r.col1 || "";
+          const count  = parseInt(r.col2 || "0", 10);
+          const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+          return (
+            <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                {count.toLocaleString("es-CO")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {/* Columna derecha */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0 }}>
+        {rows.slice(Math.ceil(rows.length / 2)).map(r => {
+          const codigo = r.col1 || "";
+          const count  = parseInt(r.col2 || "0", 10);
+          const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+          return (
+            <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                {count.toLocaleString("es-CO")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   data: Record<string, BlockRow[]>; theme: Theme;
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
   const t = tok(theme);
-  const docRows    = data["7_razones_doc"]    || [];
-  const rostroRows = data["8_razones_rostro"] || [];
-
+  const rows = data["7_razones_doc"] || [];
   return (
-    <SlideShell id="DI-7-8" theme={theme}>
-      <SlideHeader title={`Top Razones de Rechazo — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
-      <div style={bodyStyle}>
-        {[
-          { label: "Documento", rows: docRows },
-          { label: "Rostro",    rows: rostroRows },
-        ].map(col => (
-          <div key={col.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
-            boxShadow: t.cardShadow, borderRadius: 14, padding: "16px 20px",
-            display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-              textTransform: "uppercase", letterSpacing: "0.14em" }}>{col.label}</p>
-            <div style={{ flex: 1, overflowY: "auto" }}>
-              {col.rows.map(r => {
-                const codigo = r.col1 || "";
-                const count  = parseInt(r.col2 || "0", 10);
-                const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
-                return (
-                  <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <RazonRechazo codigo={codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
-                      color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
-                      {count.toLocaleString("es-CO")}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+    <SlideShell id="DI-7" theme={theme}>
+      <SlideHeader title={`Top 5 Rechazos: Documento — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle }}>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
+          display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones · Documento</p>
+          <RejectionList rows={rows} theme={theme} />
+        </div>
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Razones de Rechazo" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Rechazos Documento" />
+    </SlideShell>
+  );
+}
+
+function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+  const rows = data["8_razones_rostro"] || [];
+  return (
+    <SlideShell id="DI-8" theme={theme}>
+      <SlideHeader title={`Top 5 Rechazos: Rostro — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle }}>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
+          display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones · Reconocimiento Facial</p>
+          <RejectionList rows={rows} theme={theme} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Rechazos Rostro" />
     </SlideShell>
   );
 }
@@ -830,8 +876,7 @@ function Di9Slide({ data, theme, clientName, periodLabel, pageNum = 9 }: {
   const abandonoInst     = useRef<Chart | null>(null);
   const t = tok(theme);
 
-  const abandonoRows   = data["9_abandono"]    || [];
-  const declinadosRows = data["10_declinados"] || [];
+  const abandonoRows = data["9_abandono"] || [];
 
   const cancelados = abandonoRows.filter(r => r.col1 === "canceled")
     .reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
@@ -866,17 +911,17 @@ function Di9Slide({ data, theme, clientName, periodLabel, pageNum = 9 }: {
     <SlideShell id="DI-9" theme={theme}>
       <SlideHeader title={`Análisis de Abandono — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
       <div style={bodyStyle}>
-        {/* Left: doughnut abandono */}
-        <div style={{ width: "44%", background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+        {/* Donut centrado */}
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
           borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+          alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <p style={{ margin: "0 0 8px", alignSelf: "flex-start", fontSize: 11, fontWeight: 700,
             color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Abandono</p>
-          <div style={{ position: "relative", width: 280, height: 280, flexShrink: 0 }}>
+          <div style={{ position: "relative", width: 320, height: 320, flexShrink: 0 }}>
             <canvas ref={abandonoChartRef} style={{ width: "100%", height: "100%" }} />
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center", pointerEvents: "none", paddingBottom: 36 }}>
-              <span style={{ fontSize: 40, fontWeight: 800, color: "#F59E0B", lineHeight: 1 }}>
+              <span style={{ fontSize: 48, fontWeight: 800, color: "#F59E0B", lineHeight: 1 }}>
                 {totalAband.toLocaleString("es-CO")}
               </span>
               <span style={{ fontSize: 11, color: t.textMuted, textTransform: "uppercase",
@@ -884,15 +929,56 @@ function Di9Slide({ data, theme, clientName, periodLabel, pageNum = 9 }: {
             </div>
           </div>
         </div>
-        {/* Right: bar declinados */}
-        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
-          borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos declinados</p>
-          <HBarChart rows={declinadosRows} theme={theme} />
+        {/* KPIs abandono */}
+        <div style={{ width: "38%", display: "flex", flexDirection: "column", gap: 16, flexShrink: 0 }}>
+          {[
+            { label: "Abandonados (expiraron)", val: expirados, pct: pctExp + "%", color: "#F59E0B" },
+            { label: "Cancelados (usuario abortó)", val: cancelados, pct: pctCan + "%", color: "#EF4444" },
+          ].map(item => (
+            <div key={item.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+              boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
+              display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.10em" }}>{item.label}</p>
+              <p style={{ margin: 0, fontSize: 40, fontWeight: 800, color: item.color, lineHeight: 1 }}>
+                {item.val.toLocaleString("es-CO")}
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: 18, fontWeight: 600, color: t.textSecondary }}>
+                {item.pct} del total
+              </p>
+            </div>
+          ))}
         </div>
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Abandono" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   DI-10b | Rechazos por Declinado
+══════════════════════════════════════════════════════════════ */
+
+function DiDeclinadosSlide({ data, theme, clientName, periodLabel, pageNum = 10 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+  const rows = data["10_declinados"] || [];
+
+  return (
+    <SlideShell id="DI-10b" theme={theme}>
+      <SlideHeader title={`Rechazos por Declinado — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={bodyStyle}>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+          boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
+          display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+            textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos de declinación</p>
+          <HBarChart rows={rows} theme={theme} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Declinados" />
     </SlideShell>
   );
 }
@@ -3297,9 +3383,10 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "4_historico_3meses":        return <Di4Slide  {...p} />;
         case "5_flujos":                  return <Di5Slide  {...p} />;
         case "6_funnel":                  return <Di6Slide  {...p} />;
-        case "7_razones_doc":             return <Di78Slide {...p} />;
-        case "8_razones_rostro":          return null; // Already rendered inside Di78Slide
+        case "7_razones_doc":             return <Di7Slide  {...p} />;
+        case "8_razones_rostro":          return <Di8Slide  {...p} />;
         case "9_abandono":                return <Di9Slide  {...p} />;
+        case "10_declinados":             return <DiDeclinadosSlide {...p} />;
         case "11_friccion_usuario":       return <Di10Slide {...p} />;
         default:                          return null;
       }
