@@ -59,18 +59,24 @@ export function CenterCanvas({
     // Cuando el CSM elige flujos específicos (no todos), omitir slides globales CE
     const skipCeGlobal = product === 'CE' && (isCeFlowSpecific || meta.modo === 'flujos');
 
+    /* Módulos CE que no son slides propios sino controles de los slides por flujo */
+    const CE_FLOW_MODULES = new Set(['4_funnel_generico', '4b_funnel_steps']);
+
     const dataSlideIds: string[] = [];
     if (!skipCeGlobal) dataSlideIds.push(modules.base.id);
     for (const mod of modules.optional) {
       if (!activeModuleIds.includes(mod.id)) continue;
       if (skipCeGlobal && CE_GLOBAL_IDS.has(mod.id)) continue;
+      if (CE_FLOW_MODULES.has(mod.id)) continue; // no tienen renderer propio
       dataSlideIds.push(mod.id);
     }
     if (product === 'CE' && ceFlows.length > 0) {
+      const showOtb   = activeModuleIds.includes('4_funnel_generico');
+      const showSteps = activeModuleIds.includes('4b_funnel_steps');
       for (let i = 0; i < ceFlows.length; i++) {
-        dataSlideIds.push(`ce_sep_${i}`);
-        dataSlideIds.push(`ce_otb_${i}`);
-        dataSlideIds.push(`ce_steps_${i}`);
+        if (showOtb || showSteps) dataSlideIds.push(`ce_sep_${i}`);
+        if (showOtb)   dataSlideIds.push(`ce_otb_${i}`);
+        if (showSteps) dataSlideIds.push(`ce_steps_${i}`);
         if (ceFlows[i].tiene_vrf) dataSlideIds.push(`ce_vrf_${i}`);
       }
     }
