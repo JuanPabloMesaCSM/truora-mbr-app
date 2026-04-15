@@ -16,7 +16,7 @@ interface CenterCanvasProps {
   clientName: string | null;
   periodLabel: string;
   activeModuleIds: string[];
-  insightsAi: boolean;
+  insightsMode: 'ai' | 'manual' | null;
   moduleInsights?: Record<string, ModuleInsight>;
   overlayStatus: "generating" | "success" | "error" | null;
   reportData?: any;
@@ -26,19 +26,30 @@ interface CenterCanvasProps {
   onNewReport: () => void;
   onRetry: () => void;
   onBack?: () => void;
+  onModuleInsightChange?: (moduleId: string, text: string) => void;
+  generalInsightText?: string;
+  onGeneralInsightChange?: (text: string) => void;
 }
 
 const cardTransitionEnter = { duration: 0.4, ease: [0.34, 1.56, 0.64, 1] as const };
 const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
-  product, clientName, periodLabel, activeModuleIds, insightsAi,
+  product, clientName, periodLabel, activeModuleIds, insightsMode,
   moduleInsights = {}, overlayStatus, reportData, theme, isCeFlowSpecific, onOverlayClose, onNewReport, onRetry, onBack,
+  onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: CenterCanvasProps) {
-  const getSlideInsight = (id: string): { insightText?: string; insightSource?: 'ai' | 'manual' } => {
+  const getSlideInsight = (id: string) => {
     const mi = moduleInsights[id];
     if (!mi || !mi.mode) return {};
-    if (mi.mode === 'manual' && mi.text) return { insightText: mi.text, insightSource: 'manual' };
+    if (mi.mode === 'manual') {
+      return {
+        insightText: mi.text || '',
+        insightSource: 'manual' as const,
+        insightEditable: true,
+        onInsightChange: onModuleInsightChange ? (text: string) => onModuleInsightChange(id, text) : undefined,
+      };
+    }
     if (mi.mode === 'ai') {
       const rows = reportData && reportData.data ? reportData.data['insight_' + id] : undefined;
       const text = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
@@ -82,7 +93,8 @@ export function CenterCanvas({
     }
 
     // portada + agenda + sep-metricas + data + (sep-insights + insights si AI) + sep-updates + updates + cierre
-    const totalPages = 3 + dataSlideIds.length + (insightsAi ? 2 : 0) + 3;
+    const hasInsights = insightsMode !== null;
+    const totalPages = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + 3;
 
     const SlideWrap = ({ children }: { children: React.ReactNode }) => (
       <div className="rounded-xl overflow-hidden shadow-2xl" style={{ width: 1280, height: 720, flexShrink: 0 }}>
@@ -153,14 +165,15 @@ export function CenterCanvas({
             })}
 
             {/* Separador + Insights IA */}
-            {insightsAi && (
+            {hasInsights && (
               <>
                 <SlideWrap><SeparadorSlide src="/assets/mbr/separados-insights.png" alt="Análisis estratégico" /></SlideWrap>
                 <SlideWrap>
                   <InsightsFinalesSlide
-                    insightsAi={insightsAi}
-                    insightText={reportData.data && reportData.data['insights_generales'] && reportData.data['insights_generales'][0] ? reportData.data['insights_generales'][0].col1 || '' : ''}
-                    onInsightChange={() => {}}
+                    insightsAi={insightsMode === 'ai'}
+                    insightText={insightsMode === 'ai' ? (reportData.data && reportData.data['insights_generales'] && reportData.data['insights_generales'][0] ? reportData.data['insights_generales'][0].col1 || '' : '') : (generalInsightText || '')}
+                    onInsightChange={onGeneralInsightChange}
+                    theme={theme}
                   />
                 </SlideWrap>
               </>
@@ -188,8 +201,8 @@ export function CenterCanvas({
   }
 
   const fixedOpening = ["Portada", "Agenda", "Separador"];
-  const fixedClosing = insightsAi
-    ? ["Truora AI", "Updates", "Cierre"]
+  const fixedClosing = insightsMode !== null
+    ? [insightsMode === 'ai' ? "Truora AI" : "Análisis", "Updates", "Cierre"]
     : ["Updates", "Cierre"];
 
   let nextSlide = fixedOpening.length + 1;
@@ -290,7 +303,7 @@ export function CenterCanvas({
             ))}
           </div>
           <p className="text-[9px] text-white/20 mt-1.5 text-center">
-            {insightsAi ? "Truora AI · " : ""}Updates · Cierre — siempre incluidos
+            {insightsMode ? (insightsMode === 'ai' ? "Truora AI · " : "Análisis · ") : ""}Updates · Cierre — siempre incluidos
           </p>
         </div>
 

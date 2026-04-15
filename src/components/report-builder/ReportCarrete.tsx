@@ -276,7 +276,7 @@ interface ReportCarreteProps {
   periodLabel: string;
   csmName: string;
   activeModuleIds: string[];
-  insightsAi: boolean;
+  insightsMode: 'ai' | 'manual' | null;
   moduleInsights: Record<string, ModuleInsight>;
   ceFlows: CeFlowData[];
   theme: Theme;
@@ -287,6 +287,9 @@ interface ReportCarreteProps {
   onRetry: () => void;
   onViewPresentation: () => void;
   onNewReport: () => void;
+  onModuleInsightChange?: (moduleId: string, text: string) => void;
+  generalInsightText?: string;
+  onGeneralInsightChange?: (text: string) => void;
 }
 
 /* ────────────────────────────────────────────────────────
@@ -300,10 +303,11 @@ const CE_GLOBAL_IDS = new Set([
 
 export function ReportCarrete({
   product, clientName, periodLabel, csmName,
-  activeModuleIds, insightsAi, moduleInsights,
+  activeModuleIds, insightsMode, moduleInsights,
   ceFlows, theme, reportData,
   overlayStatus, isCeFlowSpecific, onOverlayClose, onRetry,
   onViewPresentation, onNewReport,
+  onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: ReportCarreteProps) {
   const color   = PRODUCT_COLORS[product];
   const modules = MODULES[product];
@@ -344,13 +348,21 @@ export function ReportCarrete({
     }
   }
 
-  const totalSlides = 3 + dataSlideIds.length + (insightsAi ? 2 : 0) + 3;
+  const hasInsights = insightsMode !== null;
+  const totalSlides = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + 3;
 
   /* ── insight helper ── */
   const getSlideInsight = (id: string) => {
     const mi = moduleInsights[id];
     if (!mi || !mi.mode) return {};
-    if (mi.mode === 'manual' && mi.text) return { insightText: mi.text, insightSource: 'manual' as const };
+    if (mi.mode === 'manual') {
+      return {
+        insightText: mi.text || '',
+        insightSource: 'manual' as const,
+        insightEditable: hasData,
+        onInsightChange: onModuleInsightChange ? (text: string) => onModuleInsightChange(id, text) : undefined,
+      };
+    }
     if (mi.mode === 'ai') {
       const rows = data['insight_' + id];
       const text = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
@@ -535,7 +547,7 @@ export function ReportCarrete({
                   </DataSlide>
                 </ScaledSlide>
                 {/* Per-metric insight toggle */}
-                {metricInsightText && insightsAi && (
+                {metricInsightText && insightsMode === 'ai' && (
                   <MetricInsightPanel text={metricInsightText} />
                 )}
               </CarreteItem>
@@ -543,18 +555,19 @@ export function ReportCarrete({
           })}
         </AnimatePresence>
 
-        {/* Separador + Insights AI */}
-        {insightsAi && (
+        {/* Separador + Insights (AI o Manual) */}
+        {hasInsights && (
           <>
             <CarreteItem num={nextNum()} label="Separador — Análisis estratégico">
               <SeparadorSlide src="/assets/mbr/separados-insights.png" alt="Análisis estratégico" />
             </CarreteItem>
-            <CarreteItem num={nextNum()} label="Insights Truora AI">
-              <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 120} shimmerLabel="Insights AI">
+            <CarreteItem num={nextNum()} label={insightsMode === 'ai' ? 'Insights Truora AI' : 'Análisis estratégico'}>
+              <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 120} shimmerLabel={insightsMode === 'ai' ? 'Insights AI' : 'Análisis manual'}>
                 <InsightsFinalesSlide
-                  insightsAi={insightsAi}
-                  insightText={data['insights_generales']?.[0]?.col1 || ''}
-                  onInsightChange={() => {}}
+                  insightsAi={insightsMode === 'ai'}
+                  insightText={insightsMode === 'ai' ? (data['insights_generales']?.[0]?.col1 || '') : (generalInsightText || '')}
+                  onInsightChange={onGeneralInsightChange}
+                  theme={theme}
                 />
               </DataSlide>
             </CarreteItem>

@@ -2759,68 +2759,96 @@ function SeparadorSlide({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-/* ── Insights Finales — IA o manual ── */
+/* ── Insights Finales — IA o manual (temático) ── */
 function InsightsFinalesSlide({
   insightsAi,
   insightText,
   onInsightChange,
+  theme = 'dark',
 }: {
   insightsAi: boolean;
   insightText?: string;
   onInsightChange?: (text: string) => void;
+  theme?: Theme;
 }) {
-  // Área disponible para texto en el recuadro de la imagen:
-  // El label "✦ Análisis estratégico" está quemado en el PNG a ≈top:118
-  // El contenido va DEBAJO de él — desde top:160 hasta bottom:644
-  // left≈52, right≈1228 (margen interior del recuadro púrpura)
-  const textStyle: React.CSSProperties = {
-    fontFamily: "'Inter', sans-serif",
-    fontSize: 17,
-    fontWeight: 450,
-    color: "#2D1B69",
-    lineHeight: 1.78,
-    margin: 0,
-    letterSpacing: "0.01em",
-  };
+  const t = tok(theme);
+  const d = theme === 'dark';
+  const accent = d ? '#4B6FFF' : '#6B4EFF';
 
   return (
-    <div className="slide-page" style={ASSET_SHELL}>
-      <img src="/assets/mbr/insights-finales.png" alt="Insights finales" style={ASSET_IMG} />
-      {/* Contenedor: empieza debajo del label "✦ Análisis estratégico", centrado verticalmente */}
+    <SlideShell id="insights_finales" theme={theme}>
+      {/* Barra acento izquierda */}
+      <div style={{ position: 'absolute', left: 0, top: 0, width: 6, height: 720, background: accent }} />
+
+      {/* Header */}
       <div style={{
-        position: "absolute",
-        top: 160, left: 68, right: 68, bottom: 76,
-        display: "flex", flexDirection: "column", justifyContent: "center",
-        padding: "0 16px",
+        position: 'absolute', top: 0, left: 0, right: 0, height: 72,
+        display: 'flex', alignItems: 'center', padding: '0 40px 0 28px',
+        borderBottom: `1px solid ${t.footerBorder}`,
+      }}>
+        <span style={{
+          fontSize: 22, fontWeight: 700, color: t.textPrimary,
+          letterSpacing: '-0.02em',
+        }}>
+          ✦ Análisis estratégico
+        </span>
+        <span style={{
+          marginLeft: 14, fontSize: 10, fontWeight: 700,
+          padding: '3px 10px', borderRadius: 5, textTransform: 'uppercase', letterSpacing: '0.06em',
+          background: insightsAi
+            ? (d ? 'rgba(75,111,255,0.2)' : 'rgba(107,78,255,0.12)')
+            : (d ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.12)'),
+          color: insightsAi ? (d ? '#818CF8' : '#6B4EFF') : '#16A34A',
+        }}>
+          {insightsAi ? 'Truora AI' : 'CSM'}
+        </span>
+      </div>
+
+      {/* Content area */}
+      <div style={{
+        position: 'absolute', top: 72, left: 28, right: 40, bottom: 32,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        padding: '24px 16px',
+        boxSizing: 'border-box', overflow: 'hidden',
       }}>
         {insightsAi ? (
           insightText ? (
             <p style={{
-              ...textStyle,
-              overflow: "hidden", display: "-webkit-box",
-              WebkitLineClamp: 10, WebkitBoxOrient: "vertical",
+              fontSize: 17, fontWeight: 450, color: t.textPrimary,
+              lineHeight: 1.78, margin: 0, letterSpacing: '0.01em',
+              overflow: 'hidden', display: '-webkit-box',
+              WebkitLineClamp: 12, WebkitBoxOrient: 'vertical',
             } as React.CSSProperties}>
               {insightText}
             </p>
           ) : (
-            <p style={{ ...textStyle, color: "#9B8EC4", fontStyle: "italic", fontSize: 15 }}>
+            <p style={{
+              fontSize: 15, fontWeight: 450, fontStyle: 'italic',
+              color: t.textMuted, lineHeight: 1.7, margin: 0,
+            }}>
               El análisis estratégico será generado automáticamente por Truora AI al generar el reporte.
             </p>
           )
         ) : (
           <textarea
-            value={insightText || ""}
+            value={insightText || ''}
             onChange={e => onInsightChange && onInsightChange(e.target.value)}
             placeholder="Escribe aquí el análisis estratégico del mes para este cliente..."
             style={{
-              ...textStyle,
-              flex: 1, width: "100%", resize: "none", border: "none", outline: "none",
-              background: "transparent", boxSizing: "border-box",
-            } as React.CSSProperties}
+              flex: 1, width: '100%', resize: 'none', border: 'none', outline: 'none',
+              fontFamily: "'Inter', sans-serif",
+              fontSize: 17, fontWeight: 450, color: t.textPrimary,
+              lineHeight: 1.78, letterSpacing: '0.01em',
+              background: d ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+              borderRadius: 12, padding: '20px 24px',
+              boxSizing: 'border-box',
+            }}
           />
         )}
       </div>
-    </div>
+
+      <SlideFooter theme={theme} pageNum={0} slideLabel="Análisis estratégico" />
+    </SlideShell>
   );
 }
 
@@ -3177,7 +3205,13 @@ export function AnalisisEstrategicoSlide({
 
 /* ─── Insight Panel ─── */
 
-function InsightPanel({ text, source, theme }: { text: string; source: 'ai' | 'manual'; theme: Theme }) {
+function InsightPanel({ text, source, theme, editable, onChange }: {
+  text: string;
+  source: 'ai' | 'manual';
+  theme: Theme;
+  editable?: boolean;
+  onChange?: (text: string) => void;
+}) {
   const t = tok(theme);
   const d = theme === 'dark';
   return (
@@ -3202,13 +3236,29 @@ function InsightPanel({ text, source, theme }: { text: string; source: 'ai' | 'm
           {source === 'ai' ? 'Generado con IA' : 'CSM'}
         </span>
       </div>
-      <p style={{
-        fontSize: 15, color: t.textPrimary, lineHeight: 1.65, margin: 0,
-        overflow: 'hidden', display: '-webkit-box',
-        WebkitLineClamp: 9, WebkitBoxOrient: 'vertical',
-      } as React.CSSProperties}>
-        {text}
-      </p>
+      {editable && source === 'manual' ? (
+        <textarea
+          value={text}
+          onChange={e => onChange && onChange(e.target.value)}
+          placeholder="Escribe tu análisis aquí..."
+          style={{
+            flex: 1, width: '100%', resize: 'none', border: 'none', outline: 'none',
+            fontFamily: "'Inter', sans-serif",
+            fontSize: 14, color: t.textPrimary, lineHeight: 1.65,
+            background: d ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+            borderRadius: 8, padding: '12px 14px',
+            boxSizing: 'border-box',
+          }}
+        />
+      ) : (
+        <p style={{
+          fontSize: 15, color: t.textPrimary, lineHeight: 1.65, margin: 0,
+          overflow: 'hidden', display: '-webkit-box',
+          WebkitLineClamp: 9, WebkitBoxOrient: 'vertical',
+        } as React.CSSProperties}>
+          {text || (editable ? '' : '—')}
+        </p>
+      )}
     </div>
   );
 }
@@ -3226,9 +3276,11 @@ interface SlideCanvasProps {
   totalPages?: number;
   insightText?: string;
   insightSource?: 'ai' | 'manual';
+  insightEditable?: boolean;
+  onInsightChange?: (text: string) => void;
 }
 
-export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clientName, periodLabel, pageNum = 1, totalPages = 1, insightText, insightSource }: SlideCanvasProps) {
+export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clientName, periodLabel, pageNum = 1, totalPages = 1, insightText, insightSource, insightEditable, onInsightChange }: SlideCanvasProps) {
   const p = { data, theme, clientName, periodLabel, pageNum, totalPages };
 
   const resolveSlide = (): React.ReactElement | null => {
@@ -3294,14 +3346,21 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
   const slide = resolveSlide();
   if (!slide) return null;
 
-  if (insightText && insightSource) {
+  const showInsight = (insightText && insightSource) || (insightEditable && insightSource === 'manual');
+  if (showInsight && insightSource) {
     return (
       <div className="slide-page" style={{
         position: 'relative', width: 1280, height: 720, flexShrink: 0,
         '--slide-insight-right': '448px',
       } as React.CSSProperties}>
         {slide}
-        <InsightPanel text={insightText} source={insightSource} theme={theme} />
+        <InsightPanel
+          text={insightText || ''}
+          source={insightSource}
+          theme={theme}
+          editable={insightEditable}
+          onChange={onInsightChange}
+        />
       </div>
     );
   }

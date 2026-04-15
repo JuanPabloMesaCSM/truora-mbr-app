@@ -97,8 +97,8 @@ interface LeftPanelProps {
   toggleModule: (id: string) => void;
   moduleInsights: Record<string, ModuleInsight>;
   setModuleInsight: (id: string, mode: 'ai' | 'manual' | null, text?: string) => void;
-  insightsAi: boolean;
-  setInsightsAi: (v: boolean) => void;
+  insightsMode: 'ai' | 'manual' | null;
+  setInsightsMode: (v: 'ai' | 'manual' | null) => void;
   insightsActivos: Record<string, boolean>;
   setInsightsActivos: (v: Record<string, boolean>) => void;
   theme: Theme;
@@ -127,7 +127,7 @@ export function LeftPanel({
   csmProfile, userEmail,
   activeModuleIds, toggleModule,
   moduleInsights, setModuleInsight,
-  insightsAi, setInsightsAi,
+  insightsMode, setInsightsMode,
   insightsActivos, setInsightsActivos,
   theme, setTheme,
   ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
@@ -363,22 +363,9 @@ export function LeftPanel({
                           })}
                         </div>
                         {insight.mode === 'manual' && (
-                          <textarea
-                            placeholder="Escribe tu análisis..."
-                            maxLength={280}
-                            value={insight.text}
-                            onChange={e => setModuleInsight(mod.id, 'manual', e.target.value)}
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                              width: '100%', marginTop: 8,
-                              fontSize: 11, padding: '8px 10px',
-                              borderRadius: 7, border: `1px solid ${S.border}`,
-                              resize: 'none', height: 60,
-                              background: S.surface2, color: S.text,
-                              fontFamily: 'inherit', boxSizing: 'border-box',
-                              outline: 'none',
-                            }}
-                          />
+                          <p style={{ fontSize: 10, marginTop: 6, color: S.dim, lineHeight: 1.4 }}>
+                            ✎ Escríbelo directamente en el slide una vez generes el reporte.
+                          </p>
                         )}
                         {insight.mode === 'ai' && (
                           <p style={{ fontSize: 10, marginTop: 6, color: S.dim }}>
@@ -419,21 +406,46 @@ export function LeftPanel({
 
         {/* ── Truora AI ── */}
         <div style={{ padding: '10px 16px' }}>
-          {/* General toggle */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Sparkles size={14} color={color} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Análisis con IA</span>
-            </div>
-            <DarkSwitch checked={insightsAi} onChange={() => setInsightsAi(!insightsAi)} />
+          {/* General insights mode selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+            <Sparkles size={14} color={color} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Análisis estratégico</span>
           </div>
-          <p style={{ fontSize: 10, color: S.dim, marginBottom: insightsAi ? 12 : 0, lineHeight: 1.4 }}>
-            Slide estratégico + insights por métrica
+          <p style={{ fontSize: 10, color: S.dim, marginBottom: 8, lineHeight: 1.4 }}>
+            Slide de conclusiones al final del reporte
           </p>
+          <div style={{ display: 'flex', gap: 5, marginBottom: 8 }}>
+            {(['ai', 'manual', null] as const).map(m => {
+              const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo' : 'Sin análisis';
+              const active = insightsMode === m;
+              return (
+                <button
+                  key={String(m)}
+                  onClick={() => setInsightsMode(m)}
+                  style={{
+                    flex: 1, padding: '5px 0', borderRadius: 6,
+                    fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                    background: active ? (m === null ? S.surface3 : color) : S.surface2,
+                    color: active ? (m === null ? S.muted : '#fff') : S.dim,
+                    border: `1px solid ${active ? (m === null ? S.border : color) : S.border}`,
+                    transition: 'all 0.12s',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
 
-          {/* Per-metric checkboxes */}
+          {insightsMode === 'manual' && (
+            <p style={{ fontSize: 10, color: S.dim, lineHeight: 1.4 }}>
+              ✎ Escríbelo directamente en el slide una vez generes el reporte.
+            </p>
+          )}
+
+          {/* Per-metric checkboxes (only for AI mode) */}
           <AnimatePresence>
-            {insightsAi && (
+            {insightsMode === 'ai' && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}

@@ -34,13 +34,14 @@ const Index = () => {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [periodValue, setPeriodValue] = useState('');
   const [activeModuleIds, setActiveModuleIds] = useState<string[]>([]);
-  const [insightsAi, setInsightsAi] = useState(true);
+  const [insightsMode, setInsightsMode] = useState<'ai' | 'manual' | null>('ai');
   const [insightsActivos, setInsightsActivos] = useState<Record<string, boolean>>({});
   const [sheetUrl, setSheetUrl] = useState('');
   const [moduleInsights, setModuleInsights] = useState<Record<string, ModuleInsight>>({});
   const setModuleInsight = (id: string, mode: 'ai' | 'manual' | null, text?: string) => {
     setModuleInsights(prev => ({ ...prev, [id]: { mode, text: text !== undefined ? text : (prev[id]?.text ?? '') } }));
   };
+  const [generalInsightText, setGeneralInsightText] = useState('');
   const [ceFlows, setCeFlows] = useState<{ flow_id: string; flow_name: string; total_procesos: number; tiene_vrf: boolean; tiene_outbound: boolean }[]>([]);
   const [selectedCeFlows, setSelectedCeFlows] = useState<Set<string>>(new Set());
   const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
@@ -339,12 +340,13 @@ const Index = () => {
       cliente: selectedClient.nombre,
       nombre_csm: csmProfile.nombre,
       csm_email: userEmail,
-      con_ia: insightsAi,
+      con_ia: insightsMode === 'ai',
       insights_activos: insightsActivos,
       ...(sheetUrl.trim() && { sheet_url: sheetUrl.trim() }),
       base_modules: [modules.base.id],
       extra_modules: activeModuleIds.map(id => ({ id })),
-      insights_ai: insightsAi,
+      insights_ai: insightsMode === 'ai',
+      insights_mode: insightsMode,
       modulos: [
         { id: modules.base.id, activo: true, insight_mode: null, insight_text: null },
         ...activeModuleIds.map(id => ({
@@ -491,8 +493,8 @@ const Index = () => {
             toggleModule={toggleModule}
             moduleInsights={moduleInsights}
             setModuleInsight={setModuleInsight}
-            insightsAi={insightsAi}
-            setInsightsAi={setInsightsAi}
+            insightsMode={insightsMode}
+            setInsightsMode={setInsightsMode}
             insightsActivos={insightsActivos}
             setInsightsActivos={setInsightsActivos}
             theme={theme}
@@ -521,7 +523,7 @@ const Index = () => {
             periodLabel={periodData?.periodoReporte || ''}
             csmName={csmProfile?.nombre || userEmail}
             activeModuleIds={activeModuleIds}
-            insightsAi={insightsAi}
+            insightsMode={insightsMode}
             moduleInsights={moduleInsights}
             ceFlows={selectedCeFlowsForCarrete}
             theme={theme}
@@ -532,6 +534,9 @@ const Index = () => {
             onRetry={handleGenerate}
             onViewPresentation={handleViewPresentation}
             onNewReport={handleNewReport}
+            onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
+            generalInsightText={generalInsightText}
+            onGeneralInsightChange={setGeneralInsightText}
           />
         </div>
       )}
@@ -544,7 +549,7 @@ const Index = () => {
             clientName={selectedClient?.nombre || 'Cliente Demo'}
             periodLabel={periodData?.periodoReporte || ''}
             activeModuleIds={activeModuleIds}
-            insightsAi={insightsAi}
+            insightsMode={insightsMode}
             moduleInsights={moduleInsights}
             overlayStatus={overlayStatus}
             reportData={reportData}
@@ -554,6 +559,9 @@ const Index = () => {
             onNewReport={handleNewReport}
             onRetry={handleGenerate}
             onBack={handleBackToBuilder}
+            onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
+            generalInsightText={generalInsightText}
+            onGeneralInsightChange={setGeneralInsightText}
           />
         </div>
       )}
