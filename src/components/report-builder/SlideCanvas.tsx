@@ -620,8 +620,11 @@ function Di5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
               <div key={idx} style={{ display: "flex", alignItems: "center", padding: "0 24px",
                 flex: 1, background: idx % 2 === 1 ? t.rowAlt : "transparent",
                 borderBottom: idx < flujos.length - 1 ? `1px solid ${t.footerBorder}` : "none" }}>
-                <div style={{ width: colW[0], flexShrink: 0 }}>
-                  <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.textPrimary }}>{row.col1}</p>
+                <div style={{ width: colW[0], flexShrink: 0, overflow: 'hidden' }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: t.textPrimary,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.col_extra2 || row.col1}
+                  </p>
                 </div>
                 {[row.col2, row.col3, row.col4].map((v, vi) => (
                   <div key={vi} style={{ width: colW[1 + vi], flexShrink: 0 }}>
@@ -2765,11 +2768,13 @@ function InsightsFinalesSlide({
   insightText,
   onInsightChange,
   theme = 'dark',
+  pageNum = 0,
 }: {
   insightsAi: boolean;
   insightText?: string;
   onInsightChange?: (text: string) => void;
   theme?: Theme;
+  pageNum?: number;
 }) {
   const t = tok(theme);
   const d = theme === 'dark';
@@ -2847,7 +2852,7 @@ function InsightsFinalesSlide({
         )}
       </div>
 
-      <SlideFooter theme={theme} pageNum={0} slideLabel="Análisis estratégico" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="Análisis estratégico" />
     </SlideShell>
   );
 }
@@ -3293,7 +3298,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "5_flujos":                  return <Di5Slide  {...p} />;
         case "6_funnel":                  return <Di6Slide  {...p} />;
         case "7_razones_doc":             return <Di78Slide {...p} />;
-        case "8_razones_rostro":          return <Di78Slide {...p} />;
+        case "8_razones_rostro":          return null; // Already rendered inside Di78Slide
         case "9_abandono":                return <Di9Slide  {...p} />;
         case "11_friccion_usuario":       return <Di10Slide {...p} />;
         default:                          return null;
@@ -3349,7 +3354,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
   const showInsight = (insightText && insightSource) || (insightEditable && insightSource === 'manual');
   if (showInsight && insightSource) {
     return (
-      <div className="slide-page" style={{
+      <div className="slide-with-insight" style={{
         position: 'relative', width: 1280, height: 720, flexShrink: 0,
         '--slide-insight-right': '448px',
       } as React.CSSProperties}>

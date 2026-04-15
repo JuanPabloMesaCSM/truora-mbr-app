@@ -174,6 +174,7 @@ export function CenterCanvas({
                     insightText={insightsMode === 'ai' ? (reportData.data && reportData.data['insights_generales'] && reportData.data['insights_generales'][0] ? reportData.data['insights_generales'][0].col1 || '' : '') : (generalInsightText || '')}
                     onInsightChange={onGeneralInsightChange}
                     theme={theme}
+                    pageNum={3 + dataSlideIds.length + 2}
                   />
                 </SlideWrap>
               </>

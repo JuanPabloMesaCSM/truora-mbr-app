@@ -4,15 +4,119 @@ import jsPDF from 'jspdf';
 const SLIDE_W = 1280;
 const SLIDE_H = 720;
 
+/* ── Style snapshot for restore ── */
+interface SavedStyle {
+  el: HTMLElement;
+  transform: string;
+  width: string;
+  height: string;
+  minHeight: string;
+  maxWidth: string;
+  overflow: string;
+  position: string;
+}
+
+/**
+ * Walk ancestors from `slide` up to (but excluding) `root` and temporarily
+ * remove CSS transforms, overflow clips, and size constraints so html2canvas
+ * measures the slide at its native 1280×720.  Returns a restore function.
+ */
+function unscaleAncestors(slide: HTMLElement, root: HTMLElement): () => void {
+  const saved: SavedStyle[] = [];
+
+  let el: HTMLElement | null = slide.parentElement;
+  while (el && el !== root) {
+    const cs = window.getComputedStyle(el);
+    const hasTransform = cs.transform !== 'none';
+    const tooNarrow = el.offsetWidth < SLIDE_W;
+    const clips = cs.overflow === 'hidden' || cs.overflow === 'clip';
+    const hasMaxW = cs.maxWidth !== 'none' && parseInt(cs.maxWidth, 10) < SLIDE_W;
+
+    if (hasTransform || tooNarrow || clips || hasMaxW) {
+      saved.push({
+        el,
+        transform: el.style.transform,
+        width: el.style.width,
+        height: el.style.height,
+        minHeight: el.style.minHeight,
+        maxWidth: el.style.maxWidth,
+        overflow: el.style.overflow,
+        position: el.style.position,
+      });
+
+      if (hasTransform) el.style.transform = 'none';
+      if (tooNarrow) {
+        el.style.width = SLIDE_W + 'px';
+        el.style.height = SLIDE_H + 'px';
+        el.style.minHeight = SLIDE_H + 'px';
+      }
+      if (clips) el.style.overflow = 'visible';
+      if (hasMaxW) el.style.maxWidth = 'none';
+    }
+    el = el.parentElement;
+  }
+
+  // Also relax the container itself
+  saved.push({
+    el: root,
+    transform: root.style.transform,
+    width: root.style.width,
+    height: root.style.height,
+    minHeight: root.style.minHeight,
+    maxWidth: root.style.maxWidth,
+    overflow: root.style.overflow,
+    position: root.style.position,
+  });
+  root.style.overflow = 'visible';
+
+  return () => {
+    for (const s of saved) {
+      s.el.style.transform = s.transform;
+      s.el.style.width = s.width;
+      s.el.style.height = s.height;
+      s.el.style.minHeight = s.minHeight;
+      s.el.style.maxWidth = s.maxWidth;
+      s.el.style.overflow = s.overflow;
+      s.el.style.position = s.position;
+    }
+  };
+}
+
+/**
+ * Wait until every <img> and <canvas> inside `el` is ready.
+ * - Images: waits for `decode()` (or `complete` fallback)
+ * - Canvas (Chart.js): already rasterized, no wait needed
+ */
+function waitForMedia(el: HTMLElement): Promise<void> {
+  const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img'));
+  const promises = imgs
+    .filter(img => !img.complete)
+    .map(img =>
+      img.decode().catch(() => {
+        // decode() can fail for broken/missing images — ignore
+      }),
+    );
+  if (promises.length === 0) return Promise.resolve();
+  return Promise.all(promises).then(() => undefined);
+}
+
 export const exportPDF = (
   clienteNombre: string,
   periodoReporte: string,
   onStart?: () => void,
   onEnd?: () => void,
 ): void => {
-  const slides = Array.from(
-    document.querySelectorAll<HTMLElement>('#canvas-mbr-slides .slide-page'),
-  );
+  const container = document.getElementById('canvas-mbr-slides');
+  if (!container) return;
+
+  // Collect slide elements:
+  //  - .slide-with-insight wrappers (contain the slide + insight panel)
+  //  - .slide-page elements NOT already inside a wrapper
+  const slides: HTMLElement[] = [];
+  container.querySelectorAll<HTMLElement>('.slide-with-insight, .slide-page').forEach(el => {
+    if (el.classList.contains('slide-page') && el.closest('.slide-with-insight')) return;
+    slides.push(el);
+  });
   if (!slides.length) return;
 
   const nombreArchivo = `MBR_${clienteNombre}_${periodoReporte}.pdf`
@@ -29,41 +133,69 @@ export const exportPDF = (
   });
 
   const captureSlide = (slide: HTMLElement): Promise<HTMLCanvasElement> => {
-    // Scroll the slide into view so html2canvas can measure it correctly
+    // 1. Scroll into view so the element is laid out
     slide.scrollIntoView({ block: 'start', behavior: 'instant' as ScrollBehavior });
 
-    return new Promise(resolve => {
-      // Wait two animation frames for the browser to settle scroll position
-      requestAnimationFrame(() => {
+    // 2. Temporarily unscale the original DOM so html2canvas measures 1280×720
+    const restore = unscaleAncestors(slide, container);
+
+    // 3. Wait for images, then capture
+    return waitForMedia(slide).then(() =>
+      new Promise<HTMLCanvasElement>((resolve, reject) => {
+        // Double rAF to let the browser repaint after style changes
         requestAnimationFrame(() => {
-          html2canvas(slide, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true,
-            // Capture the slide's own coordinate space, ignoring page scroll
-            scrollX: 0,
-            scrollY: 0,
-            width: SLIDE_W,
-            height: SLIDE_H,
-            windowWidth: SLIDE_W,
-            windowHeight: SLIDE_H,
-            onclone: (_doc, clonedEl) => {
-              // Release overflow: hidden on every child so nothing gets clipped
-              // during the off-screen render; the outer slide boundary (SLIDE_W×SLIDE_H)
-              // already limits what ends up in the canvas image.
-              clonedEl.querySelectorAll<HTMLElement>('*').forEach(el => {
-                const s = el.style;
-                if (s.overflow === 'hidden' || s.overflow === 'clip') {
-                  s.overflow = 'visible';
+          requestAnimationFrame(() => {
+            html2canvas(slide, {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              scrollX: 0,
+              scrollY: 0,
+              width: SLIDE_W,
+              height: SLIDE_H,
+              windowWidth: SLIDE_W,
+              windowHeight: SLIDE_H,
+              onclone: (_doc, clonedEl) => {
+                // Safety net — ensure the clone is also at native size
+                clonedEl.style.width = SLIDE_W + 'px';
+                clonedEl.style.height = SLIDE_H + 'px';
+                clonedEl.style.transform = 'none';
+                clonedEl.style.position = 'relative';
+                clonedEl.style.overflow = 'hidden';
+
+                // Clear transforms and clips on clone ancestors
+                let parent = clonedEl.parentElement;
+                while (parent) {
+                  parent.style.transform = 'none';
+                  parent.style.overflow = 'visible';
+                  if (parent.offsetWidth < SLIDE_W) {
+                    parent.style.width = SLIDE_W + 'px';
+                    parent.style.height = SLIDE_H + 'px';
+                  }
+                  parent.style.maxWidth = 'none';
+                  parent = parent.parentElement;
                 }
+
+                // Release any inner overflow clips
+                clonedEl.querySelectorAll<HTMLElement>('*').forEach(child => {
+                  if (child.style.overflow === 'hidden' || child.style.overflow === 'clip') {
+                    child.style.overflow = 'visible';
+                  }
+                });
+              },
+            })
+              .then(canvas => {
+                restore();
+                resolve(canvas);
+              })
+              .catch(err => {
+                restore();
+                reject(err);
               });
-              // Also release the root clone itself
-              clonedEl.style.overflow = 'visible';
-            },
-          }).then(resolve);
+          });
         });
-      });
-    });
+      }),
+    );
   };
 
   const captureNext = (index: number): Promise<void> => {
@@ -80,5 +212,7 @@ export const exportPDF = (
   captureNext(0)
     .then(() => pdf.save(nombreArchivo))
     .catch(err => console.error('exportPDF error:', err))
-    .finally(() => { if (onEnd) onEnd(); });
+    .finally(() => {
+      if (onEnd) onEnd();
+    });
 };

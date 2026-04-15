@@ -568,6 +568,7 @@ export function ReportCarrete({
                   insightText={insightsMode === 'ai' ? (data['insights_generales']?.[0]?.col1 || '') : (generalInsightText || '')}
                   onInsightChange={onGeneralInsightChange}
                   theme={theme}
+                  pageNum={slideNum}
                 />
               </DataSlide>
             </CarreteItem>
