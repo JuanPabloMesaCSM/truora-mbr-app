@@ -5,6 +5,12 @@ import { GeneratingOverlay } from "./GeneratingOverlay";
 import { SlideCanvas, type Theme, type CeFlowData, PortadaSlide, AgendaSlide, SeparadorSlide, InsightsFinalesSlide, UpdatesSlide, CierreSlide } from "./SlideCanvas";
 import { exportPDF } from "@/utils/exportPDF";
 
+/* IDs de slides CE que muestran métricas globales de cuenta */
+const CE_GLOBAL_IDS = new Set([
+  '1_consumo_total', '2_eficiencia_campanas', '3_fallos_outbound',
+  '5_flujo_inbound', '6_agentes_general', '7_agentes_top5',
+]);
+
 interface CenterCanvasProps {
   product: Product;
   clientName: string | null;
@@ -15,6 +21,7 @@ interface CenterCanvasProps {
   overlayStatus: "generating" | "success" | "error" | null;
   reportData?: any;
   theme: Theme;
+  isCeFlowSpecific?: boolean;
   onOverlayClose: () => void;
   onNewReport: () => void;
   onRetry: () => void;
@@ -26,7 +33,7 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsAi,
-  moduleInsights = {}, overlayStatus, reportData, theme, onOverlayClose, onNewReport, onRetry, onBack,
+  moduleInsights = {}, overlayStatus, reportData, theme, isCeFlowSpecific, onOverlayClose, onNewReport, onRetry, onBack,
 }: CenterCanvasProps) {
   const getSlideInsight = (id: string): { insightText?: string; insightSource?: 'ai' | 'manual' } => {
     const mi = moduleInsights[id];
@@ -49,9 +56,15 @@ export function CenterCanvas({
     const csmName: string = meta.nombre_csm || '';
 
     // Build data slide IDs
-    const dataSlideIds: string[] = [modules.base.id];
+    // Cuando el CSM elige flujos específicos (no todos), omitir slides globales CE
+    const skipCeGlobal = product === 'CE' && (isCeFlowSpecific || meta.modo === 'flujos');
+
+    const dataSlideIds: string[] = [];
+    if (!skipCeGlobal) dataSlideIds.push(modules.base.id);
     for (const mod of modules.optional) {
-      if (activeModuleIds.includes(mod.id)) dataSlideIds.push(mod.id);
+      if (!activeModuleIds.includes(mod.id)) continue;
+      if (skipCeGlobal && CE_GLOBAL_IDS.has(mod.id)) continue;
+      dataSlideIds.push(mod.id);
     }
     if (product === 'CE' && ceFlows.length > 0) {
       for (let i = 0; i < ceFlows.length; i++) {

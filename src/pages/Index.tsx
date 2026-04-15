@@ -438,6 +438,9 @@ const Index = () => {
   const selectedCeFlowsForCarrete = ceFlows
     .filter(f => selectedCeFlows.has(f.flow_id)) as unknown as CeFlowData[];
 
+  /* ─── CE: flujos específicos vs todos ─── */
+  const isCeFlowSpecific = product === 'CE' && ceFlows.length > 0 && selectedCeFlows.size < ceFlows.length;
+
   return (
     <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
       <MeshBackground />
@@ -524,6 +527,7 @@ const Index = () => {
             theme={theme}
             reportData={reportData}
             overlayStatus={overlayStatus}
+            isCeFlowSpecific={isCeFlowSpecific}
             onOverlayClose={() => setOverlayStatus(null)}
             onRetry={handleGenerate}
             onViewPresentation={handleViewPresentation}
@@ -545,6 +549,7 @@ const Index = () => {
             overlayStatus={overlayStatus}
             reportData={reportData}
             theme={theme}
+            isCeFlowSpecific={isCeFlowSpecific}
             onOverlayClose={() => setOverlayStatus(null)}
             onNewReport={handleNewReport}
             onRetry={handleGenerate}

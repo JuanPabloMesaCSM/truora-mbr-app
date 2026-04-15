@@ -282,6 +282,7 @@ interface ReportCarreteProps {
   theme: Theme;
   reportData: any | null;
   overlayStatus: 'generating' | 'success' | 'error' | null;
+  isCeFlowSpecific?: boolean;
   onOverlayClose: () => void;
   onRetry: () => void;
   onViewPresentation: () => void;
@@ -291,11 +292,17 @@ interface ReportCarreteProps {
 /* ────────────────────────────────────────────────────────
    ReportCarrete principal
 ──────────────────────────────────────────────────────── */
+/* IDs de slides CE que muestran métricas globales de cuenta */
+const CE_GLOBAL_IDS = new Set([
+  '1_consumo_total', '2_eficiencia_campanas', '3_fallos_outbound',
+  '5_flujo_inbound', '6_agentes_general', '7_agentes_top5',
+]);
+
 export function ReportCarrete({
   product, clientName, periodLabel, csmName,
   activeModuleIds, insightsAi, moduleInsights,
   ceFlows, theme, reportData,
-  overlayStatus, onOverlayClose, onRetry,
+  overlayStatus, isCeFlowSpecific, onOverlayClose, onRetry,
   onViewPresentation, onNewReport,
 }: ReportCarreteProps) {
   const color   = PRODUCT_COLORS[product];
@@ -312,9 +319,15 @@ export function ReportCarrete({
   const [showRecon, setShowRecon] = useState(false);
 
   /* ── build dataSlideIds (same logic as CenterCanvas) ── */
-  const dataSlideIds: string[] = [modules.base.id];
+  /* Cuando el CSM elige flujos específicos (no todos), omitir slides globales CE */
+  const skipCeGlobal = product === 'CE' && (isCeFlowSpecific || meta.modo === 'flujos');
+
+  const dataSlideIds: string[] = [];
+  if (!skipCeGlobal) dataSlideIds.push(modules.base.id);
   for (const mod of modules.optional) {
-    if (activeModuleIds.includes(mod.id)) dataSlideIds.push(mod.id);
+    if (!activeModuleIds.includes(mod.id)) continue;
+    if (skipCeGlobal && CE_GLOBAL_IDS.has(mod.id)) continue;
+    dataSlideIds.push(mod.id);
   }
   if (product === 'CE' && ceFlowsData.length > 0) {
     for (let i = 0; i < ceFlowsData.length; i++) {
