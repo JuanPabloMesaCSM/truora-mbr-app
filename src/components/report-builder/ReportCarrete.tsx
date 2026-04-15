@@ -63,6 +63,9 @@ function ScaledSlide({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver(entries => {
+      // Suppress updates while PDF export is modifying the DOM to avoid
+      // destroying and recreating Chart.js instances mid-capture
+      if ((window as any).__pdfExporting) return;
       const w = entries[0]?.contentRect.width;
       if (w) setScale(w / 1280);
     });

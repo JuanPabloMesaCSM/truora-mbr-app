@@ -83,21 +83,22 @@ function unscaleAncestors(slide: HTMLElement, root: HTMLElement): () => void {
 }
 
 /**
- * Wait until every <img> and <canvas> inside `el` is ready.
- * - Images: waits for `decode()` (or `complete` fallback)
- * - Canvas (Chart.js): already rasterized, no wait needed
+ * Wait until every <img> inside `el` is fully decoded.
  */
 function waitForMedia(el: HTMLElement): Promise<void> {
   const imgs = Array.from(el.querySelectorAll<HTMLImageElement>('img'));
   const promises = imgs
     .filter(img => !img.complete)
-    .map(img =>
-      img.decode().catch(() => {
-        // decode() can fail for broken/missing images — ignore
-      }),
-    );
+    .map(img => img.decode().catch(() => undefined));
   if (promises.length === 0) return Promise.resolve();
   return Promise.all(promises).then(() => undefined);
+}
+
+/**
+ * Simple promise-based setTimeout.
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export const exportPDF = (
@@ -125,6 +126,11 @@ export const exportPDF = (
 
   if (onStart) onStart();
 
+  // Signal ScaledSlide ResizeObservers to ignore DOM changes during export.
+  // Without this, unscaleAncestors() triggers ResizeObserver → setScale() →
+  // React re-render → Chart.js instances destroyed mid-capture (random blank slides).
+  (window as any).__pdfExporting = true;
+
   const pdf = new jsPDF({
     orientation: 'landscape',
     unit: 'px',
@@ -139,63 +145,58 @@ export const exportPDF = (
     // 2. Temporarily unscale the original DOM so html2canvas measures 1280×720
     const restore = unscaleAncestors(slide, container);
 
-    // 3. Wait for images, then capture
-    return waitForMedia(slide).then(() =>
-      new Promise<HTMLCanvasElement>((resolve, reject) => {
-        // Double rAF to let the browser repaint after style changes
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            html2canvas(slide, {
-              scale: 2,
-              useCORS: true,
-              allowTaint: true,
-              scrollX: 0,
-              scrollY: 0,
-              width: SLIDE_W,
-              height: SLIDE_H,
-              windowWidth: SLIDE_W,
-              windowHeight: SLIDE_H,
-              onclone: (_doc, clonedEl) => {
-                // Safety net — ensure the clone is also at native size
-                clonedEl.style.width = SLIDE_W + 'px';
-                clonedEl.style.height = SLIDE_H + 'px';
-                clonedEl.style.transform = 'none';
-                clonedEl.style.position = 'relative';
-                clonedEl.style.overflow = 'hidden';
+    // 3. Wait for images + 300ms for layout/paint to settle after DOM changes
+    return waitForMedia(slide)
+      .then(() => delay(300))
+      .then(() =>
+        html2canvas(slide, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          scrollX: 0,
+          scrollY: 0,
+          width: SLIDE_W,
+          height: SLIDE_H,
+          windowWidth: SLIDE_W,
+          windowHeight: SLIDE_H,
+          onclone: (_doc, clonedEl) => {
+            // Safety net — ensure the clone is at native size with no transforms
+            clonedEl.style.width = SLIDE_W + 'px';
+            clonedEl.style.height = SLIDE_H + 'px';
+            clonedEl.style.transform = 'none';
+            clonedEl.style.position = 'relative';
+            clonedEl.style.overflow = 'hidden';
 
-                // Clear transforms and clips on clone ancestors
-                let parent = clonedEl.parentElement;
-                while (parent) {
-                  parent.style.transform = 'none';
-                  parent.style.overflow = 'visible';
-                  if (parent.offsetWidth < SLIDE_W) {
-                    parent.style.width = SLIDE_W + 'px';
-                    parent.style.height = SLIDE_H + 'px';
-                  }
-                  parent.style.maxWidth = 'none';
-                  parent = parent.parentElement;
-                }
+            // Clear transforms and clips on clone ancestors
+            let parent = clonedEl.parentElement;
+            while (parent) {
+              parent.style.transform = 'none';
+              parent.style.overflow = 'visible';
+              if (parent.offsetWidth < SLIDE_W) {
+                parent.style.width = SLIDE_W + 'px';
+                parent.style.height = SLIDE_H + 'px';
+              }
+              parent.style.maxWidth = 'none';
+              parent = parent.parentElement;
+            }
 
-                // Release any inner overflow clips
-                clonedEl.querySelectorAll<HTMLElement>('*').forEach(child => {
-                  if (child.style.overflow === 'hidden' || child.style.overflow === 'clip') {
-                    child.style.overflow = 'visible';
-                  }
-                });
-              },
-            })
-              .then(canvas => {
-                restore();
-                resolve(canvas);
-              })
-              .catch(err => {
-                restore();
-                reject(err);
-              });
-          });
-        });
-      }),
-    );
+            // Release any inner overflow clips
+            clonedEl.querySelectorAll<HTMLElement>('*').forEach(child => {
+              if (child.style.overflow === 'hidden' || child.style.overflow === 'clip') {
+                child.style.overflow = 'visible';
+              }
+            });
+          },
+        })
+          .then(canvas => {
+            restore();
+            return canvas;
+          })
+          .catch(err => {
+            restore();
+            throw err;
+          }),
+      );
   };
 
   const captureNext = (index: number): Promise<void> => {
@@ -213,6 +214,7 @@ export const exportPDF = (
     .then(() => pdf.save(nombreArchivo))
     .catch(err => console.error('exportPDF error:', err))
     .finally(() => {
+      (window as any).__pdfExporting = false;
       if (onEnd) onEnd();
     });
 };
