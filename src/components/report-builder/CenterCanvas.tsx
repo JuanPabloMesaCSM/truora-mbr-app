@@ -3,7 +3,7 @@ import { MODULES, PRODUCT_COLORS, type Product, type ModuleDef, type ModuleInsig
 import { AnimatedCanvasChart } from "./AnimatedChartPreview";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { SlideCanvas, type Theme, type CeFlowData, PortadaSlide, AgendaSlide, SeparadorSlide, InsightsFinalesSlide, UpdatesSlide, CierreSlide } from "./SlideCanvas";
-import { exportPDF } from "@/utils/exportPDF";
+import { exportPDF, exportPPTX } from "@/utils/exportPDF";
 
 /* IDs de slides CE que muestran métricas globales de cuenta */
 const CE_GLOBAL_IDS = new Set([
@@ -22,6 +22,7 @@ interface CenterCanvasProps {
   reportData?: any;
   theme: Theme;
   isCeFlowSpecific?: boolean;
+  showUpdates?: boolean;
   onOverlayClose: () => void;
   onNewReport: () => void;
   onRetry: () => void;
@@ -36,7 +37,7 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsMode,
-  moduleInsights = {}, overlayStatus, reportData, theme, isCeFlowSpecific, onOverlayClose, onNewReport, onRetry, onBack,
+  moduleInsights = {}, overlayStatus, reportData, theme, isCeFlowSpecific, showUpdates = true, onOverlayClose, onNewReport, onRetry, onBack,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: CenterCanvasProps) {
   const getSlideInsight = (id: string) => {
@@ -94,7 +95,7 @@ export function CenterCanvas({
 
     // portada + agenda + sep-metricas + data + (sep-insights + insights si AI) + sep-updates + updates + cierre
     const hasInsights = insightsMode !== null;
-    const totalPages = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + 3;
+    const totalPages = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + (showUpdates ? 2 : 0) + 1;
 
     const SlideWrap = ({ children }: { children: React.ReactNode }) => (
       <div className="rounded-xl overflow-hidden shadow-2xl" style={{ width: 1280, height: 720, flexShrink: 0 }}>
@@ -119,7 +120,14 @@ export function CenterCanvas({
               className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/90 transition-colors px-3 py-1.5 rounded-lg"
               style={{ border: '0.5px solid rgba(255,255,255,0.1)' }}
             >
-              ↓ Exportar PDF
+              ↓ PDF
+            </button>
+            <button
+              onClick={() => exportPPTX(meta.cliente || clientName || 'Cliente', meta.periodo_reporte || periodLabel || 'Reporte')}
+              className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/90 transition-colors px-3 py-1.5 rounded-lg"
+              style={{ border: '0.5px solid rgba(255,255,255,0.1)' }}
+            >
+              ↓ PPTX
             </button>
             {onBack && (
               <button onClick={onBack} className="text-xs text-white/30 hover:text-white/60 transition-colors px-3 py-1.5">
@@ -180,9 +188,13 @@ export function CenterCanvas({
               </>
             )}
 
-            {/* Separador updates + Updates + Cierre */}
-            <SlideWrap><SeparadorSlide src="/assets/mbr/separador-updates.png" alt="Updates de producto" /></SlideWrap>
-            <SlideWrap><UpdatesSlide /></SlideWrap>
+            {/* Separador updates + Updates (optional) + Cierre */}
+            {showUpdates && (
+              <>
+                <SlideWrap><SeparadorSlide src="/assets/mbr/separador-updates.png" alt="Updates de producto" /></SlideWrap>
+                <SlideWrap><UpdatesSlide /></SlideWrap>
+              </>
+            )}
             <SlideWrap><CierreSlide csmName={csmName} /></SlideWrap>
           </div>
         </div>
@@ -202,9 +214,11 @@ export function CenterCanvas({
   }
 
   const fixedOpening = ["Portada", "Agenda", "Separador"];
-  const fixedClosing = insightsMode !== null
-    ? [insightsMode === 'ai' ? "Truora AI" : "Análisis", "Updates", "Cierre"]
-    : ["Updates", "Cierre"];
+  const fixedClosing = [
+    ...(insightsMode !== null ? [insightsMode === 'ai' ? "Truora AI" : "Análisis"] : []),
+    ...(showUpdates ? ["Updates"] : []),
+    "Cierre",
+  ];
 
   let nextSlide = fixedOpening.length + 1;
 
@@ -304,7 +318,7 @@ export function CenterCanvas({
             ))}
           </div>
           <p className="text-[9px] text-white/20 mt-1.5 text-center">
-            {insightsMode ? (insightsMode === 'ai' ? "Truora AI · " : "Análisis · ") : ""}Updates · Cierre — siempre incluidos
+            {insightsMode ? (insightsMode === 'ai' ? "Truora AI · " : "Análisis · ") : ""}{showUpdates ? "Updates · " : ""}Cierre — siempre incluidos
           </p>
         </div>
 

@@ -48,6 +48,7 @@ const Index = () => {
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
+  const [showUpdates, setShowUpdates] = useState(true);
   const [clientIdModal, setClientIdModal] = useState<{
     product: Product; clientId: string; clientName: string;
   } | null>(null);
@@ -512,6 +513,8 @@ const Index = () => {
             setSelectedDiFlows={setSelectedDiFlows}
             diFlowsLoading={diFlowsLoading}
             diFlowsError={diFlowsError}
+            showUpdates={showUpdates}
+            setShowUpdates={setShowUpdates}
             canGenerate={canGenerate}
             overlayStatus={overlayStatus}
             onGenerate={handleGenerate}
@@ -530,6 +533,7 @@ const Index = () => {
             reportData={reportData}
             overlayStatus={overlayStatus}
             isCeFlowSpecific={isCeFlowSpecific}
+            showUpdates={showUpdates}
             onOverlayClose={() => setOverlayStatus(null)}
             onRetry={handleGenerate}
             onViewPresentation={handleViewPresentation}
@@ -555,6 +559,7 @@ const Index = () => {
             reportData={reportData}
             theme={theme}
             isCeFlowSpecific={isCeFlowSpecific}
+            showUpdates={showUpdates}
             onOverlayClose={() => setOverlayStatus(null)}
             onNewReport={handleNewReport}
             onRetry={handleGenerate}

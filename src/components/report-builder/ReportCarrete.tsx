@@ -11,9 +11,9 @@
    • GeneratingOverlay se muestra encima del carrete
 ───────────────────────────────────────────────────────── */
 
-import { useRef, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Presentation, Download, Lightbulb } from "lucide-react";
+import { useRef, useEffect, useState, useMemo } from "react";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { Presentation, Download, Lightbulb, GripVertical } from "lucide-react";
 import {
   SlideCanvas,
   PortadaSlide, AgendaSlide, SeparadorSlide,
@@ -24,7 +24,7 @@ import {
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { ReconciliationPanel } from "./ReconciliationPanel";
 import { MODULES, PRODUCT_COLORS, type Product, type ModuleInsight } from "./moduleDefinitions";
-import { exportPDF } from "@/utils/exportPDF";
+import { exportPDF, exportPPTX } from "@/utils/exportPDF";
 
 const S = {
   bg:      '#0D1B2E',
@@ -283,6 +283,7 @@ interface ReportCarreteProps {
   reportData: any | null;
   overlayStatus: 'generating' | 'success' | 'error' | null;
   isCeFlowSpecific?: boolean;
+  showUpdates?: boolean;
   onOverlayClose: () => void;
   onRetry: () => void;
   onViewPresentation: () => void;
@@ -305,7 +306,7 @@ export function ReportCarrete({
   product, clientName, periodLabel, csmName,
   activeModuleIds, insightsMode, moduleInsights,
   ceFlows, theme, reportData,
-  overlayStatus, isCeFlowSpecific, onOverlayClose, onRetry,
+  overlayStatus, isCeFlowSpecific, showUpdates = true, onOverlayClose, onRetry,
   onViewPresentation, onNewReport,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: ReportCarreteProps) {
@@ -319,7 +320,7 @@ export function ReportCarrete({
   const effectivePeriod = meta.periodo_reporte || periodLabel;
   const effectiveCsm    = meta.nombre_csm || csmName;
 
-  const [exportingPdf, setExportingPdf] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'pptx' | null>(null);
   const [showRecon, setShowRecon] = useState(false);
 
   /* ── build dataSlideIds (same logic as CenterCanvas) ── */
@@ -349,7 +350,7 @@ export function ReportCarrete({
   }
 
   const hasInsights = insightsMode !== null;
-  const totalSlides = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + 3;
+  const totalSlides = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + (showUpdates ? 2 : 0) + 1;
 
   /* ── insight helper ── */
   const getSlideInsight = (id: string) => {
@@ -394,12 +395,174 @@ export function ReportCarrete({
   };
 
   const handleExportPDF = () => {
-    exportPDF(effectiveClient, effectivePeriod, () => setExportingPdf(true), () => setExportingPdf(false));
+    exportPDF(effectiveClient, effectivePeriod, () => setExporting('pdf'), () => setExporting(null));
+  };
+  const handleExportPPTX = () => {
+    exportPPTX(effectiveClient, effectivePeriod, () => setExporting('pptx'), () => setExporting(null));
   };
 
-  /* ── slide number counter ── */
-  let slideNum = 0;
-  const nextNum = () => { slideNum++; return slideNum; };
+  /* ── Build ordered slide entries ── */
+  type SlideEntry = { key: string; label: string; render: (num: number) => React.ReactNode };
+
+  const slideEntries = useMemo<SlideEntry[]>(() => {
+    const entries: SlideEntry[] = [];
+
+    // Portada
+    entries.push({
+      key: '__portada',
+      label: 'Portada',
+      render: () => <PortadaSlide clientName={effectiveClient || '—'} periodLabel={effectivePeriod || '—'} />,
+    });
+    // Agenda
+    entries.push({
+      key: '__agenda',
+      label: 'Agenda',
+      render: () => <AgendaSlide />,
+    });
+    // Separador métricas
+    entries.push({
+      key: '__sep_metricas',
+      label: 'Separador — Métricas del mes',
+      render: () => <SeparadorSlide src="/assets/mbr/separados-metricas.png" alt="Métricas del mes" />,
+    });
+
+    // Data slides
+    dataSlideIds.forEach((slideId, idx) => {
+      const mod = [modules.base, ...modules.optional].find(m => m.id === slideId);
+      const isCeSep = slideId.startsWith('ce_sep_');
+      const isCeData = slideId.startsWith('ce_otb_') || slideId.startsWith('ce_steps_') || slideId.startsWith('ce_vrf_');
+      const label = mod
+        ? mod.label
+        : isCeSep
+          ? 'Separador de flujo'
+          : isCeData
+            ? slideId.startsWith('ce_otb_') ? 'Funnel OTB' : slideId.startsWith('ce_steps_') ? 'Funnel Steps' : 'VRF'
+            : slideId;
+
+      entries.push({
+        key: slideId,
+        label,
+        render: (num: number) => {
+          const insight = getSlideInsight(slideId);
+          const metricInsightText = hasData ? getMetricInsight(slideId) : null;
+          return (
+            <>
+              <ScaledSlide>
+                <DataSlide hasData={hasData} revealDelay={idx * 120} shimmerLabel={label}>
+                  <SlideCanvas
+                    slideId={slideId}
+                    product={product}
+                    data={data}
+                    ceFlows={ceFlowsData}
+                    meta={meta}
+                    theme={theme}
+                    clientName={effectiveClient}
+                    periodLabel={effectivePeriod}
+                    pageNum={num}
+                    totalPages={totalSlides}
+                    {...insight}
+                  />
+                </DataSlide>
+              </ScaledSlide>
+              {metricInsightText && insightsMode === 'ai' && (
+                <MetricInsightPanel text={metricInsightText} />
+              )}
+            </>
+          );
+        },
+      });
+    });
+
+    // Insights
+    if (hasInsights) {
+      entries.push({
+        key: '__sep_insights',
+        label: 'Separador — Análisis estratégico',
+        render: () => <SeparadorSlide src="/assets/mbr/separados-insights.png" alt="Análisis estratégico" />,
+      });
+      entries.push({
+        key: '__insights_finales',
+        label: insightsMode === 'ai' ? 'Insights Truora AI' : 'Análisis estratégico',
+        render: (num: number) => (
+          <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 120} shimmerLabel={insightsMode === 'ai' ? 'Insights AI' : 'Análisis manual'}>
+            <InsightsFinalesSlide
+              insightsAi={insightsMode === 'ai'}
+              insightText={insightsMode === 'ai' ? (data['insights_generales']?.[0]?.col1 || '') : (generalInsightText || '')}
+              onInsightChange={onGeneralInsightChange}
+              theme={theme}
+              pageNum={num}
+            />
+          </DataSlide>
+        ),
+      });
+      if (analisisEstrategico) {
+        entries.push({
+          key: '__analisis_estrategico',
+          label: 'Análisis Estratégico IA',
+          render: (num: number) => (
+            <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 240} shimmerLabel="Análisis IA">
+              <AnalisisEstrategicoSlide
+                analisis={analisisEstrategico}
+                theme={theme}
+                clientName={effectiveClient}
+                periodLabel={effectivePeriod}
+                pageNum={num}
+                totalPages={totalSlides}
+              />
+            </DataSlide>
+          ),
+        });
+      }
+    }
+
+    // Updates (optional)
+    if (showUpdates) {
+      entries.push({
+        key: '__sep_updates',
+        label: 'Separador — Updates de producto',
+        render: () => <SeparadorSlide src="/assets/mbr/separador-updates.png" alt="Updates de producto" />,
+      });
+      entries.push({
+        key: '__updates',
+        label: 'Updates',
+        render: () => <UpdatesSlide />,
+      });
+    }
+
+    // Cierre
+    entries.push({
+      key: '__cierre',
+      label: 'Cierre',
+      render: () => <CierreSlide csmName={effectiveCsm} />,
+    });
+
+    return entries;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    dataSlideIds.join(','), product, hasData, hasInsights, insightsMode, showUpdates,
+    effectiveClient, effectivePeriod, effectiveCsm, theme, totalSlides,
+    generalInsightText, !!analisisEstrategico,
+  ]);
+
+  /* ── Reorderable keys ── */
+  const [slideOrder, setSlideOrder] = useState<string[]>(() => slideEntries.map(e => e.key));
+
+  // Sync order when entries change (module toggled, insights toggled, etc.)
+  useEffect(() => {
+    const newKeys = slideEntries.map(e => e.key);
+    setSlideOrder(prev => {
+      // Keep existing order for slides that still exist, append new ones at the end
+      const kept = prev.filter(k => newKeys.includes(k));
+      const added = newKeys.filter(k => !kept.includes(k));
+      // If nothing changed structurally, keep current order
+      if (kept.length === newKeys.length && added.length === 0) return prev;
+      return [...kept, ...added];
+    });
+  }, [slideEntries]);
+
+  const orderedEntries = slideOrder
+    .map(key => slideEntries.find(e => e.key === key))
+    .filter((e): e is SlideEntry => !!e);
 
   return (
     <div style={{
@@ -451,7 +614,7 @@ export function ReportCarrete({
 
               <button
                 onClick={handleExportPDF}
-                disabled={exportingPdf}
+                disabled={!!exporting}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 5,
                   fontSize: 12, color: S.muted,
@@ -459,13 +622,32 @@ export function ReportCarrete({
                   border: `1px solid ${S.border}`, cursor: 'pointer',
                   padding: '6px 12px', borderRadius: 8,
                   transition: 'all 0.15s',
-                  opacity: exportingPdf ? 0.6 : 1,
+                  opacity: exporting ? 0.6 : 1,
                 }}
                 onMouseEnter={e => e.currentTarget.style.color = S.text}
                 onMouseLeave={e => e.currentTarget.style.color = S.muted}
               >
                 <Download size={13} />
-                {exportingPdf ? 'Exportando...' : 'PDF'}
+                {exporting === 'pdf' ? 'Exportando...' : 'PDF'}
+              </button>
+
+              <button
+                onClick={handleExportPPTX}
+                disabled={!!exporting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  fontSize: 12, color: S.muted,
+                  background: 'transparent',
+                  border: `1px solid ${S.border}`, cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: 8,
+                  transition: 'all 0.15s',
+                  opacity: exporting ? 0.6 : 1,
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = S.text}
+                onMouseLeave={e => e.currentTarget.style.color = S.muted}
+              >
+                <Presentation size={13} />
+                {exporting === 'pptx' ? 'Exportando...' : 'PPTX'}
               </button>
             </>
           )}
@@ -486,129 +668,57 @@ export function ReportCarrete({
         </div>
       </div>
 
-      {/* ── Slides scroll ── */}
-      <div
+      {/* ── Slides scroll (reorderable) ── */}
+      <Reorder.Group
         id="canvas-mbr-slides"
+        axis="y"
+        values={slideOrder}
+        onReorder={setSlideOrder}
         style={{
           flex: 1, overflowY: 'auto',
           padding: '28px 32px',
           display: 'flex', flexDirection: 'column', gap: 24,
+          listStyle: 'none', margin: 0,
         }}
       >
-        {/* 1 — Portada (siempre real) */}
-        <CarreteItem num={nextNum()} label="Portada">
-          <PortadaSlide clientName={effectiveClient || '—'} periodLabel={effectivePeriod || '—'} />
-        </CarreteItem>
-
-        {/* 2 — Agenda */}
-        <CarreteItem num={nextNum()} label="Agenda">
-          <AgendaSlide />
-        </CarreteItem>
-
-        {/* 3 — Separador métricas */}
-        <CarreteItem num={nextNum()} label="Separador — Métricas del mes">
-          <SeparadorSlide src="/assets/mbr/separados-metricas.png" alt="Métricas del mes" />
-        </CarreteItem>
-
-        {/* Data slides */}
-        <AnimatePresence mode="popLayout">
-          {dataSlideIds.map((slideId, idx) => {
-            const mod = [modules.base, ...modules.optional].find(m => m.id === slideId);
-            const isCeSep = slideId.startsWith('ce_sep_');
-            const isCeData = slideId.startsWith('ce_otb_') || slideId.startsWith('ce_steps_') || slideId.startsWith('ce_vrf_');
-            const label = mod
-              ? mod.label
-              : isCeSep
-                ? 'Separador de flujo'
-                : isCeData
-                  ? slideId.startsWith('ce_otb_') ? 'Funnel OTB' : slideId.startsWith('ce_steps_') ? 'Funnel Steps' : 'VRF'
-                  : slideId;
-            const num = nextNum();
-            const insight = getSlideInsight(slideId);
-            const metricInsightText = hasData ? getMetricInsight(slideId) : null;
-
-            return (
-              <CarreteItem key={slideId} num={num} label={label} animate={!hasData} animDelay={idx * 0.05}>
-                <ScaledSlide>
-                  <DataSlide hasData={hasData} revealDelay={idx * 120} shimmerLabel={label}>
-                    <SlideCanvas
-                      slideId={slideId}
-                      product={product}
-                      data={data}
-                      ceFlows={ceFlowsData}
-                      meta={meta}
-                      theme={theme}
-                      clientName={effectiveClient}
-                      periodLabel={effectivePeriod}
-                      pageNum={num}
-                      totalPages={totalSlides}
-                      {...insight}
-                    />
-                  </DataSlide>
-                </ScaledSlide>
-                {/* Per-metric insight toggle */}
-                {metricInsightText && insightsMode === 'ai' && (
-                  <MetricInsightPanel text={metricInsightText} />
-                )}
-              </CarreteItem>
-            );
-          })}
-        </AnimatePresence>
-
-        {/* Separador + Insights (AI o Manual) */}
-        {hasInsights && (
-          <>
-            <CarreteItem num={nextNum()} label="Separador — Análisis estratégico">
-              <SeparadorSlide src="/assets/mbr/separados-insights.png" alt="Análisis estratégico" />
-            </CarreteItem>
-            <CarreteItem num={nextNum()} label={insightsMode === 'ai' ? 'Insights Truora AI' : 'Análisis estratégico'}>
-              <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 120} shimmerLabel={insightsMode === 'ai' ? 'Insights AI' : 'Análisis manual'}>
-                <InsightsFinalesSlide
-                  insightsAi={insightsMode === 'ai'}
-                  insightText={insightsMode === 'ai' ? (data['insights_generales']?.[0]?.col1 || '') : (generalInsightText || '')}
-                  onInsightChange={onGeneralInsightChange}
-                  theme={theme}
-                  pageNum={slideNum}
-                />
-              </DataSlide>
-            </CarreteItem>
-
-            {/* Análisis Estratégico IA */}
-            {analisisEstrategico && (
-              <CarreteItem num={nextNum()} label="Análisis Estratégico IA">
-                <DataSlide hasData={hasData} revealDelay={dataSlideIds.length * 120 + 240} shimmerLabel="Análisis IA">
-                  <AnalisisEstrategicoSlide
-                    analisis={analisisEstrategico}
-                    theme={theme}
-                    clientName={effectiveClient}
-                    periodLabel={effectivePeriod}
-                    pageNum={slideNum}
-                    totalPages={totalSlides}
-                  />
-                </DataSlide>
-              </CarreteItem>
-            )}
-          </>
-        )}
-
-        {/* Separador updates */}
-        <CarreteItem num={nextNum()} label="Separador — Updates de producto">
-          <SeparadorSlide src="/assets/mbr/separador-updates.png" alt="Updates de producto" />
-        </CarreteItem>
-
-        {/* Updates */}
-        <CarreteItem num={nextNum()} label="Updates">
-          <UpdatesSlide />
-        </CarreteItem>
-
-        {/* Cierre (siempre real — usa csmName) */}
-        <CarreteItem num={nextNum()} label="Cierre">
-          <CierreSlide csmName={effectiveCsm} />
-        </CarreteItem>
+        {orderedEntries.map((entry, idx) => (
+          <Reorder.Item
+            key={entry.key}
+            value={entry.key}
+            style={{ listStyle: 'none' }}
+            whileDrag={{ scale: 1.02, boxShadow: '0 12px 40px rgba(0,0,0,0.5)', zIndex: 50, borderRadius: 12 }}
+          >
+            <div style={{ width: '100%', maxWidth: 720, marginLeft: 'auto', marginRight: 'auto' }}>
+              {/* Slide metadata + drag handle */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                marginBottom: 8,
+              }}>
+                <div
+                  style={{ cursor: 'grab', display: 'flex', alignItems: 'center', color: S.dim, flexShrink: 0 }}
+                  onPointerDown={e => e.stopPropagation()}
+                >
+                  <GripVertical size={14} />
+                </div>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, color: S.dim,
+                  background: S.surface, border: `1px solid ${S.border}`,
+                  padding: '2px 7px', borderRadius: 6,
+                }}>
+                  {idx + 1}
+                </span>
+                <span style={{ fontSize: 11, color: S.muted }}>{entry.label}</span>
+              </div>
+              <ScaledSlide>
+                {entry.render(idx + 1)}
+              </ScaledSlide>
+            </div>
+          </Reorder.Item>
+        ))}
 
         {/* Bottom padding */}
         <div style={{ height: 40 }} />
-      </div>
+      </Reorder.Group>
 
       {/* ── Overlay de generación ── */}
       <AnimatePresence>

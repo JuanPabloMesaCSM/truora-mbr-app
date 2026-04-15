@@ -116,6 +116,8 @@ interface LeftPanelProps {
   setSelectedDiFlows: (s: Set<string>) => void;
   diFlowsLoading: boolean;
   diFlowsError: boolean;
+  showUpdates: boolean;
+  setShowUpdates: (v: boolean) => void;
   canGenerate: boolean;
   overlayStatus: 'generating' | 'success' | 'error' | null;
   onGenerate: () => void;
@@ -133,6 +135,7 @@ export function LeftPanel({
   ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
   diFlows, selectedDiFlows, setSelectedDiFlows, diFlowsLoading, diFlowsError,
+  showUpdates, setShowUpdates,
   canGenerate, overlayStatus,
   onGenerate, onBack,
 }: LeftPanelProps) {
@@ -577,6 +580,16 @@ export function LeftPanel({
               </motion.div>
             )}
           </AnimatePresence>
+        </div>
+
+        <Divider />
+
+        {/* ── Updates de producto toggle ── */}
+        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>Updates de producto</span>
+          </div>
+          <DarkSwitch checked={showUpdates} onChange={() => setShowUpdates(!showUpdates)} />
         </div>
 
         <Divider />
