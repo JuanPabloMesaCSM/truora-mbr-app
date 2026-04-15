@@ -997,7 +997,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
     chartInstance.current = new Chart(chartRef.current, {
       type: "doughnut",
       data: {
-        labels: [`Pass Rate (${passRate.toFixed(1)}%)`, `Rejection (${rejectionRate.toFixed(1)}%)`],
+        labels: [`Checks exitosos (${passRate.toFixed(1)}%)`, `Checks con advertencias (${rejectionRate.toFixed(1)}%)`],
         datasets: [{ data: [passRate, rejectionRate],
           backgroundColor: [BGC.success, BGC.danger], borderWidth: 4, borderColor: t.cardBg }],
       },
@@ -1017,10 +1017,10 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
       <SlideHeader title={`Actividad del mes — ${periodLabel}`} subtitle={`Background Check · ${clientName}`} theme={theme} />
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 148 }}>
-          <KpiCard label="Total Checks" value={totalChecks.toLocaleString("es-CO")} delta={varChecks} theme={theme} />
-          <KpiCard label="Score Promedio" value={`${scorePromedio.toFixed(1)}`}
+          <KpiCard label="Total verificaciones" value={totalChecks.toLocaleString("es-CO")} delta={varChecks} theme={theme} />
+          <KpiCard label="Puntaje de confianza" value={`${scorePromedio.toFixed(1)}`}
             footnote={`/ 10 pts · Anterior: ${scorePrev.toFixed(1)}${deltaScore ? ` (Δ${deltaScore} pts)` : ""}`} theme={theme} />
-          <KpiCard label="Pass Rate" value={`${passRate.toFixed(1)}%`} valueColor={BGC.success}
+          <KpiCard label="Checks exitosos" value={`${passRate.toFixed(1)}%`} valueColor={BGC.success}
             footnote={`Anterior: ${passRatePrev.toFixed(1)}%${deltaPassRate ? ` · Δ ${deltaPassRate} pp` : ""}`} theme={theme} />
         </div>
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
@@ -1034,12 +1034,12 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
                 {passRate.toFixed(1)}%
               </span>
               <span style={{ fontSize: 11, color: "#94A3B8", marginTop: 6, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                pass rate
+                checks exitosos
               </span>
             </div>
           </div>
           <p style={{ margin: "6px 0 0", fontSize: 10, color: t.textMuted, textAlign: "center" }}>
-            Pass rate calculado con umbral score &gt; 6 · Confirmar umbral con el cliente si es diferente
+            Calculado con umbral puntaje &gt; 6 · Confirmar umbral con el cliente si es diferente
           </p>
         </div>
       </div>
@@ -1336,6 +1336,90 @@ function Bgc4Slide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
         )}
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Alertas de riesgo" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   BGC-4b | Labels High + Score (tabla de anomalías)
+══════════════════════════════════════════════════════════════ */
+
+function Bgc4bSlide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+  const rows = data["6_labels_high_score"] || [];
+  const anomalies = rows.filter(r => r.col5 === "1");
+  const normal    = rows.filter(r => r.col5 !== "1");
+
+  return (
+    <SlideShell id="BGC-4b" theme={theme}>
+      <SlideHeader title={`Alertas de riesgo alto y puntaje — ${periodLabel}`} subtitle={`Background Check · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        {/* Anomaly alert */}
+        {anomalies.length > 0 && (
+          <div style={{ flexShrink: 0, padding: "12px 20px", borderRadius: 10,
+            background: "rgba(239,68,68,0.10)", border: `1.5px solid ${BGC.danger}`,
+            display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 20 }}>⚠️</span>
+            <p style={{ margin: 0, fontSize: 12, color: BGC.danger, lineHeight: 1.5 }}>
+              Se detectaron <strong>{anomalies.reduce((s, r) => s + parseInt(r.col4 || "0", 10), 0).toLocaleString("es-CO")}</strong> verificaciones con alerta de riesgo alto pero puntaje superior a 6.
+              Esto puede indicar una base de datos configurada como informativa.
+            </p>
+          </div>
+        )}
+        {/* Table */}
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", background: BGC.primary, padding: "8px 16px", flexShrink: 0 }}>
+            {["Alerta", "País", "Puntaje", "Verificaciones", "Estado"].map((c, i) => (
+              <div key={c} style={{ width: ["30%", "15%", "15%", "20%", "20%"][i], flexShrink: 0,
+                fontSize: 10, fontWeight: 700, color: "#FFFFFF", textTransform: "uppercase", letterSpacing: "0.1em" }}>{c}</div>
+            ))}
+          </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {rows.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textMuted, fontSize: 13 }}>
+                Sin alertas de riesgo alto en este período
+              </div>
+            )}
+            {rows.map((r, i) => {
+              const isAnomaly = r.col5 === "1";
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 16px",
+                  background: i % 2 === 1 ? t.rowAlt : "transparent",
+                  borderBottom: i < rows.length - 1 ? `1px solid ${t.footerBorder}` : "none" }}>
+                  <div style={{ width: "30%", flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: isAnomaly ? BGC.danger : t.textPrimary }}>
+                      {getLabelBGC(r.col1 || "").descripcion}
+                    </span>
+                  </div>
+                  <div style={{ width: "15%", flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, color: t.textMuted }}>{r.col2 || "—"}</span>
+                  </div>
+                  <div style={{ width: "15%", flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>{r.col3 || "—"}</span>
+                  </div>
+                  <div style={{ width: "20%", flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>
+                      {parseInt(r.col4 || "0", 10).toLocaleString("es-CO")}
+                    </span>
+                  </div>
+                  <div style={{ width: "20%", flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+                      background: isAnomaly ? "rgba(239,68,68,0.12)" : "rgba(34,197,94,0.12)",
+                      color: isAnomaly ? BGC.danger : BGC.success }}>
+                      {isAnomaly ? "Anomalía" : "Normal"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Alertas de riesgo alto" />
     </SlideShell>
   );
 }
@@ -3165,13 +3249,14 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
     }
     if (product === "BGC") {
       switch (slideId) {
-        case "1_resumen_general":   return <Bgc1Slide {...p} />;
-        case "2_por_pais":         return <Bgc2Slide {...p} />;
-        case "4_score_por_pais":   return <Bgc3Slide {...p} />;
-        case "5_labels":           return <Bgc4Slide {...p} />;
-        case "7_historico_3meses": return <Bgc5Slide {...p} />;
-        case "2b_pais_x_tipo":     return <Bgc6Slide {...p} />;
-        case "3_por_tipo":         return <Bgc7Slide {...p} />;
+        case "1_resumen_general":    return <Bgc1Slide {...p} />;
+        case "2_por_pais":          return <Bgc2Slide {...p} />;
+        case "4_score_por_pais":    return <Bgc3Slide {...p} />;
+        case "5_labels":            return <Bgc4Slide {...p} />;
+        case "6_labels_high_score": return <Bgc4bSlide {...p} />;
+        case "7_historico_3meses":  return <Bgc5Slide {...p} />;
+        case "2b_pais_x_tipo":      return <Bgc6Slide {...p} />;
+        case "3_por_tipo":          return <Bgc7Slide {...p} />;
         default:                   return null;
       }
     }
