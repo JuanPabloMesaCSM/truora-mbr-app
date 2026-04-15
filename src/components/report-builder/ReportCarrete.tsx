@@ -76,12 +76,12 @@ function ScaledSlide({ children }: { children: React.ReactNode }) {
   const height = Math.round(720 * scale);
 
   return (
-    <div ref={containerRef} style={{
+    <div ref={containerRef} data-pdf-outer style={{
       width: '100%', height, position: 'relative',
       overflow: 'hidden', borderRadius: 12,
       boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
     }}>
-      <div style={{
+      <div data-pdf-inner style={{
         width: 1280, height: 720,
         transform: `scale(${scale})`,
         transformOrigin: 'top left',
