@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { MODULES, PRODUCT_COLORS, type Product, type ModuleDef, type ModuleInsight } from "./moduleDefinitions";
+import { MODULES, PRODUCT_COLORS, INSIGHT_TO_SLIDES, type Product, type ModuleDef, type ModuleInsight } from "./moduleDefinitions";
 import { AnimatedCanvasChart } from "./AnimatedChartPreview";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { SlideCanvas, type Theme, type CeFlowData, PortadaSlide, AgendaSlide, SeparadorSlide, InsightsFinalesSlide, UpdatesSlide, CierreSlide } from "./SlideCanvas";
@@ -40,10 +40,19 @@ export function CenterCanvas({
   moduleInsights = {}, overlayStatus, reportData, theme, isCeFlowSpecific, showUpdates = true, onOverlayClose, onNewReport, onRetry, onBack,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: CenterCanvasProps) {
+  const insightsPorMetrica: Record<string, string> = reportData?.insights_por_metrica ?? {};
+  const getMetricInsight = (slideId: string): string | null => {
+    for (const [metrica, texto] of Object.entries(insightsPorMetrica)) {
+      const slides = INSIGHT_TO_SLIDES[metrica] ?? [];
+      if (slides.includes(slideId)) return texto as string;
+    }
+    return null;
+  };
+
   const getSlideInsight = (id: string) => {
     const mi = moduleInsights[id];
-    if (!mi || !mi.mode) return {};
-    if (mi.mode === 'manual') {
+
+    if (mi && mi.mode === 'manual') {
       return {
         insightText: mi.text || '',
         insightSource: 'manual' as const,
@@ -51,11 +60,17 @@ export function CenterCanvas({
         onInsightChange: onModuleInsightChange ? (text: string) => onModuleInsightChange(id, text) : undefined,
       };
     }
-    if (mi.mode === 'ai') {
+
+    // AI: explicit per-slide data first, then fallback to insights_por_metrica
+    if ((mi && mi.mode === 'ai') || (!(mi && mi.mode) && insightsMode === 'ai')) {
       const rows = reportData && reportData.data ? reportData.data['insight_' + id] : undefined;
-      const text = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
-      if (text) return { insightText: text, insightSource: 'ai' };
+      const explicitText = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
+      if (explicitText) return { insightText: explicitText, insightSource: 'ai' as const };
+
+      const metricText = getMetricInsight(id);
+      if (metricText) return { insightText: metricText, insightSource: 'ai' as const };
     }
+
     return {};
   };
   const color = PRODUCT_COLORS[product];

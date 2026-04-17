@@ -15,7 +15,7 @@ export const PRODUCT_LABELS: Record<Product, string> = {
 export const PRODUCT_WEBHOOKS: Record<Product, string> = {
   DI: 'https://n8n.zapsign.com.br/webhook/report-builder',
   BGC: 'https://n8n.zapsign.com.br/webhook/report-builder-bgc',
-  CE: 'https://n8n.zapsign.com.br/webhook/report-builder-ce',
+  CE: 'https://n8n.zapsign.com.br/webhook/report-builder-ce-async',
 };
 
 export const PRODUCT_CLIENT_FIELD: Record<Product, 'client_id_di' | 'client_id_bgc' | 'client_id_ce'> = {
@@ -141,3 +141,20 @@ export function parsePeriod(value: string) {
 }
 
 export const ADMIN_EMAIL = 'jpmesa@truora.com';
+
+/* Mapping: metric key (insights_por_metrica) → slide IDs that receive that insight */
+export const INSIGHT_TO_SLIDES: Record<string, string[]> = {
+  volumen:                    ['1_metricas_generales', '1_resumen_general', '1_consumo_total'],
+  conversion_global:          ['1_metricas_generales'],
+  conversion_promedio_flujos: ['1_metricas_generales', '5_flujos'],
+  reintentos:                 ['2_usuarios_reintentos'],
+  declinados:                 ['10_declinados'],
+  rechazados:                 ['7_razones_doc', '8_razones_rostro'],
+  distribucion_labels:        ['5_labels'],
+  custom_types:               ['3_por_tipo'],
+  eficiencia_campanas:        ['2_eficiencia_campanas'],
+  fallos_outbound:            ['3_fallos_outbound'],
+  inbound:                    ['5_flujo_inbound'],
+  agentes:                    ['6_agentes_general'],
+  consumo_total:              ['1_consumo_total'],
+};

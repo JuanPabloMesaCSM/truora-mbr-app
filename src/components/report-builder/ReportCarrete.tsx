@@ -23,7 +23,7 @@ import {
 } from "./SlideCanvas";
 import { GeneratingOverlay } from "./GeneratingOverlay";
 import { ReconciliationPanel } from "./ReconciliationPanel";
-import { MODULES, PRODUCT_COLORS, type Product, type ModuleInsight } from "./moduleDefinitions";
+import { MODULES, PRODUCT_COLORS, INSIGHT_TO_SLIDES, type Product, type ModuleInsight } from "./moduleDefinitions";
 import { exportPDF, exportPPTX } from "@/utils/exportPDF";
 
 const S = {
@@ -35,22 +35,6 @@ const S = {
   dim:     '#4A5580',
 };
 
-/* ── Mapping: metric key → slide IDs que reciben ese insight ── */
-const INSIGHT_TO_SLIDES: Record<string, string[]> = {
-  volumen:                    ['1_metricas_generales', '1_resumen_general', '1_consumo_total'],
-  conversion_global:          ['1_metricas_generales'],
-  conversion_promedio_flujos: ['1_metricas_generales', '5_flujos'],
-  reintentos:                 ['2_usuarios_reintentos'],
-  declinados:                 ['10_declinados'],
-  rechazados:                 ['7_razones_doc', '8_razones_rostro'],
-  distribucion_labels:        ['5_labels'],
-  custom_types:               ['3_por_tipo'],
-  eficiencia_campanas:        ['2_eficiencia_campanas'],
-  fallos_outbound:            ['3_fallos_outbound'],
-  inbound:                    ['5_flujo_inbound'],
-  agentes:                    ['6_agentes_general'],
-  consumo_total:              ['1_consumo_total'],
-};
 
 /* ────────────────────────────────────────────────────────
    ScaledSlide — contenedor con ResizeObserver para escalar
@@ -352,26 +336,6 @@ export function ReportCarrete({
   const hasInsights = insightsMode !== null;
   const totalSlides = 3 + dataSlideIds.length + (hasInsights ? 2 : 0) + (showUpdates ? 2 : 0) + 1;
 
-  /* ── insight helper ── */
-  const getSlideInsight = (id: string) => {
-    const mi = moduleInsights[id];
-    if (!mi || !mi.mode) return {};
-    if (mi.mode === 'manual') {
-      return {
-        insightText: mi.text || '',
-        insightSource: 'manual' as const,
-        insightEditable: hasData,
-        onInsightChange: onModuleInsightChange ? (text: string) => onModuleInsightChange(id, text) : undefined,
-      };
-    }
-    if (mi.mode === 'ai') {
-      const rows = data['insight_' + id];
-      const text = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
-      if (text) return { insightText: text, insightSource: 'ai' as const };
-    }
-    return {};
-  };
-
   /* ── per-metric insight helper (insights_por_metrica from response) ── */
   const insightsPorMetrica: Record<string, string> = hasData ? (reportData.insights_por_metrica ?? {}) : {};
   const getMetricInsight = (slideId: string): string | null => {
@@ -380,6 +344,33 @@ export function ReportCarrete({
       if (slides.includes(slideId)) return texto as string;
     }
     return null;
+  };
+
+  /* ── insight helper ── */
+  const getSlideInsight = (id: string) => {
+    const mi = moduleInsights[id];
+
+    if (mi && mi.mode === 'manual') {
+      return {
+        insightText: mi.text || '',
+        insightSource: 'manual' as const,
+        insightEditable: hasData,
+        onInsightChange: onModuleInsightChange ? (text: string) => onModuleInsightChange(id, text) : undefined,
+      };
+    }
+
+    // AI: explicit per-slide data first, then fallback to insights_por_metrica
+    // Applies when: module has mode=ai explicitly, OR global insightsMode=ai with no override
+    if ((mi && mi.mode === 'ai') || (!(mi && mi.mode) && insightsMode === 'ai')) {
+      const rows = data['insight_' + id];
+      const explicitText = rows && rows[0] && rows[0].col1 ? rows[0].col1 : undefined;
+      if (explicitText) return { insightText: explicitText, insightSource: 'ai' as const };
+
+      const metricText = getMetricInsight(id);
+      if (metricText) return { insightText: metricText, insightSource: 'ai' as const };
+    }
+
+    return {};
   };
 
   /* ── reconciliation ── */
@@ -444,30 +435,24 @@ export function ReportCarrete({
         label,
         render: (num: number) => {
           const insight = getSlideInsight(slideId);
-          const metricInsightText = hasData ? getMetricInsight(slideId) : null;
           return (
-            <>
-              <ScaledSlide>
-                <DataSlide hasData={hasData} revealDelay={idx * 120} shimmerLabel={label}>
-                  <SlideCanvas
-                    slideId={slideId}
-                    product={product}
-                    data={data}
-                    ceFlows={ceFlowsData}
-                    meta={meta}
-                    theme={theme}
-                    clientName={effectiveClient}
-                    periodLabel={effectivePeriod}
-                    pageNum={num}
-                    totalPages={totalSlides}
-                    {...insight}
-                  />
-                </DataSlide>
-              </ScaledSlide>
-              {metricInsightText && insightsMode === 'ai' && (
-                <MetricInsightPanel text={metricInsightText} />
-              )}
-            </>
+            <ScaledSlide>
+              <DataSlide hasData={hasData} revealDelay={idx * 120} shimmerLabel={label}>
+                <SlideCanvas
+                  slideId={slideId}
+                  product={product}
+                  data={data}
+                  ceFlows={ceFlowsData}
+                  meta={meta}
+                  theme={theme}
+                  clientName={effectiveClient}
+                  periodLabel={effectivePeriod}
+                  pageNum={num}
+                  totalPages={totalSlides}
+                  {...insight}
+                />
+              </DataSlide>
+            </ScaledSlide>
           );
         },
       });

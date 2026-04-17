@@ -29,10 +29,10 @@ export function GeneratingOverlay({ status, onClose, onRetry }: GeneratingOverla
 
     const interval = setInterval(() => {
       setProgress(prev => {
-        if (prev >= 85) { clearInterval(interval); return 85; }
-        return prev + 0.5;
+        if (prev >= 90) { clearInterval(interval); return 90; }
+        return prev + 0.1;
       });
-    }, 100);
+    }, 200);
     return () => clearInterval(interval);
   }, [status]);
 
@@ -41,10 +41,10 @@ export function GeneratingOverlay({ status, onClose, onRetry }: GeneratingOverla
     if (status !== "generating") return;
     const timer = setInterval(() => {
       setCompletedSteps(prev => {
-        if (prev >= 3) { clearInterval(timer); return 3; } // stop at 4th, last one waits for success
+        if (prev >= 3) { clearInterval(timer); return 3; }
         return prev + 1;
       });
-    }, 3000);
+    }, 15000);
     return () => clearInterval(timer);
   }, [status]);
 
@@ -95,7 +95,7 @@ export function GeneratingOverlay({ status, onClose, onRetry }: GeneratingOverla
 
               <div className="space-y-2">
                 <h2 className="text-lg font-bold text-white">Generando tu reporte...</h2>
-                <p className="text-sm text-white/40">Esto puede tomar hasta 60 segundos</p>
+                <p className="text-sm text-white/40">Esto puede tomar varios minutos según la cantidad de flujos</p>
               </div>
 
               {/* Progress bar */}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
@@ -326,9 +326,20 @@ const Index = () => {
     });
   };
 
-  /* ─── Generate report ─── */
+  /* ─── Job polling cleanup ─── */
+  const jobCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => { jobCleanupRef.current?.(); };
+  }, []);
+
+  /* ─── Generate report (async via Supabase) ─── */
   const handleGenerate = async () => {
     if (!canGenerate || !selectedClient || !periodData || !csmProfile) return;
+
+    jobCleanupRef.current?.();
+    jobCleanupRef.current = null;
+
     setOverlayStatus('generating');
     setReportData(null);
 
@@ -381,37 +392,140 @@ const Index = () => {
         : Array.from(selectedDiFlows);
     }
 
-    try {
-      console.log('Payload:', payload);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120_000);
+    const useAsync = product === 'CE';
 
-      const res = await fetch(PRODUCT_WEBHOOKS[product], {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+    if (!useAsync) {
+      /* ── Sync path (DI / BGC) ── */
+      try {
+        console.log('Payload:', payload);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 300_000);
 
-      if (res.ok) {
-        let raw = await res.json().catch(() => ({}));
-        if (Array.isArray(raw)) raw = raw[0] ?? {};
-        console.log('Response:', raw);
-        if (raw.status === 'success' && raw.data) {
-          setReportData(raw);
+        const res = await fetch(PRODUCT_WEBHOOKS[product], {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (res.ok) {
+          let raw = await res.json().catch(() => ({}));
+          if (Array.isArray(raw)) raw = raw[0] ?? {};
+          console.log('Response:', raw);
+          if (raw.status === 'success' && raw.data) {
+            setReportData(raw);
+            setOverlayStatus('success');
+          } else {
+            setOverlayStatus('error');
+          }
+        } else {
+          console.error('Webhook error:', res.status);
+          setOverlayStatus('error');
+        }
+      } catch (err) {
+        console.error('Fetch error:', err);
+        setOverlayStatus('error');
+      }
+      return;
+    }
+
+    /* ── Async path (CE) ── */
+
+    /* 1. Create job in Supabase */
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id ?? '';
+
+    const { data: job, error: insertErr } = await supabase
+      .from('mbr_jobs')
+      .insert({
+        cliente: selectedClient.nombre,
+        periodo: periodData.periodoReporte,
+        producto: product,
+        csm_nombre: csmProfile.nombre,
+        csm_email: userEmail,
+        status: 'en_proceso',
+        payload: payload as any,
+        sheets_url: sheetUrl || '',
+        user_id: userId,
+      })
+      .select('id')
+      .single();
+
+    if (insertErr || !job) {
+      console.error('Job insert error:', insertErr);
+      setOverlayStatus('error');
+      return;
+    }
+
+    console.log('Job created:', job.id);
+
+    /* 2. Fire webhook with job_id (fire-and-forget) */
+    fetch(PRODUCT_WEBHOOKS[product], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, job_id: job.id }),
+    }).catch(() => {});
+
+    /* 3. Listen for completion via realtime + polling fallback */
+    let resolved = false;
+
+    const handleJobResult = (row: { status: string; result?: any }) => {
+      if (resolved) return;
+      if (row.status === 'finalizado' && row.result) {
+        resolved = true;
+        let data = row.result;
+        if (Array.isArray(data)) data = data[0] ?? {};
+        console.log('Job result:', data);
+        if (data.status === 'success' && data.data) {
+          setReportData(data as ReportData);
           setOverlayStatus('success');
         } else {
           setOverlayStatus('error');
         }
-      } else {
-        console.error('Webhook error:', res.status);
+        cleanup();
+      } else if (row.status === 'fallido') {
+        resolved = true;
         setOverlayStatus('error');
+        cleanup();
       }
-    } catch (err) {
-      console.error('Fetch error:', err);
+    };
+
+    const channel = supabase
+      .channel(`job-${job.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'mbr_jobs', filter: `id=eq.${job.id}` },
+        (payload) => handleJobResult(payload.new as any),
+      )
+      .subscribe();
+
+    const pollId = setInterval(async () => {
+      if (resolved) return;
+      const { data } = await supabase
+        .from('mbr_jobs')
+        .select('status, result')
+        .eq('id', job.id)
+        .single();
+      if (data) handleJobResult(data);
+    }, 15_000);
+
+    const maxTimeout = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      console.error('Job timeout after 15 min');
       setOverlayStatus('error');
-    }
+      cleanup();
+    }, 900_000);
+
+    const cleanup = () => {
+      supabase.removeChannel(channel);
+      clearInterval(pollId);
+      clearTimeout(maxTimeout);
+      jobCleanupRef.current = null;
+    };
+
+    jobCleanupRef.current = cleanup;
   };
 
   /* ─── Dev mock ─── */

@@ -84,7 +84,9 @@ export type Database = {
           id: string
           payload: Json
           periodo: string
+          producto: string | null
           report_url: string | null
+          result: Json | null
           sheets_url: string
           status: string
           updated_at: string
@@ -99,8 +101,10 @@ export type Database = {
           id?: string
           payload: Json
           periodo: string
+          producto?: string | null
           report_url?: string | null
-          sheets_url: string
+          result?: Json | null
+          sheets_url?: string
           status?: string
           updated_at?: string
           user_id: string
@@ -114,7 +118,9 @@ export type Database = {
           id?: string
           payload?: Json
           periodo?: string
+          producto?: string | null
           report_url?: string | null
+          result?: Json | null
           sheets_url?: string
           status?: string
           updated_at?: string
