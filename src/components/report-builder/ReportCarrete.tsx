@@ -312,24 +312,27 @@ export function ReportCarrete({
   const skipCeGlobal = product === 'CE' && (isCeFlowSpecific || meta.modo === 'flujos');
 
   /* Módulos CE que no son slides propios sino controles de los slides por flujo */
-  const CE_FLOW_MODULES = new Set(['4_funnel_generico', '4b_funnel_steps']);
+  const CE_FLOW_MODULES = new Set(['4_funnel_generico', '4b_funnel_steps', '4c_vrf', '4d_vrf_arbol']);
 
   const dataSlideIds: string[] = [];
   if (!skipCeGlobal) dataSlideIds.push(modules.base.id);
   for (const mod of modules.optional) {
     if (!activeModuleIds.includes(mod.id)) continue;
     if (skipCeGlobal && CE_GLOBAL_IDS.has(mod.id)) continue;
-    if (CE_FLOW_MODULES.has(mod.id)) continue; // no tienen renderer propio
+    if (CE_FLOW_MODULES.has(mod.id)) continue;
     dataSlideIds.push(mod.id);
   }
   if (product === 'CE' && ceFlowsData.length > 0) {
-    const showOtb   = activeModuleIds.includes('4_funnel_generico');
-    const showSteps = activeModuleIds.includes('4b_funnel_steps');
+    const showOtb      = activeModuleIds.includes('4_funnel_generico');
+    const showSteps    = activeModuleIds.includes('4b_funnel_steps');
+    const showVrf      = activeModuleIds.includes('4c_vrf');
+    const showVrfArbol = activeModuleIds.includes('4d_vrf_arbol');
     for (let i = 0; i < ceFlowsData.length; i++) {
-      if (showOtb || showSteps) dataSlideIds.push(`ce_sep_${i}`);
+      if (showOtb || showSteps || showVrf || showVrfArbol) dataSlideIds.push(`ce_sep_${i}`);
       if (showOtb)   dataSlideIds.push(`ce_otb_${i}`);
       if (showSteps) dataSlideIds.push(`ce_steps_${i}`);
-      if (ceFlowsData[i].tiene_vrf) dataSlideIds.push(`ce_vrf_${i}`);
+      if (showVrf && ceFlowsData[i].tiene_vrf) dataSlideIds.push(`ce_vrf_${i}`);
+      if (showVrfArbol && ceFlowsData[i].tiene_vrf) dataSlideIds.push(`ce_vrfarbol_${i}`);
     }
   }
 
@@ -421,13 +424,13 @@ export function ReportCarrete({
     dataSlideIds.forEach((slideId, idx) => {
       const mod = [modules.base, ...modules.optional].find(m => m.id === slideId);
       const isCeSep = slideId.startsWith('ce_sep_');
-      const isCeData = slideId.startsWith('ce_otb_') || slideId.startsWith('ce_steps_') || slideId.startsWith('ce_vrf_');
+      const isCeData = slideId.startsWith('ce_otb_') || slideId.startsWith('ce_steps_') || slideId.startsWith('ce_vrf_') || slideId.startsWith('ce_vrfarbol_');
       const label = mod
         ? mod.label
         : isCeSep
           ? 'Separador de flujo'
           : isCeData
-            ? slideId.startsWith('ce_otb_') ? 'Funnel OTB' : slideId.startsWith('ce_steps_') ? 'Funnel Steps' : 'VRF'
+            ? slideId.startsWith('ce_otb_') ? 'Funnel OTB' : slideId.startsWith('ce_steps_') ? 'Funnel Steps' : slideId.startsWith('ce_vrfarbol_') ? 'VRF Árbol' : 'VRF'
             : slideId;
 
       entries.push({

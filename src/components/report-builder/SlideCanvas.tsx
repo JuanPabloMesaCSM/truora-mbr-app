@@ -2848,6 +2848,610 @@ function Ce10Slide({ ceFlows, flowIndex, theme, clientName, periodLabel, pageNum
   );
 }
 
+/* ════════════════════════════════════════════════════════════
+   CE-11 | VRF Árbol — Journey completo OTB → VRF en formato árbol
+══════════════════════════════════════════════════════════════ */
+
+function Ce11Slide({ ceFlows, flowIndex, theme, clientName, periodLabel, pageNum = 1 }: {
+  ceFlows: CeFlowData[]; flowIndex: number; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t    = tok(theme);
+  const flow = ceFlows[flowIndex];
+  if (!flow || !flow.tiene_vrf) return null;
+  const fo = flow.funnel_otb;
+  const v  = flow.vrf;
+
+  const enviados   = parseInt(fo.COL1 || "0", 10);
+  const fallanMeta = parseInt(fo.COL2 || "0", 10);
+  const recepcion  = parseInt(fo.COL3 || "0", 10);
+  const noResp     = parseInt(fo.COL4 || "0", 10);
+  const contestados = recepcion - noResp;
+
+  const docIniciados  = parseInt(v.COL1  || "0", 10);
+  const docExitosos   = parseInt(v.COL2  || "0", 10);
+  const docExpira     = parseInt(v.COL3  || "0", 10);
+  const docFallidos   = docIniciados - docExitosos - docExpira;
+  const rosIniciados  = parseInt(v.COL6  || "0", 10);
+  const rosExitosos   = parseInt(v.COL7  || "0", 10);
+  const identExitosa  = parseInt(v.COL9  || "0", 10);
+  const firmaIniciada = parseInt(v.COL11 || "0", 10);
+  const firmaExitosa  = parseInt(v.COL_EXTRA1 || "0", 10);
+
+  const fmt = (n: number) => n.toLocaleString("es-CO");
+  const pct = (part: number, total: number) => total > 0 ? `${((part / total) * 100).toFixed(1)}%` : "—";
+
+  type TreeNode = { label: string; value: number; pctLabel: string; color: string; children?: TreeNode[] };
+
+  const tree: TreeNode = {
+    label: "Enviados", value: enviados, pctLabel: "100%", color: CE.outbound,
+    children: [
+      { label: "Fallan Meta", value: fallanMeta, pctLabel: pct(fallanMeta, enviados), color: CE.danger },
+      { label: "Recibidos", value: recepcion, pctLabel: pct(recepcion, enviados), color: CE.outbound,
+        children: [
+          { label: "No respondidos", value: noResp, pctLabel: pct(noResp, recepcion), color: CE.warning },
+          { label: "Contestados", value: contestados, pctLabel: pct(contestados, recepcion), color: CE.inbound,
+            children: [
+              ...(docIniciados > 0 ? [{
+                label: "Documento", value: docIniciados, pctLabel: pct(docIniciados, contestados), color: CE.outbound,
+                children: [
+                  ...(docFallidos > 0 ? [{ label: "Doc. fallido", value: docFallidos, pctLabel: pct(docFallidos, docIniciados), color: CE.danger }] : []),
+                  ...(docExpira > 0 ? [{ label: "Doc. expirado", value: docExpira, pctLabel: pct(docExpira, docIniciados), color: CE.warning }] : []),
+                  { label: "Doc. exitoso", value: docExitosos, pctLabel: pct(docExitosos, docIniciados), color: CE.inbound,
+                    children: [
+                      ...(rosIniciados > 0 ? [{
+                        label: "Rostro", value: rosIniciados, pctLabel: pct(rosIniciados, docExitosos), color: CE.outbound,
+                        children: [
+                          { label: "Rostro exitoso", value: rosExitosos, pctLabel: pct(rosExitosos, rosIniciados), color: CE.inbound,
+                            children: [
+                              ...(identExitosa > 0 ? [{
+                                label: "Identidad completa", value: identExitosa, pctLabel: pct(identExitosa, rosExitosos), color: CE.inbound,
+                                children: firmaIniciada > 0 ? [
+                                  { label: "Firma exitosa", value: firmaExitosa, pctLabel: pct(firmaExitosa, firmaIniciada), color: CE.inbound },
+                                ] : undefined,
+                              }] : []),
+                            ],
+                          },
+                        ],
+                      }] : []),
+                    ],
+                  },
+                ],
+              }] : []),
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const NODE_H = 38;
+  const INDENT = 28;
+  const COL_VAL_W = 80;
+  const COL_PCT_W = 60;
+
+  function countNodes(node: TreeNode): number {
+    let c = 1;
+    if (node.children) for (const ch of node.children) c += countNodes(ch);
+    return c;
+  }
+  const totalNodes = countNodes(tree);
+  const dynamicH = Math.min(NODE_H, Math.floor(540 / totalNodes));
+
+  function TreeRow({ node, depth }: { node: TreeNode; depth: number }) {
+    const dotSize = 10;
+    const isLeaf = !node.children || node.children.length === 0;
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", height: dynamicH, paddingLeft: depth * INDENT }}>
+          {depth > 0 && (
+            <div style={{ width: 16, height: "100%", position: "relative", flexShrink: 0 }}>
+              <div style={{ position: "absolute", left: 6, top: 0, bottom: "50%", width: 1, background: `${t.textMuted}33` }} />
+              <div style={{ position: "absolute", left: 6, top: "50%", width: 10, height: 1, background: `${t.textMuted}33` }} />
+            </div>
+          )}
+          <div style={{ width: dotSize, height: dotSize, borderRadius: "50%", background: node.color, flexShrink: 0, marginRight: 8 }} />
+          <span style={{ flex: 1, fontSize: 11, fontWeight: isLeaf ? 600 : 700, color: t.textPrimary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {node.label}
+          </span>
+          <span style={{ width: COL_VAL_W, textAlign: "right", fontSize: 12, fontWeight: 700, color: t.textPrimary, flexShrink: 0 }}>
+            {fmt(node.value)}
+          </span>
+          <span style={{ width: COL_PCT_W, textAlign: "right", fontSize: 11, fontWeight: 600, color: node.color, flexShrink: 0 }}>
+            {node.pctLabel}
+          </span>
+        </div>
+        {node.children && node.children.map((ch, i) => (
+          <TreeRow key={`${ch.label}-${i}`} node={ch} depth={depth + 1} />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <SlideShell id={`CE-11-${flowIndex}`} theme={theme}>
+      <SlideHeader title={`Journey Completo — ${flow.flow_name}`} subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 10 }}>
+        <div style={{ background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "14px 20px", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Column headers */}
+          <div style={{ display: "flex", alignItems: "center", height: 28, borderBottom: `1px solid ${t.footerBorder}`, marginBottom: 4, flexShrink: 0 }}>
+            <span style={{ flex: 1, fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.14em" }}>Paso</span>
+            <span style={{ width: COL_VAL_W, textAlign: "right", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.14em" }}>Cantidad</span>
+            <span style={{ width: COL_PCT_W, textAlign: "right", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.14em" }}>% del paso</span>
+          </div>
+          {/* Tree */}
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <TreeRow node={tree} depth={0} />
+          </div>
+        </div>
+        {/* KPI summary row */}
+        <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+          {[
+            { label: "Enviados", value: fmt(enviados), color: CE.outbound },
+            { label: "Recibidos", value: fmt(recepcion), color: CE.outbound },
+            { label: "Doc. exitoso", value: fmt(docExitosos), color: CE.inbound },
+            { label: "Rostro exitoso", value: fmt(rosExitosos), color: CE.inbound },
+            ...(firmaIniciada > 0 ? [{ label: "Firma exitosa", value: fmt(firmaExitosa), color: CE.inbound }] : []),
+          ].map((kpi) => (
+            <div key={kpi.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder, borderRadius: 10,
+              padding: "8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.1em" }}>{kpi.label}</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: kpi.color, lineHeight: 1 }}>{kpi.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel={`CE · VRF Árbol · ${flow.flow_name}`} />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   CE-12 | Consumo por Línea WhatsApp
+══════════════════════════════════════════════════════════════ */
+
+function Ce12Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const chartRef  = useRef<HTMLCanvasElement>(null);
+  const chartInst = useRef<Chart | null>(null);
+  const t = tok(theme);
+
+  const rows = (data["5b_consumo_por_linea"] || [])
+    .slice()
+    .sort((a, b) => parseInt(b.col4 || "0", 10) - parseInt(a.col4 || "0", 10));
+
+  const labels    = rows.map(r => r.col1 || "—");
+  const otbData   = rows.map(r => parseInt(r.col2 || "0", 10));
+  const notifData = rows.map(r => parseInt(r.col3 || "0", 10));
+  const totals    = rows.map(r => parseInt(r.col4 || "0", 10));
+  const totalGlobal = totals.reduce((s, v) => s + v, 0);
+  const topLine   = rows[0];
+  const depKey    = JSON.stringify([labels, otbData, notifData]);
+
+  useEffect(() => {
+    if (!chartRef.current || rows.length === 0) return;
+    chartInst.current?.destroy();
+    chartInst.current = new Chart(chartRef.current, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Outbound",       data: otbData,   backgroundColor: CE.outbound, stack: "stack", borderRadius: 0, datalabels: { display: false } as any },
+          { label: "Notificaciones", data: notifData, backgroundColor: CE.notif,    stack: "stack", borderRadius: 0,
+            datalabels: { display: true, color: t.textPrimary, anchor: "end", align: "right", font: { size: 10, weight: 700 },
+              formatter: (_: number, ctx: any) => {
+                const total = (otbData[ctx.dataIndex] || 0) + (notifData[ctx.dataIndex] || 0);
+                return total.toLocaleString("es-CO");
+              },
+            } as any,
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        plugins: {
+          legend: { position: "bottom", labels: { color: t.legendColor, font: { size: 11, weight: 600 }, padding: 10, usePointStyle: true, pointStyleWidth: 8 } },
+          tooltip: { enabled: true },
+        },
+        scales: {
+          x: { stacked: true, display: false, beginAtZero: true },
+          y: { stacked: true, grid: { display: false }, ticks: { color: t.chartText, font: { size: 10 }, padding: 4 } },
+        },
+        layout: { padding: { right: 72, top: 4 } },
+      },
+    } as any);
+    return () => { chartInst.current?.destroy(); chartInst.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.legendColor, t.chartText, t.textPrimary]);
+
+  return (
+    <SlideShell id="CE-12" theme={theme}>
+      <SlideHeader title={`Consumo por Línea WhatsApp — ${periodLabel}`} subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 100 }}>
+          <KpiCard label="Volumen total" value={totalGlobal.toLocaleString("es-CO")} theme={theme} />
+          <KpiCard label="Líneas activas" value={String(rows.length)} theme={theme} />
+          <KpiCard label="Línea top" value={topLine ? `${parseFloat(topLine.col5 || "0").toFixed(1)}%` : "—"}
+            valueColor={CE.outbound} footnote={topLine ? topLine.col1 : undefined} theme={theme} />
+        </div>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "12px 20px 8px", overflow: "hidden", position: "relative" }}>
+          <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Consumo por Línea" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   CE-13 | Tendencia Mensual
+══════════════════════════════════════════════════════════════ */
+
+function Ce13Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const chartRef  = useRef<HTMLCanvasElement>(null);
+  const chartInst = useRef<Chart | null>(null);
+  const t = tok(theme);
+
+  const rows = (data["5c_tendencia_mensual"] || [])
+    .slice()
+    .sort((a, b) => (a.periodo || "").localeCompare(b.periodo || ""));
+
+  const labels    = rows.map(r => monthLabel(r.periodo || ""));
+  const otbData   = rows.map(r => parseInt(r.col1 || "0", 10));
+  const notifData = rows.map(r => parseInt(r.col2 || "0", 10));
+  const inbData   = rows.map(r => parseInt(r.col3 || "0", 10));
+  const totals    = rows.map(r => parseInt(r.col4 || "0", 10));
+
+  const lastTotal = totals[totals.length - 1] || 0;
+  const prevTotal = totals[totals.length - 2] || 0;
+  const momPct    = prevTotal > 0 ? ((lastTotal - prevTotal) / prevTotal * 100).toFixed(1) : null;
+  const maxTotal  = totals.length > 0 ? Math.max(...totals) : 0;
+  const maxIndex  = totals.indexOf(maxTotal);
+  const depKey    = JSON.stringify([labels, otbData, notifData, inbData]);
+
+  useEffect(() => {
+    if (!chartRef.current || rows.length === 0) return;
+    chartInst.current?.destroy();
+    chartInst.current = new Chart(chartRef.current, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Outbound",       data: otbData,   backgroundColor: CE.outbound, stack: "stack", borderRadius: 0, datalabels: { display: false } as any },
+          { label: "Notificaciones", data: notifData, backgroundColor: CE.notif,    stack: "stack", borderRadius: 0, datalabels: { display: false } as any },
+          { label: "Inbound",        data: inbData,   backgroundColor: CE.inbound,  stack: "stack", borderRadius: 0,
+            datalabels: { display: true, color: t.textPrimary, anchor: "end", align: "top", font: { size: 10, weight: 700 },
+              formatter: (_: number, ctx: any) => {
+                const total = totals[ctx.dataIndex] || 0;
+                if (total === 0) return "";
+                return total >= 1000000 ? `${(total / 1000000).toFixed(1)}M` : total >= 1000 ? `${Math.round(total / 1000)}k` : String(total);
+              },
+            } as any,
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: { position: "bottom", labels: { color: t.legendColor, font: { size: 12, weight: 600 }, padding: 14, usePointStyle: true, pointStyleWidth: 9 } },
+          tooltip: { enabled: true },
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { color: t.chartText, font: { size: 13, weight: 600 } } },
+          y: { stacked: true, display: false, beginAtZero: true },
+        },
+        layout: { padding: { top: 24 } },
+      },
+    } as any);
+    return () => { chartInst.current?.destroy(); chartInst.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.legendColor, t.chartText, t.textPrimary]);
+
+  return (
+    <SlideShell id="CE-13" theme={theme}>
+      <SlideHeader title={`Tendencia Mensual — ${clientName}`} subtitle={`Customer Engagement · ${periodLabel}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 100 }}>
+          <KpiCard label="Mes actual" value={lastTotal.toLocaleString("es-CO")} theme={theme} />
+          {momPct !== null && (
+            <KpiCard label="Variación MoM"
+              value={`${parseFloat(momPct) >= 0 ? "+" : ""}${momPct}%`}
+              valueColor={parseFloat(momPct) >= 0 ? CE.inbound : CE.danger}
+              theme={theme} />
+          )}
+          {maxIndex >= 0 && rows.length > 0 && (
+            <KpiCard label="Mes pico" value={labels[maxIndex] || "—"} footnote={maxTotal.toLocaleString("es-CO")} theme={theme} />
+          )}
+        </div>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "12px 20px 8px", overflow: "hidden", position: "relative" }}>
+          <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Tendencia Mensual" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   CE-14 | Heatmap Cambios por Línea WhatsApp
+══════════════════════════════════════════════════════════════ */
+
+function Ce14Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+  const rows = data["5d_heatmap_lineas"] || [];
+
+  const label_m0 = rows[0]?.col_extra1 || "Mes 0";
+  const label_m1 = rows[0]?.col_extra2 || "Mes -1";
+  const label_m2 = rows[0]?.col_extra3 || "Mes -2";
+
+  const allVols = rows.flatMap(r => [
+    parseInt(r.col2 || "0", 10),
+    parseInt(r.col3 || "0", 10),
+    parseInt(r.col4 || "0", 10),
+  ]);
+  const maxVol = Math.max(...allVols, 1);
+
+  const newLines     = rows.filter(r => r.col5 === "NEW").length;
+  const stoppedLines = rows.filter(r => r.col5 === "STOPPED").length;
+  const activeLines  = rows.filter(r => r.col5 === "ACTIVE").length;
+  const totalVol     = rows.reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
+
+  function cellBg(vol: number): string {
+    if (vol === 0) return theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
+    const intensity = Math.max(0.08, (vol / maxVol) * 0.80);
+    return `rgba(8,145,178,${intensity.toFixed(2)})`;
+  }
+
+  const HEADER_H = 28;
+  const TABLE_AREA = 450;
+  const rowH = Math.min(28, Math.max(15, Math.floor((TABLE_AREA - HEADER_H) / Math.max(rows.length, 1))));
+  const fs   = rowH <= 17 ? 9 : 10;
+
+  return (
+    <SlideShell id="CE-14" theme={theme}>
+      <SlideHeader title={`Actividad por Línea — ${label_m2} · ${label_m1} · ${label_m0}`} subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 100 }}>
+          <KpiCard label="Volumen mes actual"  value={totalVol.toLocaleString("es-CO")} theme={theme} />
+          <KpiCard label="Líneas activas"      value={String(activeLines)} theme={theme} />
+          <KpiCard label="Líneas nuevas"       value={String(newLines)}     valueColor={CE.inbound} theme={theme} />
+          <KpiCard label="Líneas detenidas"    value={String(stoppedLines)} valueColor={stoppedLines > 0 ? CE.danger : t.textMuted} theme={theme} />
+        </div>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "10px 16px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", height: HEADER_H,
+            borderBottom: `1px solid ${t.footerBorder}`, marginBottom: 2, flexShrink: 0 }}>
+            <span style={{ flex: 2, fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Línea WhatsApp</span>
+            <span style={{ width: 130, textAlign: "center", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label_m2}</span>
+            <span style={{ width: 130, textAlign: "center", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label_m1}</span>
+            <span style={{ width: 130, textAlign: "center", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>{label_m0}</span>
+            <span style={{ width: 80,  textAlign: "center", fontSize: 9, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Estado</span>
+          </div>
+          {/* Rows */}
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            {rows.map((row, i) => {
+              const v0 = parseInt(row.col2 || "0", 10);
+              const v1 = parseInt(row.col3 || "0", 10);
+              const v2 = parseInt(row.col4 || "0", 10);
+              const isNew     = row.col5 === "NEW";
+              const isStopped = row.col5 === "STOPPED";
+              const fmtVol = (v: number) => v === 0 ? "—" : v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${Math.round(v/1000)}k` : String(v);
+              return (
+                <div key={row.col1 || i} style={{
+                  display: "flex", alignItems: "center", height: rowH,
+                  background: i % 2 === 0 ? t.rowAlt : "transparent", borderRadius: 3,
+                }}>
+                  <span style={{ flex: 2, fontSize: fs, fontFamily: "monospace", fontWeight: 600,
+                    color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }}>
+                    {row.col1}
+                  </span>
+                  {[v2, v1, v0].map((vol, ci) => (
+                    <div key={ci} style={{ width: 130, height: rowH - 3, margin: "1px 2px",
+                      background: cellBg(vol), borderRadius: 4,
+                      display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: fs, fontWeight: 700,
+                        color: vol === 0 ? t.textMuted : theme === "dark" ? "#FFFFFF" : "#0D1137" }}>
+                        {fmtVol(vol)}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ width: 80, display: "flex", justifyContent: "center" }}>
+                    {(isNew || isStopped) && (
+                      <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: "0.05em",
+                        padding: "2px 7px", borderRadius: 10,
+                        background: isNew ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.12)",
+                        color: isNew ? CE.inbound : CE.danger }}>
+                        {isNew ? "NUEVA" : "DETENIDA"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Actividad por Línea" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   CE-15 | Comparativo entre Flujos
+══════════════════════════════════════════════════════════════ */
+
+function Ce15Slide({ ceFlows, theme, clientName, periodLabel, pageNum = 1 }: {
+  ceFlows: CeFlowData[]; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+
+  if (!ceFlows || ceFlows.length === 0) {
+    return (
+      <SlideShell id="CE-15" theme={theme}>
+        <SlideHeader title="Comparativo entre Flujos" subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+        <div style={{ ...bodyStyle, alignItems: "center", justifyContent: "center" }}>
+          <p style={{ color: t.textMuted, fontSize: 14 }}>No hay flujos disponibles para comparar.</p>
+        </div>
+        <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Comparativo entre Flujos" />
+      </SlideShell>
+    );
+  }
+
+  const rows = ceFlows.map(function(flow) {
+    const fo  = flow.funnel_otb  || {};
+    const vrf = flow.vrf         || {};
+
+    const enviados   = parseInt(fo.COL1 || "0", 10);
+    const fallanMeta = parseInt(fo.COL2 || "0", 10);
+    const recepcion  = parseInt(fo.COL3 || "0", 10);
+    const iniciados  = parseInt(fo.COL5 || "0", 10);
+
+    const pctRecepcion = enviados  > 0 ? recepcion  / enviados  * 100 : 0;
+    const pctFallos    = enviados  > 0 ? fallanMeta / enviados  * 100 : 0;
+    const pctConvTotal = enviados  > 0 ? iniciados  / enviados  * 100 : 0;
+
+    const docTasa     = flow.tiene_vrf ? parseFloat(vrf.COL4  || "0") : null;
+    const rostroTasa  = flow.tiene_vrf ? parseFloat(vrf.COL8  || "0") : null;
+    const identTasa   = flow.tiene_vrf ? parseFloat(vrf.COL10 || "0") : null;
+
+    return { name: flow.flow_name, tiene_vrf: flow.tiene_vrf,
+      enviados, pctRecepcion, pctFallos, pctConvTotal,
+      docTasa, rostroTasa, identTasa };
+  });
+
+  const anyVrf = ceFlows.some(function(f) { return f.tiene_vrf; });
+
+  const convVals  = rows.map(function(r) { return r.pctConvTotal; });
+  const maxConv   = Math.max.apply(null, convVals);
+  const minConv   = Math.min.apply(null, convVals);
+  const recVals   = rows.map(function(r) { return r.pctRecepcion; });
+  const maxRec    = Math.max.apply(null, recVals);
+  const falVals   = rows.map(function(r) { return r.pctFallos; });
+  const minFal    = Math.min.apply(null, falVals);
+
+  const totalEnviados = rows.reduce(function(s, r) { return s + r.enviados; }, 0);
+  const vrfCount      = ceFlows.filter(function(f) { return f.tiene_vrf; }).length;
+
+  function fmtVol(v: number): string {
+    return v >= 1000000 ? (v / 1000000).toFixed(1) + "M"
+         : v >= 1000    ? Math.round(v / 1000) + "k"
+         : String(v);
+  }
+  function fmtPct(v: number | null): string {
+    return v === null ? "—" : v.toFixed(1) + "%";
+  }
+  function convColor(v: number): string {
+    if (rows.length > 1 && v === maxConv) return CE.inbound;
+    if (rows.length > 1 && v === minConv) return CE.danger;
+    return t.textPrimary;
+  }
+
+  const HEADER_H = 28;
+  const TABLE_AREA = 500;
+  const rowH = Math.min(36, Math.max(20, Math.floor((TABLE_AREA - HEADER_H) / Math.max(rows.length, 1))));
+  const fs   = rowH <= 22 ? 10 : 12;
+
+  const cols = anyVrf
+    ? ["32%", "10%", "13%", "13%", "13%", "9%", "9%"]
+    : ["40%", "13%", "15%", "16%", "16%"];
+  const hdrs = anyVrf
+    ? ["Flujo", "Enviados", "% Recepción", "% Fallos Meta", "% Conversión", "% Doc", "% Rostro"]
+    : ["Flujo", "Enviados", "% Recepción", "% Fallos Meta", "% Conversión"];
+
+  return (
+    <SlideShell id="CE-15" theme={theme}>
+      <SlideHeader title="Comparativo entre Flujos" subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 90 }}>
+          <KpiCard label="Flujos analizados"  value={String(ceFlows.length)} theme={theme} />
+          <KpiCard label="Total enviados"     value={fmtVol(totalEnviados)} theme={theme} />
+          <KpiCard label="Mayor conversión"   value={fmtPct(maxConv)} valueColor={CE.inbound} theme={theme} />
+          <KpiCard label="Menor conversión"   value={fmtPct(minConv)}
+            valueColor={minConv < 10 ? CE.danger : minConv < 20 ? CE.warning : t.textPrimary} theme={theme} />
+          {anyVrf && <KpiCard label="Flujos con VRF" value={String(vrfCount)} valueColor={CE.outbound} theme={theme} />}
+        </div>
+
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "10px 16px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", height: HEADER_H,
+            borderBottom: `1px solid ${t.footerBorder}`, marginBottom: 2, flexShrink: 0 }}>
+            {hdrs.map(function(h, i) {
+              return (
+                <span key={i} style={{ width: cols[i], flexShrink: 0, fontSize: 9, fontWeight: 700,
+                  color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.10em" }}>{h}</span>
+              );
+            })}
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            {rows.map(function(row, i) {
+              const isBest  = rows.length > 1 && row.pctConvTotal === maxConv;
+              const isWorst = rows.length > 1 && row.pctConvTotal === minConv && row.pctConvTotal !== maxConv;
+              return (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", height: rowH,
+                  background: i % 2 === 0 ? t.rowAlt : "transparent", borderRadius: 4,
+                  borderLeft: isBest ? `3px solid ${CE.inbound}` : isWorst ? `3px solid ${CE.danger}` : "3px solid transparent",
+                  paddingLeft: 6,
+                }}>
+                  <span style={{ width: cols[0], flexShrink: 0, fontSize: fs, fontWeight: 600,
+                    color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8,
+                    display: "flex", alignItems: "center", gap: 6 }}>
+                    {row.name}
+                    {row.tiene_vrf && (
+                      <span style={{ fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 4, flexShrink: 0,
+                        background: "rgba(8,145,178,0.15)", color: CE.outbound }}>VRF</span>
+                    )}
+                  </span>
+                  <span style={{ width: cols[1], flexShrink: 0, fontSize: fs, fontWeight: 700, color: t.textPrimary }}>
+                    {fmtVol(row.enviados)}
+                  </span>
+                  <span style={{ width: cols[2], flexShrink: 0, fontSize: fs, fontWeight: 700,
+                    color: row.pctRecepcion === maxRec ? CE.inbound : t.textPrimary }}>
+                    {fmtPct(row.pctRecepcion)}
+                  </span>
+                  <span style={{ width: cols[3], flexShrink: 0, fontSize: fs, fontWeight: 700,
+                    color: row.pctFallos === minFal ? CE.inbound : row.pctFallos > 30 ? CE.danger : row.pctFallos > 15 ? CE.warning : t.textPrimary }}>
+                    {fmtPct(row.pctFallos)}
+                  </span>
+                  <span style={{ width: cols[4], flexShrink: 0, fontSize: fs, fontWeight: 800,
+                    color: convColor(row.pctConvTotal) }}>
+                    {fmtPct(row.pctConvTotal)}
+                  </span>
+                  {anyVrf && (
+                    <>
+                      <span style={{ width: cols[5], flexShrink: 0, fontSize: fs, fontWeight: 700,
+                        color: row.docTasa === null ? t.textMuted : row.docTasa >= 70 ? CE.inbound : CE.warning }}>
+                        {fmtPct(row.docTasa)}
+                      </span>
+                      <span style={{ width: cols[6], flexShrink: 0, fontSize: fs, fontWeight: 700,
+                        color: row.rostroTasa === null ? t.textMuted : row.rostroTasa >= 70 ? CE.inbound : CE.warning }}>
+                        {fmtPct(row.rostroTasa)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Comparativo entre Flujos" />
+    </SlideShell>
+  );
+}
+
 /* ─── Main router ─── */
 
 /* ════════════════════════════════════════════════════════════
@@ -3471,6 +4075,10 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "5_flujo_inbound":       return <Ce4Slide {...p} />;
         case "6_agentes_general":     return <Ce5Slide {...p} />;
         case "7_agentes_top5":        return <Ce6Slide {...p} />;
+        case "5b_consumo_por_linea":   return <Ce12Slide {...p} />;
+        case "5c_tendencia_mensual":   return <Ce13Slide {...p} />;
+        case "5d_heatmap_lineas":      return <Ce14Slide {...p} />;
+        case "6_comparativo_flujos":   return <Ce15Slide ceFlows={flows} theme={theme} clientName={clientName} periodLabel={periodLabel} pageNum={pageNum} totalPages={totalPages} />;
       }
       if (slideId.startsWith("ce_sep_")) {
         const i = parseInt(slideId.split("_")[2], 10);
@@ -3483,6 +4091,10 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
       if (slideId.startsWith("ce_steps_")) {
         const i = parseInt(slideId.split("_")[2], 10);
         if (!isNaN(i) && i < flows.length) return <Ce9Slide ceFlows={flows} flowIndex={i} theme={theme} clientName={clientName} periodLabel={periodLabel} pageNum={pageNum} totalPages={totalPages} />;
+      }
+      if (slideId.startsWith("ce_vrfarbol_")) {
+        const i = parseInt(slideId.split("_")[2], 10);
+        if (!isNaN(i) && i < flows.length) return <Ce11Slide ceFlows={flows} flowIndex={i} theme={theme} clientName={clientName} periodLabel={periodLabel} pageNum={pageNum} totalPages={totalPages} />;
       }
       if (slideId.startsWith("ce_vrf_")) {
         const i = parseInt(slideId.split("_")[2], 10);
