@@ -22,6 +22,7 @@ const App = () => (
           <Route path="/admin" element={<AdminPage />} />
           {import.meta.env.DEV && <Route path="/mock" element={<MockCanvas />} />}
           <Route path="/" element={<Index />} />
+          <Route path="/oncall" element={<Index source="oncall" />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -4,8 +4,9 @@
 ───────────────────────────────────────────────────────── */
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb } from "lucide-react";
+import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home } from "lucide-react";
 import { type Product, type CsmRow, PRODUCT_COLORS } from "./moduleDefinitions";
 import { FeedbackModal } from "./FeedbackModal";
 
@@ -59,9 +60,12 @@ interface WelcomeStepProps {
   userEmail: string;
   onSelectProduct: (p: Product) => void;
   onLogout: () => void;
+  source?: 'regular' | 'oncall';
 }
 
-export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout }: WelcomeStepProps) {
+export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, source = 'regular' }: WelcomeStepProps) {
+  const navigate = useNavigate();
+  const isOncall = source === 'oncall';
   const [hovered, setHovered] = useState<Product | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackProduct, setFeedbackProduct] = useState<Product>('DI');
@@ -111,6 +115,24 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout }
 
         {/* User info + logout */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Oncall toggle */}
+          <button
+            onClick={() => navigate(isOncall ? '/' : '/oncall')}
+            title={isOncall ? 'Volver a mi cartera' : 'Ver clientes on-call (sin CSM asignado)'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600,
+              color: isOncall ? '#FFB547' : '#C4B3FF',
+              background: isOncall ? 'rgba(255,181,71,0.10)' : 'rgba(124,77,255,0.10)',
+              border: `1px solid ${isOncall ? 'rgba(255,181,71,0.35)' : 'rgba(124,77,255,0.30)'}`,
+              cursor: 'pointer', padding: '6px 12px',
+              borderRadius: 999, transition: 'all 0.15s',
+            }}
+          >
+            {isOncall ? <Home size={13} /> : <Headphones size={13} />}
+            <span>{isOncall ? 'Mi cartera' : 'Oncall MBRs'}</span>
+          </button>
+
           {/* Feedback */}
           <button
             onClick={() => { setFeedbackProduct('DI'); setFeedbackOpen(true); }}
@@ -166,13 +188,14 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout }
         >
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontSize: 12, fontWeight: 600, color: '#7C4DFF',
+            fontSize: 12, fontWeight: 600,
+            color: isOncall ? '#FFB547' : '#7C4DFF',
             letterSpacing: '0.12em', textTransform: 'uppercase',
             marginBottom: 16,
           }}>
-            <div style={{ width: 20, height: 1, background: '#7C4DFF', opacity: 0.6 }} />
-            Report Builder
-            <div style={{ width: 20, height: 1, background: '#7C4DFF', opacity: 0.6 }} />
+            <div style={{ width: 20, height: 1, background: isOncall ? '#FFB547' : '#7C4DFF', opacity: 0.6 }} />
+            {isOncall ? 'Oncall MBRs' : 'Report Builder'}
+            <div style={{ width: 20, height: 1, background: isOncall ? '#FFB547' : '#7C4DFF', opacity: 0.6 }} />
           </div>
         </motion.div>
 
@@ -195,7 +218,9 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout }
           transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
           style={{ fontSize: 16, color: S.muted, marginBottom: 52, lineHeight: 1.5 }}
         >
-          ¿Qué reporte MBR vas a crear hoy?
+          {isOncall
+            ? 'Estás en Oncall MBRs: 20 clientes sin CSM asignado. ¿Para cuál generas reporte?'
+            : '¿Qué reporte MBR vas a crear hoy?'}
         </motion.p>
 
         {/* ── Product cards ── */}

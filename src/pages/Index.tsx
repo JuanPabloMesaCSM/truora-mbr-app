@@ -18,9 +18,15 @@ import {
 import type { Theme, ReportData, CeFlowData } from "@/components/report-builder/SlideCanvas";
 
 type AppStep = 'welcome' | 'config' | 'builder' | 'canvas';
+type ClientSource = 'regular' | 'oncall';
 
-const Index = () => {
+interface IndexProps {
+  source?: ClientSource;
+}
+
+const Index = ({ source = 'regular' }: IndexProps) => {
   const navigate = useNavigate();
+  const clientsTable = source === 'oncall' ? 'clientes_oncall' : 'clientes';
 
   /* ─── Step state ─── */
   const [step, setStep] = useState<AppStep>('welcome');
@@ -99,7 +105,7 @@ const Index = () => {
         .eq('activo', true)
         .maybeSingle(),
       supabase
-        .from('clientes')
+        .from(clientsTable as 'clientes')
         .select('*')
         .eq('activo', true)
         .order('nombre'),
@@ -112,7 +118,7 @@ const Index = () => {
 
     setCsmProfile((csmResult.data as unknown as CsmRow) ?? null);
     setClients((clientsResult.data as unknown as ClienteRow[]) ?? []);
-  }, []);
+  }, [clientsTable]);
 
   const syncAuthenticatedUser = useCallback(async (session: Session | null) => {
     if (!session?.user?.email) {
@@ -570,6 +576,7 @@ const Index = () => {
           userEmail={userEmail}
           onSelectProduct={handleSelectProduct}
           onLogout={handleLogout}
+          source={source}
         />
       )}
 
@@ -593,6 +600,7 @@ const Index = () => {
           onContinue={handleContinueToBuilder}
           onReloadClients={() => loadSessionData(userEmail)}
           onConfigureClientId={handleConfigureClientId}
+          source={source}
         />
       )}
 

@@ -165,6 +165,7 @@ interface ConfigStepProps {
   onContinue: () => void;
   onReloadClients: () => void;
   onConfigureClientId: () => void;
+  source?: 'regular' | 'oncall';
 }
 
 export function ConfigStep({
@@ -174,18 +175,20 @@ export function ConfigStep({
   sheetUrl, setSheetUrl,
   isLoading, canContinue, isAdmin,
   onBack, onContinue, onReloadClients, onConfigureClientId,
+  source = 'regular',
 }: ConfigStepProps) {
   const color = PRODUCT_COLORS[product];
+  const isOncall = source === 'oncall';
 
-  /* Filter clients by CSM unless admin */
-  const visibleClients = isAdmin
+  /* Filter clients by CSM unless admin. Oncall shows all 20 to everyone. */
+  const visibleClients = (isAdmin || isOncall)
     ? clients
     : clients.filter(c => c.csm_email?.toLowerCase() === userEmail.toLowerCase());
 
   /* Build options for client dropdown */
-  const clientOptions = isAdmin
+  const clientOptions = (isAdmin && !isOncall)
     ? (() => {
-        // Group by CSM email
+        // Group by CSM email (only for regular admin view)
         const groups: Record<string, ClienteRow[]> = {};
         for (const c of clients) {
           (groups[c.csm_email] = groups[c.csm_email] || []).push(c);
