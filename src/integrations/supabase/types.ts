@@ -173,6 +173,42 @@ export type Database = {
         }
         Relationships: []
       }
+      waba_phone_names: {
+        Row: {
+          activo: boolean
+          caso_uso: string | null
+          client_id: string
+          country: string | null
+          created_at: string
+          friendly_name: string
+          id: string
+          phone_number: string
+          updated_at: string
+        }
+        Insert: {
+          activo?: boolean
+          caso_uso?: string | null
+          client_id: string
+          country?: string | null
+          created_at?: string
+          friendly_name: string
+          id?: string
+          phone_number: string
+          updated_at?: string
+        }
+        Update: {
+          activo?: boolean
+          caso_uso?: string | null
+          client_id?: string
+          country?: string | null
+          created_at?: string
+          friendly_name?: string
+          id?: string
+          phone_number?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

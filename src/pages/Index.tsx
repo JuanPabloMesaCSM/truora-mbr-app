@@ -10,6 +10,7 @@ import { LeftPanel } from "@/components/report-builder/LeftPanel";
 import { ReportCarrete } from "@/components/report-builder/ReportCarrete";
 import { CenterCanvas } from "@/components/report-builder/CenterCanvas";
 import { ClientIdModal } from "@/components/report-builder/ClientIdModal";
+import { WabaNamesProvider } from "@/components/report-builder/WabaNamesProvider";
 import {
   MODULES, PRODUCT_WEBHOOKS, PRODUCT_CLIENT_FIELD, ADMIN_EMAIL,
   parsePeriod, type Product, type CsmRow, type ClienteRow, type ModuleInsight,
@@ -634,54 +635,58 @@ const Index = () => {
             onGenerate={handleGenerate}
             onBack={handleBackToConfig}
           />
-          <ReportCarrete
-            product={product}
-            clientName={selectedClient?.nombre || ''}
-            periodLabel={periodData?.periodoReporte || ''}
-            csmName={csmProfile?.nombre || userEmail}
-            activeModuleIds={activeModuleIds}
-            insightsMode={insightsMode}
-            moduleInsights={moduleInsights}
-            ceFlows={selectedCeFlowsForCarrete}
-            theme={theme}
-            reportData={reportData}
-            overlayStatus={overlayStatus}
-            isCeFlowSpecific={isCeFlowSpecific}
-            showUpdates={showUpdates}
-            onOverlayClose={() => setOverlayStatus(null)}
-            onRetry={handleGenerate}
-            onViewPresentation={handleViewPresentation}
-            onNewReport={handleNewReport}
-            onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
-            generalInsightText={generalInsightText}
-            onGeneralInsightChange={setGeneralInsightText}
-          />
+          <WabaNamesProvider clientId={selectedClient?.client_id_ce}>
+            <ReportCarrete
+              product={product}
+              clientName={selectedClient?.nombre || ''}
+              periodLabel={periodData?.periodoReporte || ''}
+              csmName={csmProfile?.nombre || userEmail}
+              activeModuleIds={activeModuleIds}
+              insightsMode={insightsMode}
+              moduleInsights={moduleInsights}
+              ceFlows={selectedCeFlowsForCarrete}
+              theme={theme}
+              reportData={reportData}
+              overlayStatus={overlayStatus}
+              isCeFlowSpecific={isCeFlowSpecific}
+              showUpdates={showUpdates}
+              onOverlayClose={() => setOverlayStatus(null)}
+              onRetry={handleGenerate}
+              onViewPresentation={handleViewPresentation}
+              onNewReport={handleNewReport}
+              onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
+              generalInsightText={generalInsightText}
+              onGeneralInsightChange={setGeneralInsightText}
+            />
+          </WabaNamesProvider>
         </div>
       )}
 
       {/* ── Paso 4: Canvas (full-screen presentation) ── */}
       {step === 'canvas' && (
         <div style={{ position: 'relative', zIndex: 1, height: '100vh' }}>
-          <CenterCanvas
-            product={product}
-            clientName={selectedClient?.nombre || 'Cliente Demo'}
-            periodLabel={periodData?.periodoReporte || ''}
-            activeModuleIds={activeModuleIds}
-            insightsMode={insightsMode}
-            moduleInsights={moduleInsights}
-            overlayStatus={overlayStatus}
-            reportData={reportData}
-            theme={theme}
-            isCeFlowSpecific={isCeFlowSpecific}
-            showUpdates={showUpdates}
-            onOverlayClose={() => setOverlayStatus(null)}
-            onNewReport={handleNewReport}
-            onRetry={handleGenerate}
-            onBack={handleBackToBuilder}
-            onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
-            generalInsightText={generalInsightText}
-            onGeneralInsightChange={setGeneralInsightText}
-          />
+          <WabaNamesProvider clientId={selectedClient?.client_id_ce}>
+            <CenterCanvas
+              product={product}
+              clientName={selectedClient?.nombre || 'Cliente Demo'}
+              periodLabel={periodData?.periodoReporte || ''}
+              activeModuleIds={activeModuleIds}
+              insightsMode={insightsMode}
+              moduleInsights={moduleInsights}
+              overlayStatus={overlayStatus}
+              reportData={reportData}
+              theme={theme}
+              isCeFlowSpecific={isCeFlowSpecific}
+              showUpdates={showUpdates}
+              onOverlayClose={() => setOverlayStatus(null)}
+              onNewReport={handleNewReport}
+              onRetry={handleGenerate}
+              onBack={handleBackToBuilder}
+              onModuleInsightChange={(id, text) => setModuleInsight(id, 'manual', text)}
+              generalInsightText={generalInsightText}
+              onGeneralInsightChange={setGeneralInsightText}
+            />
+          </WabaNamesProvider>
         </div>
       )}
 

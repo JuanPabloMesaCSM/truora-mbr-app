@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RAZONES_DI, getLabelBGC, FALLOS_CE } from "@/utils/razonesDict";
+import { useWabaNamesMap } from "./WabaNamesProvider";
 import {
   Chart,
   ArcElement,
@@ -3018,12 +3019,13 @@ function Ce12Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
   const chartRef  = useRef<HTMLCanvasElement>(null);
   const chartInst = useRef<Chart | null>(null);
   const t = tok(theme);
+  const wabaNames = useWabaNamesMap();
 
   const rows = (data["5b_consumo_por_linea"] || [])
     .slice()
     .sort((a, b) => parseInt(b.col4 || "0", 10) - parseInt(a.col4 || "0", 10));
 
-  const labels    = rows.map(r => r.col1 || "—");
+  const labels    = rows.map(r => wabaNames.get(r.col1 || "") || r.col1 || "—");
   const otbData   = rows.map(r => parseInt(r.col2 || "0", 10));
   const notifData = rows.map(r => parseInt(r.col3 || "0", 10));
   const totals    = rows.map(r => parseInt(r.col4 || "0", 10));
@@ -3075,7 +3077,7 @@ function Ce12Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
           <KpiCard label="Volumen total" value={totalGlobal.toLocaleString("es-CO")} theme={theme} />
           <KpiCard label="Líneas activas" value={String(rows.length)} theme={theme} />
           <KpiCard label="Línea top" value={topLine ? `${parseFloat(topLine.col5 || "0").toFixed(1)}%` : "—"}
-            valueColor={CE.outbound} footnote={topLine ? topLine.col1 : undefined} theme={theme} />
+            valueColor={CE.outbound} footnote={topLine ? (wabaNames.get(topLine.col1 || "") || topLine.col1) : undefined} theme={theme} />
         </div>
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
           borderRadius: 14, padding: "12px 20px 8px", overflow: "hidden", position: "relative" }}>
@@ -3189,6 +3191,7 @@ function Ce14Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
 }) {
   const t = tok(theme);
   const rows = data["5d_heatmap_lineas"] || [];
+  const wabaNames = useWabaNamesMap();
 
   const label_m0 = rows[0]?.col_extra1 || "Mes 0";
   const label_m1 = rows[0]?.col_extra2 || "Mes -1";
@@ -3252,9 +3255,9 @@ function Ce14Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
                   display: "flex", alignItems: "center", height: rowH,
                   background: i % 2 === 0 ? t.rowAlt : "transparent", borderRadius: 3,
                 }}>
-                  <span style={{ flex: 2, fontSize: fs, fontFamily: "monospace", fontWeight: 600,
+                  <span style={{ flex: 2, fontSize: fs, fontWeight: 600,
                     color: t.textPrimary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }}>
-                    {row.col1}
+                    {wabaNames.get(row.col1 || "") || row.col1}
                   </span>
                   {[v2, v1, v0].map((vol, ci) => (
                     <div key={ci} style={{ width: 130, height: rowH - 3, margin: "1px 2px",
