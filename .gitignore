@@ -29,3 +29,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling / artefactos generados (no se versionan)
+CSM-Center-Playbook.pdf
+generate-pdf.mjs
+scripts/
+public/playbook.html
+public/playbook-csm.html
+public/assets/playbook/
+public/assets/truora-logo.png
+public/assets/truora-logo-new.png
