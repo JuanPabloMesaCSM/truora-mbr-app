@@ -7,6 +7,7 @@ import Index from "./pages/Index.tsx";
 import LoginPage from "./pages/LoginPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
+import BotiAlertas from "./pages/BotiAlertas.tsx";
 import MockCanvas from "./pages/MockCanvas.tsx";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
           {import.meta.env.DEV && <Route path="/mock" element={<MockCanvas />} />}
           <Route path="/" element={<Index />} />
           <Route path="/oncall" element={<Index source="oncall" />} />
+          <Route path="/botialertas" element={<BotiAlertas />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
