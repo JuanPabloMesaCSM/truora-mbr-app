@@ -276,6 +276,37 @@ for (const email in telegramByCsm) {
 }
 
 // =========================================================================
+// 5b. BCC al jefe — copia de cada Telegram del equipo a jdiaz@truora.com
+//     para visibilidad gerencial. Si jdiaz tiene alertas propias atribuidas
+//     directamente, ese item ya salió arriba; aca solo agregamos las copias
+//     de los DEMAS CSMs.
+// =========================================================================
+const BOSS_EMAIL = 'jdiaz@truora.com';
+const bossCsm = csmByEmail[BOSS_EMAIL];
+
+if (bossCsm && bossCsm.telegram_chat_id) {
+  const bccCopies = [];
+  for (const orig of telegramItems) {
+    if (orig.payload.csm_email === BOSS_EMAIL) continue;
+    if (orig.payload.chat_id === bossCsm.telegram_chat_id) continue;
+
+    const headerLine = '📋 Copia BCC — alertas de ' + (orig.payload.csm_nombre || orig.payload.csm_email);
+    bccCopies.push({
+      kind: 'telegram',
+      payload: {
+        chat_id:     bossCsm.telegram_chat_id,
+        csm_email:   BOSS_EMAIL,
+        csm_nombre:  bossCsm.nombre,
+        alert_count: orig.payload.alert_count,
+        text:        headerLine + '\n\n' + orig.payload.text,
+        bcc_for:     orig.payload.csm_email,
+      },
+    });
+  }
+  for (const c of bccCopies) telegramItems.push(c);
+}
+
+// =========================================================================
 // 6. Output: items para Switch downstream
 // =========================================================================
 const out = [];
