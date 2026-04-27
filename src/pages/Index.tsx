@@ -410,6 +410,13 @@ const Index = ({ source = 'regular' }: IndexProps) => {
         tiene_vrf: f.tiene_vrf,
         tiene_outbound: f.tiene_outbound,
       }));
+      // Selección por módulo y total de flujos disponibles. El backend usa esto para
+      // filtrar Ce4 (5_flujo_inbound) por flujo si el subset es estricto. Cualquier
+      // otro caso (todos seleccionados, frontend viejo) → query global como hoy.
+      payload.flujos_seleccionados_por_modulo = Object.fromEntries(
+        Object.entries(selectedCeFlowsByModule).map(([mid, set]) => [mid, Array.from(set)])
+      );
+      payload.flujos_disponibles_total = ceFlows.length;
     }
 
     if (product === 'BGC' && customTypes.length >= 2) {
