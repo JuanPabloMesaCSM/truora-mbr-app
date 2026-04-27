@@ -263,6 +263,9 @@ interface ReportCarreteProps {
   insightsMode: 'ai' | 'manual' | null;
   moduleInsights: Record<string, ModuleInsight>;
   ceFlows: CeFlowData[];
+  /* Selección de flujos por módulo CE — keys = module IDs como '4_funnel_generico'.
+   * Cada KPI con `hasFlowSelector` itera solo sobre los flujos en su Set. */
+  selectedCeFlowsByModule?: Record<string, Set<string>>;
   theme: Theme;
   reportData: any | null;
   overlayStatus: 'generating' | 'success' | 'error' | null;
@@ -289,7 +292,7 @@ const CE_GLOBAL_IDS = new Set([
 export function ReportCarrete({
   product, clientName, periodLabel, csmName,
   activeModuleIds, insightsMode, moduleInsights,
-  ceFlows, theme, reportData,
+  ceFlows, selectedCeFlowsByModule, theme, reportData,
   overlayStatus, isCeFlowSpecific, showUpdates = true, onOverlayClose, onRetry,
   onViewPresentation, onNewReport,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
@@ -327,12 +330,22 @@ export function ReportCarrete({
     const showSteps    = activeModuleIds.includes('4b_funnel_steps');
     const showVrf      = activeModuleIds.includes('4c_vrf');
     const showVrfArbol = activeModuleIds.includes('4d_vrf_arbol');
+    /* Cada KPI tiene su propia selección de flujos. Si no llega la prop (modo legacy),
+     * fallback a "todos los flujos para todos los módulos". */
+    const sel = selectedCeFlowsByModule;
+    const inModule = (modId: string, flowId: string) =>
+      !sel || !sel[modId] ? true : sel[modId].has(flowId);
     for (let i = 0; i < ceFlowsData.length; i++) {
-      if (showOtb || showSteps || showVrf || showVrfArbol) dataSlideIds.push(`ce_sep_${i}`);
-      if (showOtb)   dataSlideIds.push(`ce_otb_${i}`);
-      if (showSteps) dataSlideIds.push(`ce_steps_${i}`);
-      if (showVrf && ceFlowsData[i].tiene_vrf) dataSlideIds.push(`ce_vrf_${i}`);
-      if (showVrfArbol && ceFlowsData[i].tiene_vrf) dataSlideIds.push(`ce_vrfarbol_${i}`);
+      const flow = ceFlowsData[i];
+      const showOtbI      = showOtb      && inModule('4_funnel_generico', flow.flow_id);
+      const showStepsI    = showSteps    && inModule('4b_funnel_steps',   flow.flow_id);
+      const showVrfI      = showVrf      && flow.tiene_vrf && inModule('4c_vrf',       flow.flow_id);
+      const showVrfArbolI = showVrfArbol && flow.tiene_vrf && inModule('4d_vrf_arbol', flow.flow_id);
+      if (showOtbI || showStepsI || showVrfI || showVrfArbolI) dataSlideIds.push(`ce_sep_${i}`);
+      if (showOtbI)      dataSlideIds.push(`ce_otb_${i}`);
+      if (showStepsI)    dataSlideIds.push(`ce_steps_${i}`);
+      if (showVrfI)      dataSlideIds.push(`ce_vrf_${i}`);
+      if (showVrfArbolI) dataSlideIds.push(`ce_vrfarbol_${i}`);
     }
   }
 

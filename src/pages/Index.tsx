@@ -20,6 +20,17 @@ import type { Theme, ReportData, CeFlowData } from "@/components/report-builder/
 type AppStep = 'welcome' | 'config' | 'builder' | 'canvas';
 type ClientSource = 'regular' | 'oncall';
 
+/* Módulos CE que tienen selector de flujos. Cada uno mantiene su propio
+ * subconjunto en `selectedCeFlowsByModule`. Si agregas un nuevo módulo con
+ * `hasFlowSelector: true` en moduleDefinitions, agregalo también acá. */
+const CE_FLOW_SELECTOR_MODULES = [
+  '4_funnel_generico',
+  '4b_funnel_steps',
+  '4c_vrf',
+  '4d_vrf_arbol',
+  '5_flujo_inbound',
+] as const;
+
 interface IndexProps {
   source?: ClientSource;
 }
@@ -50,7 +61,10 @@ const Index = ({ source = 'regular' }: IndexProps) => {
   };
   const [generalInsightText, setGeneralInsightText] = useState('');
   const [ceFlows, setCeFlows] = useState<{ flow_id: string; flow_name: string; total_procesos: number; tiene_vrf: boolean; tiene_outbound: boolean }[]>([]);
-  const [selectedCeFlows, setSelectedCeFlows] = useState<Set<string>>(new Set());
+  /* Selección de flujos CE por módulo — cada KPI con `hasFlowSelector` tiene su propio
+   * subconjunto independiente. Antes era un Set único compartido (bug: deseleccionar en
+   * un KPI propagaba al resto). Keys = module IDs como '4_funnel_generico'. */
+  const [selectedCeFlowsByModule, setSelectedCeFlowsByModule] = useState<Record<string, Set<string>>>({});
   const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
@@ -172,7 +186,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     setSelectedDiFlows(new Set());
     setDiFlowsError(false);
     setCeFlows([]);
-    setSelectedCeFlows(new Set());
+    setSelectedCeFlowsByModule({});
     setInsightsActivos({});
   }, [product]);
 
@@ -252,7 +266,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     const clientField = selectedClient?.[PRODUCT_CLIENT_FIELD.CE];
     if (!clientField || !periodData) {
       setCeFlows([]);
-      setSelectedCeFlows(new Set());
+      setSelectedCeFlowsByModule({});
       return;
     }
     let cancelled = false;
@@ -271,10 +285,14 @@ const Index = ({ source = 'regular' }: IndexProps) => {
         if (cancelled) return;
         const arr = Array.isArray(data?.flujos) ? data.flujos : Array.isArray(data) ? data : [];
         setCeFlows(arr);
-        setSelectedCeFlows(new Set(arr.map((f: any) => f.flow_id)));
+        // Default por módulo: cada KPI con selector arranca con todos los flujos
+        const allIds = new Set<string>(arr.map((f: any) => f.flow_id));
+        const initial: Record<string, Set<string>> = {};
+        for (const modId of CE_FLOW_SELECTOR_MODULES) initial[modId] = new Set(allIds);
+        setSelectedCeFlowsByModule(initial);
       })
       .catch(() => {
-        if (!cancelled) { setCeFlows([]); setSelectedCeFlows(new Set()); }
+        if (!cancelled) { setCeFlows([]); setSelectedCeFlowsByModule({}); }
       })
       .finally(() => { if (!cancelled) setCeFlowsLoading(false); });
     return () => { cancelled = true; };
@@ -378,7 +396,14 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     };
 
     if (product === 'CE' && ceFlows.length > 0) {
-      const selected = ceFlows.filter(f => selectedCeFlows.has(f.flow_id));
+      // El backend (n8n Q3.1) recibe la UNIÓN de todas las selecciones por módulo —
+      // así corre el query per-flow una sola vez por flow_id, y el frontend filtra al
+      // renderizar cada slide según su selección específica.
+      const union = new Set<string>();
+      for (const set of Object.values(selectedCeFlowsByModule)) {
+        for (const id of set) union.add(id);
+      }
+      const selected = ceFlows.filter(f => union.has(f.flow_id));
       payload.flujos_seleccionados = selected.map(f => ({
         flow_id: f.flow_id,
         flow_name: f.flow_name,
@@ -558,12 +583,21 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     });
   };
 
-  /* ─── Selected CE flows for carrete (cast to satisfy CeFlowData shape) ─── */
-  const selectedCeFlowsForCarrete = ceFlows
-    .filter(f => selectedCeFlows.has(f.flow_id)) as unknown as CeFlowData[];
+  /* ─── Unión de selecciones por módulo (lo que efectivamente se renderiza para algún KPI) ─── */
+  const ceFlowsSelectedUnion = (() => {
+    const union = new Set<string>();
+    for (const set of Object.values(selectedCeFlowsByModule)) {
+      for (const id of set) union.add(id);
+    }
+    return union;
+  })();
 
-  /* ─── CE: flujos específicos vs todos ─── */
-  const isCeFlowSpecific = product === 'CE' && ceFlows.length > 0 && selectedCeFlows.size < ceFlows.length;
+  /* ─── CE flows que cualquier módulo va a usar (cast para CeFlowData shape) ─── */
+  const selectedCeFlowsForCarrete = ceFlows
+    .filter(f => ceFlowsSelectedUnion.has(f.flow_id)) as unknown as CeFlowData[];
+
+  /* ─── CE: flujos específicos vs todos (modo "global" si todos los módulos seleccionan todo) ─── */
+  const isCeFlowSpecific = product === 'CE' && ceFlows.length > 0 && ceFlowsSelectedUnion.size < ceFlows.length;
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>
@@ -624,8 +658,10 @@ const Index = ({ source = 'regular' }: IndexProps) => {
             theme={theme}
             setTheme={setTheme}
             ceFlows={ceFlows}
-            selectedCeFlows={selectedCeFlows}
-            setSelectedCeFlows={setSelectedCeFlows}
+            selectedCeFlowsByModule={selectedCeFlowsByModule}
+            setModuleFlowSelection={(moduleId, next) =>
+              setSelectedCeFlowsByModule(prev => ({ ...prev, [moduleId]: next }))
+            }
             ceFlowsLoading={ceFlowsLoading}
             customTypes={customTypes}
             selectedTypes={selectedTypes}
@@ -653,6 +689,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
               insightsMode={insightsMode}
               moduleInsights={moduleInsights}
               ceFlows={selectedCeFlowsForCarrete}
+              selectedCeFlowsByModule={selectedCeFlowsByModule}
               theme={theme}
               reportData={reportData}
               overlayStatus={overlayStatus}
@@ -684,6 +721,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
               overlayStatus={overlayStatus}
               reportData={reportData}
               theme={theme}
+              selectedCeFlowsByModule={selectedCeFlowsByModule}
               isCeFlowSpecific={isCeFlowSpecific}
               showUpdates={showUpdates}
               onOverlayClose={() => setOverlayStatus(null)}

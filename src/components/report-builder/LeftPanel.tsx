@@ -104,8 +104,10 @@ interface LeftPanelProps {
   theme: Theme;
   setTheme: (t: Theme) => void;
   ceFlows: CEFlowRow[];
-  selectedCeFlows: Set<string>;
-  setSelectedCeFlows: (s: Set<string>) => void;
+  /* Selección de flujos por módulo CE — keys = module IDs como '4_funnel_generico'.
+   * Cada KPI con `hasFlowSelector: true` mantiene su propio Set independiente. */
+  selectedCeFlowsByModule: Record<string, Set<string>>;
+  setModuleFlowSelection: (moduleId: string, next: Set<string>) => void;
   ceFlowsLoading: boolean;
   customTypes: CustomTypeRow[];
   selectedTypes: Set<string>;
@@ -132,7 +134,7 @@ export function LeftPanel({
   insightsMode, setInsightsMode,
   insightsActivos, setInsightsActivos,
   theme, setTheme,
-  ceFlows, selectedCeFlows, setSelectedCeFlows, ceFlowsLoading,
+  ceFlows, selectedCeFlowsByModule, setModuleFlowSelection, ceFlowsLoading,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
   diFlows, selectedDiFlows, setSelectedDiFlows, diFlowsLoading, diFlowsError,
   showUpdates, setShowUpdates,
@@ -377,7 +379,7 @@ export function LeftPanel({
                         )}
                       </div>
 
-                      {/* CE Flow Selector inline */}
+                      {/* CE Flow Selector inline — selección INDEPENDIENTE por módulo */}
                       {mod.hasFlowSelector && (
                         <div style={{
                           paddingLeft: 12, paddingRight: 12, paddingBottom: 4,
@@ -390,8 +392,8 @@ export function LeftPanel({
                         }}>
                           <CEFlowSelector
                             flows={ceFlows}
-                            selectedFlows={selectedCeFlows}
-                            setSelectedFlows={setSelectedCeFlows}
+                            selectedFlows={selectedCeFlowsByModule[mod.id] ?? new Set()}
+                            setSelectedFlows={(next) => setModuleFlowSelection(mod.id, next)}
                             loading={ceFlowsLoading}
                             dark
                           />
