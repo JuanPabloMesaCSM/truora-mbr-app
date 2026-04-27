@@ -5,10 +5,12 @@ import { GeneratingOverlay } from "./GeneratingOverlay";
 import { SlideCanvas, type Theme, type CeFlowData, PortadaSlide, AgendaSlide, SeparadorSlide, InsightsFinalesSlide, UpdatesSlide, CierreSlide } from "./SlideCanvas";
 import { exportPDF, exportPPTX } from "@/utils/exportPDF";
 
-/* IDs de slides CE que muestran métricas globales de cuenta */
+/* IDs de slides CE que muestran métricas globales de cuenta.
+ * 5_flujo_inbound (Ce4) NO está acá: tiene su propio selector independiente
+ * y siempre puede aparecer, filtrado o global según selección. */
 const CE_GLOBAL_IDS = new Set([
   '1_consumo_total', '2_eficiencia_campanas', '3_fallos_outbound',
-  '5_flujo_inbound', '6_agentes_general', '7_agentes_top5',
+  '6_agentes_general', '7_agentes_top5',
 ]);
 
 interface CenterCanvasProps {

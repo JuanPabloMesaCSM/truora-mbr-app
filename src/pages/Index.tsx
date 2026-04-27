@@ -596,8 +596,17 @@ const Index = ({ source = 'regular' }: IndexProps) => {
   const selectedCeFlowsForCarrete = ceFlows
     .filter(f => ceFlowsSelectedUnion.has(f.flow_id)) as unknown as CeFlowData[];
 
-  /* ─── CE: flujos específicos vs todos (modo "global" si todos los módulos seleccionan todo) ─── */
-  const isCeFlowSpecific = product === 'CE' && ceFlows.length > 0 && ceFlowsSelectedUnion.size < ceFlows.length;
+  /* ─── CE: modo "flow-specific" — solo los KPIs que GENERAN slides per-flow (Ce8/9/10/11)
+   * cuentan para esto. Si alguno está activo con subset, los slides globales (Ce1/2/3/5/6/7)
+   * se omiten para no mezclar análisis per-flow con métricas de cuenta entera.
+   * Ce4 (5_flujo_inbound) tiene su propio filtro pero NO genera slides per-flow → no cuenta. */
+  const PER_FLOW_GENERATING_MODULES = ['4_funnel_generico', '4b_funnel_steps', '4c_vrf', '4d_vrf_arbol'] as const;
+  const isCeFlowSpecific = product === 'CE' && ceFlows.length > 0 &&
+    PER_FLOW_GENERATING_MODULES.some(modId => {
+      if (!activeModuleIds.includes(modId)) return false;
+      const sel = selectedCeFlowsByModule[modId];
+      return !!sel && sel.size > 0 && sel.size < ceFlows.length;
+    });
 
   return (
     <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden' }}>

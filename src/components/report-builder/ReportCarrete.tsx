@@ -283,10 +283,14 @@ interface ReportCarreteProps {
 /* ────────────────────────────────────────────────────────
    ReportCarrete principal
 ──────────────────────────────────────────────────────── */
-/* IDs de slides CE que muestran métricas globales de cuenta */
+/* IDs de slides CE que muestran métricas globales de cuenta.
+ * Cuando el CSM elige flujos específicos para análisis per-flow (Ce8/9/10/11
+ * con subset), estos slides se omiten para evitar mezclar contexto.
+ * 5_flujo_inbound (Ce4) NO está acá: tiene su propio selector independiente
+ * y siempre puede aparecer, filtrado o global según selección. */
 const CE_GLOBAL_IDS = new Set([
   '1_consumo_total', '2_eficiencia_campanas', '3_fallos_outbound',
-  '5_flujo_inbound', '6_agentes_general', '7_agentes_top5',
+  '6_agentes_general', '7_agentes_top5',
 ]);
 
 export function ReportCarrete({
