@@ -38,6 +38,12 @@ export interface ModuleDef {
   isBase?: boolean;
   hasFlowIdInput?: boolean;
   hasFlowSelector?: boolean;
+  /* Si true, el modulo expone un selector de WABAs (lineas WhatsApp) en LeftPanel.
+   * Aplica a Ce4 (5_flujo_inbound) y Ce5 (6_agentes_general). El backend usa la
+   * seleccion para filtrar `INBOUND_WABA_FILTER` y `AGENTES_WABA_FILTER`. La
+   * seleccion del modulo `6_agentes_general` aplica tambien a `7_agentes_top5`
+   * porque comparten la misma CTE `agentes_actual` en el query Snowflake. */
+  hasWabaSelector?: boolean;
   insightMode?: 'ai' | 'manual' | null;
   insightText?: string;
 }
@@ -84,12 +90,12 @@ export const MODULES: Record<Product, { base: ModuleDef; optional: ModuleDef[] }
       { id: '4b_funnel_steps', label: 'Funnel por Steps', desc: 'Barras horizontales', description: 'Drop-off paso a paso dentro de un flujo específico. Requiere FLOW_ID del flujo a analizar.', chart: 'horizontal-bars', hasFlowSelector: true },
       { id: '4c_vrf', label: 'Verificación (VRF)', desc: 'Funnel por flujo', description: 'Documento → rostro → liveness → firma por cada flujo seleccionado que tenga VRF habilitado.', chart: 'horizontal-bars', hasFlowSelector: true },
       { id: '4d_vrf_arbol', label: 'Verificación Árbol (VRF)', desc: 'Funnel tipo árbol', description: 'Journey completo: enviados → recibidos → contestados → documento → rostro → liveness → firma, en formato árbol jerárquico.', chart: 'horizontal-bars', hasFlowSelector: true },
-      { id: '5_flujo_inbound', label: 'Resultados Flujo Inbound', desc: 'Dona + KPIs', description: 'Conversaciones recibidas, % que pasaron a agente humano y % resueltas exitosamente por el bot. Seleccioná flujos específicos para filtrar la métrica.', chart: 'donut', hasFlowSelector: true },
+      { id: '5_flujo_inbound', label: 'Resultados Flujo Inbound', desc: 'Dona + KPIs', description: 'Conversaciones recibidas, % que pasaron a agente humano y % resueltas exitosamente por el bot. Seleccioná flujos y/o líneas WhatsApp específicas para filtrar la métrica.', chart: 'donut', hasFlowSelector: true, hasWabaSelector: true },
       { id: '5b_consumo_por_linea', label: 'Consumo por Línea/Flujo', desc: 'Barras horizontales', description: 'Volumen de mensajes enviados por cada línea o flujo, ordenado de mayor a menor.', chart: 'horizontal-bars' },
       { id: '5c_tendencia_mensual', label: 'Tendencia Mensual', desc: 'Barras + línea', description: 'Evolución del volumen de conversaciones por tipo (inbound, outbound, notificación) de los últimos 3-6 meses.', chart: 'bars-line' },
       { id: '5d_heatmap_lineas', label: 'Heatmap Cambios por Línea', desc: 'Tabla de calor', description: 'Actividad por línea WhatsApp en los últimos 3 meses con indicadores de líneas nuevas y detenidas.', chart: 'table' },
       { id: '6_comparativo_flujos', label: 'Comparativo entre Flujos', desc: 'Tabla comparativa', description: 'Métricas clave (enviados, recepción, fallos Meta, conversión) lado a lado para todos los flujos CE activos. Incluye % Doc y % Rostro si el flujo tiene VRF.', chart: 'table' },
-      { id: '6_agentes_general', label: 'Desempeño de Agentes', desc: 'KPIs con MoM', description: 'Mediana de tiempo de primera respuesta, % conversaciones cerradas y atendidas con comparativo MoM.', chart: 'kpi-mom' },
+      { id: '6_agentes_general', label: 'Desempeño de Agentes', desc: 'KPIs con MoM', description: 'Mediana de tiempo de primera respuesta, % conversaciones cerradas y atendidas con comparativo MoM. Seleccioná líneas WhatsApp para filtrar (aplica también a Top 5 Agentes).', chart: 'kpi-mom', hasWabaSelector: true },
       { id: '7_agentes_top5', label: 'Métricas por Agente Top 5', desc: 'Tabla', description: 'Tabla individual de los 5 agentes con mayor volumen: atención, cierre, expiradas y tiempos de respuesta.', chart: 'table' },
     ],
   },

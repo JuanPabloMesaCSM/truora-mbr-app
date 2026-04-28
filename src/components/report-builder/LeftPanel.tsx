@@ -17,6 +17,7 @@ import { FeedbackModal } from "./FeedbackModal";
 import { BgcCustomTypes, type CustomTypeRow } from "./BgcCustomTypes";
 import { DiFlowSelector, type DiFlowRow } from "./DiFlowSelector";
 import { CEFlowSelector, type CEFlowRow } from "./CEFlowSelector";
+import { CEWabaSelector, type CEWabaRow } from "./CEWabaSelector";
 import type { Theme } from "./SlideCanvas";
 
 /* ── dark shell palette ── */
@@ -109,6 +110,11 @@ interface LeftPanelProps {
   selectedCeFlowsByModule: Record<string, Set<string>>;
   setModuleFlowSelection: (moduleId: string, next: Set<string>) => void;
   ceFlowsLoading: boolean;
+  /* Selección de WABAs (líneas WhatsApp) por módulo CE. Mismo patrón per-módulo
+   * que `selectedCeFlowsByModule`. Modules con `hasWabaSelector: true`. */
+  ceWabas: CEWabaRow[];
+  selectedCeWabasByModule: Record<string, Set<string>>;
+  setModuleWabaSelection: (moduleId: string, next: Set<string>) => void;
   customTypes: CustomTypeRow[];
   selectedTypes: Set<string>;
   setSelectedTypes: (s: Set<string>) => void;
@@ -135,6 +141,7 @@ export function LeftPanel({
   insightsActivos, setInsightsActivos,
   theme, setTheme,
   ceFlows, selectedCeFlowsByModule, setModuleFlowSelection, ceFlowsLoading,
+  ceWabas, selectedCeWabasByModule, setModuleWabaSelection,
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
   diFlows, selectedDiFlows, setSelectedDiFlows, diFlowsLoading, diFlowsError,
   showUpdates, setShowUpdates,
@@ -394,6 +401,27 @@ export function LeftPanel({
                             flows={ceFlows}
                             selectedFlows={selectedCeFlowsByModule[mod.id] ?? new Set()}
                             setSelectedFlows={(next) => setModuleFlowSelection(mod.id, next)}
+                            loading={ceFlowsLoading}
+                            dark
+                          />
+                        </div>
+                      )}
+
+                      {/* CE WABA Selector inline — selección INDEPENDIENTE por módulo */}
+                      {mod.hasWabaSelector && (
+                        <div style={{
+                          paddingLeft: 12, paddingRight: 12, paddingBottom: 4,
+                          borderLeft: `2px solid ${color}20`,
+                          marginLeft: 0,
+                          background: S.surface,
+                          borderRight: `1px solid ${color}20`,
+                          borderBottom: `1px solid ${color}20`,
+                          borderRadius: '0 0 8px 8px',
+                        }}>
+                          <CEWabaSelector
+                            wabas={ceWabas}
+                            selectedWabas={selectedCeWabasByModule[mod.id] ?? new Set()}
+                            setSelectedWabas={(next) => setModuleWabaSelection(mod.id, next)}
                             loading={ceFlowsLoading}
                             dark
                           />

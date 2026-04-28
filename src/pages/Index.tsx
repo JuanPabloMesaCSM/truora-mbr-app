@@ -31,6 +31,15 @@ const CE_FLOW_SELECTOR_MODULES = [
   '5_flujo_inbound',
 ] as const;
 
+/* Módulos CE que tienen selector de líneas WhatsApp (WABAs). Cada uno mantiene
+ * su propio subconjunto en `selectedCeWabasByModule`. La selección de
+ * `6_agentes_general` aplica también al 7_agentes_top5 — comparten la CTE
+ * `agentes_actual` en el query Snowflake (filtrada por AGENTES_WABA_FILTER). */
+const CE_WABA_SELECTOR_MODULES = [
+  '5_flujo_inbound',
+  '6_agentes_general',
+] as const;
+
 interface IndexProps {
   source?: ClientSource;
 }
@@ -66,6 +75,11 @@ const Index = ({ source = 'regular' }: IndexProps) => {
    * un KPI propagaba al resto). Keys = module IDs como '4_funnel_generico'. */
   const [selectedCeFlowsByModule, setSelectedCeFlowsByModule] = useState<Record<string, Set<string>>>({});
   const [ceFlowsLoading, setCeFlowsLoading] = useState(false);
+  /* Líneas WhatsApp (WABAs) del cliente CE — vienen del mismo webhook que `ceFlows`.
+   * Selección per-módulo en `selectedCeWabasByModule` (mismos módulos que tienen
+   * `hasWabaSelector: true`: 5_flujo_inbound y 6_agentes_general). */
+  const [ceWabas, setCeWabas] = useState<{ waba: string; total_mensajes: number; ultimo_uso?: string | null }[]>([]);
+  const [selectedCeWabasByModule, setSelectedCeWabasByModule] = useState<Record<string, Set<string>>>({});
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
@@ -187,6 +201,8 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     setDiFlowsError(false);
     setCeFlows([]);
     setSelectedCeFlowsByModule({});
+    setCeWabas([]);
+    setSelectedCeWabasByModule({});
     setInsightsActivos({});
   }, [product]);
 
@@ -267,6 +283,8 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     if (!clientField || !periodData) {
       setCeFlows([]);
       setSelectedCeFlowsByModule({});
+      setCeWabas([]);
+      setSelectedCeWabasByModule({});
       return;
     }
     let cancelled = false;
@@ -286,13 +304,23 @@ const Index = ({ source = 'regular' }: IndexProps) => {
         const arr = Array.isArray(data?.flujos) ? data.flujos : Array.isArray(data) ? data : [];
         setCeFlows(arr);
         // Default por módulo: cada KPI con selector arranca con todos los flujos
-        const allIds = new Set<string>(arr.map((f: any) => f.flow_id));
-        const initial: Record<string, Set<string>> = {};
-        for (const modId of CE_FLOW_SELECTOR_MODULES) initial[modId] = new Set(allIds);
-        setSelectedCeFlowsByModule(initial);
+        const allFlowIds = new Set<string>(arr.map((f: any) => f.flow_id));
+        const initialFlows: Record<string, Set<string>> = {};
+        for (const modId of CE_FLOW_SELECTOR_MODULES) initialFlows[modId] = new Set(allFlowIds);
+        setSelectedCeFlowsByModule(initialFlows);
+        // WABAs vienen del mismo webhook: { flujos, wabas }. Default = todas seleccionadas.
+        const wabasArr = Array.isArray((data as any)?.wabas) ? (data as any).wabas : [];
+        setCeWabas(wabasArr);
+        const allWabas = new Set<string>(wabasArr.map((w: any) => w.waba));
+        const initialWabas: Record<string, Set<string>> = {};
+        for (const modId of CE_WABA_SELECTOR_MODULES) initialWabas[modId] = new Set(allWabas);
+        setSelectedCeWabasByModule(initialWabas);
       })
       .catch(() => {
-        if (!cancelled) { setCeFlows([]); setSelectedCeFlowsByModule({}); }
+        if (!cancelled) {
+          setCeFlows([]); setSelectedCeFlowsByModule({});
+          setCeWabas([]); setSelectedCeWabasByModule({});
+        }
       })
       .finally(() => { if (!cancelled) setCeFlowsLoading(false); });
     return () => { cancelled = true; };
@@ -417,6 +445,13 @@ const Index = ({ source = 'regular' }: IndexProps) => {
         Object.entries(selectedCeFlowsByModule).map(([mid, set]) => [mid, Array.from(set)])
       );
       payload.flujos_disponibles_total = ceFlows.length;
+      // Selección de WABAs por módulo (5_flujo_inbound, 6_agentes_general).
+      // El backend computa INBOUND_WABA_FILTER + AGENTES_WABA_FILTER. Misma regla
+      // de subset estricto: si todas seleccionadas, no filtra (= comportamiento global).
+      payload.wabas_seleccionadas_por_modulo = Object.fromEntries(
+        Object.entries(selectedCeWabasByModule).map(([mid, set]) => [mid, Array.from(set)])
+      );
+      payload.wabas_disponibles_total = ceWabas.length;
     }
 
     if (product === 'BGC' && customTypes.length >= 2) {
@@ -679,6 +714,11 @@ const Index = ({ source = 'regular' }: IndexProps) => {
               setSelectedCeFlowsByModule(prev => ({ ...prev, [moduleId]: next }))
             }
             ceFlowsLoading={ceFlowsLoading}
+            ceWabas={ceWabas}
+            selectedCeWabasByModule={selectedCeWabasByModule}
+            setModuleWabaSelection={(moduleId, next) =>
+              setSelectedCeWabasByModule(prev => ({ ...prev, [moduleId]: next }))
+            }
             customTypes={customTypes}
             selectedTypes={selectedTypes}
             setSelectedTypes={setSelectedTypes}
