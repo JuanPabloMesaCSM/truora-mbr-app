@@ -154,9 +154,23 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
 
   const drawerData = drawerClient ? consolidatedRows.find((c) => c.cliente_id === drawerClient) : null;
 
+  // Pulso general "Oppy" — suma de volumen actual vs anterior cross-producto.
+  // Aviso: las 3 métricas tienen unidades distintas (validaciones / checks /
+  // conversaciones), pero el ratio de cambio sigue siendo informativo como
+  // "qué tanto se mueve el consumo total del equipo".
+  const oppyTotal = PROD_LIST.reduce(
+    (acc, p) => ({
+      actual: acc.actual + productAggs[p].valor_actual,
+      anterior: acc.anterior + productAggs[p].valor_anterior,
+    }),
+    { actual: 0, anterior: 0 }
+  );
+
   return (
     <>
       <Pulse weekFin={weekFin} totalClientes={portfolioCounts.total.size} rangoActual={rangoActual} rangoPrev={rangoPrev} />
+
+      <OppyHero totalActual={oppyTotal.actual} totalAnterior={oppyTotal.anterior} />
 
       <KpiBanner
         counts={portfolioCounts}
@@ -293,6 +307,94 @@ function Pulse({
           </span>
           <span style={{ color: S.text, fontWeight: 600 }}>{totalClientes} clientes con datos</span>
         </div>
+      </div>
+    </motion.div>
+  );
+}
+
+/* =========================================================================
+   OPPY HERO — pulso general cross-producto (centrado en pantalla)
+   Muestra "Oppy creció/decreció X%" combinando volumen total de los 3 productos.
+   Las unidades difieren (validaciones / checks / conversaciones) — interpretarse
+   como "ritmo combinado del consumo del equipo", no como una unidad única.
+   ========================================================================= */
+function OppyHero({ totalActual, totalAnterior }: { totalActual: number; totalAnterior: number }) {
+  const delta = totalActual - totalAnterior;
+  const pct = pctDelta(totalActual, totalAnterior);
+  const isUp = (pct ?? 0) >= 0;
+  const color = pct == null ? S.muted : isUp ? "#10B981" : "#EF4444";
+  const verb = isUp ? "creció" : "decreció";
+  const TrendIcon = isUp ? TrendingUp : TrendingDown;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, delay: 0.1, ease: "easeOut" }}
+      style={{
+        position: "relative",
+        background: `linear-gradient(180deg, ${color}12 0%, ${S.surface} 75%)`,
+        border: `1px solid ${color}40`,
+        borderRadius: 18,
+        padding: "26px 24px 22px",
+        marginBottom: 22,
+        textAlign: "center",
+        overflow: "hidden",
+      }}
+    >
+      {/* glow sutil de fondo */}
+      <div style={{
+        position: "absolute",
+        top: -40, left: "50%", transform: "translateX(-50%)",
+        width: 320, height: 80,
+        background: `radial-gradient(ellipse at center, ${color}25, transparent 70%)`,
+        filter: "blur(20px)",
+        pointerEvents: "none",
+      }} />
+
+      <div style={{
+        position: "relative",
+        fontSize: 10, color: S.muted,
+        letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 700,
+        marginBottom: 14,
+      }}>
+        Pulso general · Oppy
+      </div>
+
+      <div style={{
+        position: "relative",
+        display: "inline-flex", alignItems: "baseline",
+        gap: 14, flexWrap: "wrap", justifyContent: "center",
+        marginBottom: 6,
+      }}>
+        <span style={{
+          fontSize: 22, color: S.text, fontWeight: 700,
+          letterSpacing: "-0.01em",
+        }}>
+          Oppy <span style={{ color }}>{verb}</span>
+        </span>
+        <span style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          fontSize: 44, fontWeight: 800, color,
+          letterSpacing: "-0.03em", lineHeight: 1,
+        }}>
+          <TrendIcon size={32} strokeWidth={2.6} />
+          {fmtPct(pct)}
+        </span>
+      </div>
+
+      <div style={{ position: "relative", fontSize: 12.5, color: S.muted, marginTop: 10 }}>
+        <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalActual)}</span>
+        <span style={{ color: S.dim, margin: "0 6px" }}>actual</span>
+        <span style={{ color: S.dim, margin: "0 4px" }}>vs</span>
+        <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalAnterior)}</span>
+        <span style={{ color: S.dim, margin: "0 6px" }}>anterior</span>
+        <span style={{ color: S.dim, margin: "0 6px" }}>·</span>
+        <span style={{ color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtNumSigned(delta)}</span>
+      </div>
+
+      <div style={{ position: "relative", fontSize: 10.5, color: S.dim, marginTop: 8, fontStyle: "italic" }}>
+        consumo total combinado · validaciones + checks + conversaciones
       </div>
     </motion.div>
   );
