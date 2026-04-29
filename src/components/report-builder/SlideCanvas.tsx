@@ -3380,10 +3380,40 @@ function Ce14Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
   const activeLines  = rows.filter(r => r.col5 === "ACTIVE").length;
   const totalVol     = rows.reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
 
+  // Heatmap real: paleta multi-color por bandas relativas a maxVol.
+  // Lectura humana inmediata: verde = línea sana / alto volumen, amarillo = media,
+  // naranja = bajo, rojo = casi inactiva. Valor 0 = neutro (línea no usada ese mes).
+  // Replica la paleta del manual del CSM (PayJoy) que ya validó comprensión del equipo.
   function cellBg(vol: number): string {
     if (vol === 0) return theme === "dark" ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
-    const intensity = Math.max(0.08, (vol / maxVol) * 0.80);
-    return `rgba(8,145,178,${intensity.toFixed(2)})`;
+    const ratio = vol / maxVol;
+    // Banda VERDE (volumen alto, >= 50% del top) — gradient interno por intensidad
+    if (ratio >= 0.50) {
+      const a = 0.35 + (ratio - 0.50) * 0.90; // 0.35 .. 0.80
+      return `rgba(34,197,94,${a.toFixed(2)})`;
+    }
+    // Banda AMARILLA (medio, 20–50%)
+    if (ratio >= 0.20) {
+      const a = 0.30 + (ratio - 0.20) * 0.80; // 0.30 .. 0.54
+      return `rgba(250,204,21,${a.toFixed(2)})`;
+    }
+    // Banda NARANJA (bajo, 5–20%)
+    if (ratio >= 0.05) {
+      const a = 0.30 + (ratio - 0.05) * 1.20; // 0.30 .. 0.48
+      return `rgba(249,115,22,${a.toFixed(2)})`;
+    }
+    // Banda ROJA (muy bajo, < 5% pero > 0) — línea casi inactiva
+    return "rgba(239,68,68,0.32)";
+  }
+  // Texto interno: blanco para verde fuerte (alto contraste), oscuro para
+  // amarillo/naranja (mejor legibilidad), gris muted para celdas en cero.
+  function cellTextColor(vol: number): string {
+    if (vol === 0) return t.textMuted;
+    const ratio = vol / maxVol;
+    if (ratio >= 0.50) return "#FFFFFF";          // verde fuerte → blanco
+    if (ratio >= 0.20) return theme === "dark" ? "#0D1137" : "#0D1137"; // amarillo → texto oscuro
+    if (ratio >= 0.05) return "#FFFFFF";          // naranja → blanco
+    return "#FFFFFF";                              // rojo → blanco
   }
 
   const HEADER_H = 28;
@@ -3434,8 +3464,7 @@ function Ce14Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
                     <div key={ci} style={{ width: 130, height: rowH - 3, margin: "1px 2px",
                       background: cellBg(vol), borderRadius: 4,
                       display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <span style={{ fontSize: fs, fontWeight: 700,
-                        color: vol === 0 ? t.textMuted : theme === "dark" ? "#FFFFFF" : "#0D1137" }}>
+                      <span style={{ fontSize: fs, fontWeight: 700, color: cellTextColor(vol) }}>
                         {fmtVol(vol)}
                       </span>
                     </div>
