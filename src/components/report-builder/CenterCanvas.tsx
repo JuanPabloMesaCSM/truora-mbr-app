@@ -110,9 +110,17 @@ export function CenterCanvas({
       const sel = selectedCeFlowsByModule;
       const inModule = (modId: string, flowId: string) =>
         !sel || !sel[modId] ? true : sel[modId].has(flowId);
+
+      /* Ce8 (Funnel OTB) — todos los flujos seleccionados → 1 slide global.
+       * Subset → N slides per-flow. Misma lógica que ReportCarrete. */
+      const selOtb = sel ? sel['4_funnel_generico'] : undefined;
+      const allOtbSelected = !sel || !selOtb || selOtb.size >= ceFlows.length;
+      const useOtbGlobalSlide = showOtb && allOtbSelected;
+      if (useOtbGlobalSlide) dataSlideIds.push('ce_otb_global');
+
       for (let i = 0; i < ceFlows.length; i++) {
         const flow = ceFlows[i];
-        const showOtbI      = showOtb      && inModule('4_funnel_generico', flow.flow_id);
+        const showOtbI      = showOtb && !useOtbGlobalSlide && inModule('4_funnel_generico', flow.flow_id);
         const showStepsI    = showSteps    && inModule('4b_funnel_steps',   flow.flow_id);
         const showVrfI      = showVrf      && flow.tiene_vrf && inModule('4c_vrf',       flow.flow_id);
         const showVrfArbolI = showVrfArbol && flow.tiene_vrf && inModule('4d_vrf_arbol', flow.flow_id);

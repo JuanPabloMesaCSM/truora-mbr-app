@@ -55,6 +55,23 @@ function num(val: string | undefined, decimals = 0): string {
   return n.toLocaleString("es-CO", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+/** Formatea minutos como "X h Y min" para valores >= 60, "X min" para valores < 60.
+ *  Lectura humana sin perder precisión. Usado en Ce5/Ce6 medianas (primera respuesta + duración).
+ *  Si signed=true, agrega "+" para positivos (los negativos siempre llevan "-"). */
+function fmtMinAsHora(mins: number | null | undefined, signed = false): string {
+  if (mins == null || isNaN(Number(mins))) return "—";
+  const v = Number(mins);
+  const sign = v > 0 ? (signed ? "+" : "") : v < 0 ? "-" : "";
+  const absV = Math.abs(v);
+  if (absV < 60) {
+    return sign + (Math.round(absV * 10) / 10) + " min";
+  }
+  const h = Math.floor(absV / 60);
+  const m = Math.round(absV % 60);
+  if (m === 0) return sign + h + " h";
+  return sign + h + " h " + m + " min";
+}
+
 function todayLabel(): string {
   return new Date().toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
 }
@@ -1992,6 +2009,33 @@ export interface CeFlowData {
   vrf: Record<string, string>;
 }
 
+/** Construye un CeFlowData sintético sumando funnel_otb de TODOS los flujos.
+ *  Usado por el slide "Funnel Outbound — Todos los flujos" cuando el CSM no
+ *  filtra ningún flujo (para evitar generar N slides individuales redundantes). */
+export function computeGlobalOtbFlow(flows: CeFlowData[]): CeFlowData {
+  const summed: Record<string, string> = {};
+  // funnel_otb usa COL1..COL10 (ver Ce8Slide). Suma por columna; si los datos
+  // no son numéricos los ignora silenciosamente (default 0).
+  const cols = ["COL1","COL2","COL3","COL4","COL5","COL6","COL7","COL8","COL9","COL10","COL11"];
+  for (const col of cols) {
+    let total = 0;
+    for (const f of flows) {
+      const raw = f.funnel_otb ? f.funnel_otb[col] : undefined;
+      const v = raw == null ? 0 : parseFloat(raw);
+      if (!isNaN(v)) total += v;
+    }
+    summed[col] = String(Math.round(total));
+  }
+  return {
+    flow_id: "__otb_global__",
+    flow_name: "Todos los flujos",
+    tiene_vrf: false,
+    funnel_otb: summed,
+    funnel_steps: [],
+    vrf: {},
+  };
+}
+
 /* ════════════════════════════════════════════════════════════
    CE-1 | Consumo Total
 ══════════════════════════════════════════════════════════════ */
@@ -2389,8 +2433,8 @@ function Ce5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
     { label: "Total conversaciones",    val: totalConv.toLocaleString("es-CO"),    sub: `Anterior: ${totalPrev.toLocaleString("es-CO")}`, bg: "transparent", vc: t.textPrimary },
     { label: "% Conv. atendidas",      val: `${pctAtend.toFixed(1)}%`,             bg: "transparent", vc: t.textPrimary },
     { label: "% Conv. cerradas",       val: `${pctCerradas.toFixed(1)}%`,          sub: `Anterior: ${pctCerPrev.toFixed(1)}%`, bg: cerBg,   vc: pctCerradas < 80 ? CE.danger : CE.inbound },
-    { label: "Mediana 1ª respuesta",   val: `${medPrimRta.toFixed(1)} min`,        sub: `Anterior: ${medRtaPrev.toFixed(1)} min`, bg: rtaBg,  vc: medPrimRta > 10 ? CE.warning : CE.inbound },
-    { label: "Mediana duración",       val: `${medDur.toFixed(1)} min`,            bg: "transparent", vc: t.textPrimary },
+    { label: "Mediana 1ª respuesta",   val: fmtMinAsHora(medPrimRta),              sub: `Anterior: ${fmtMinAsHora(medRtaPrev)}`,  bg: rtaBg,  vc: medPrimRta > 10 ? CE.warning : CE.inbound },
+    { label: "Mediana duración",       val: fmtMinAsHora(medDur),                  bg: "transparent", vc: t.textPrimary },
     { label: "Conv. sin asignar",      val: sinAsignar.toLocaleString("es-CO"),    bg: sinAsiBg, vc: sinAsignar > 0 ? CE.danger : t.textPrimary },
   ];
 
@@ -2420,7 +2464,7 @@ function Ce5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
               Cerradas: <span style={{ color: parseFloat(varCerradas || "0") > 0 ? CE.inbound : CE.danger }}>{varCerradas} pp</span>
             </span>
             <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
-              Mediana respuesta: <span style={{ color: parseFloat(varRta || "0") < 0 ? CE.inbound : CE.warning }}>{varRta} min</span>
+              Mediana respuesta: <span style={{ color: parseFloat(varRta || "0") < 0 ? CE.inbound : CE.warning }}>{fmtMinAsHora(parseFloat(varRta || "0"), true)}</span>
             </span>
           </div>
           <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
@@ -2505,11 +2549,11 @@ function Ce6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
                   </div>
                   <div style={{ width: colW[6], flexShrink: 0 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: medRta > 10 ? CE.warning : t.textPrimary }}>
-                      {medRta.toFixed(1)} min
+                      {fmtMinAsHora(medRta)}
                     </span>
                   </div>
                   <div style={{ width: colW[7], flexShrink: 0 }}>
-                    <span style={{ fontSize: 13, color: t.textMuted }}>{parseFloat(row.col8 || "0").toFixed(1)} min</span>
+                    <span style={{ fontSize: 13, color: t.textMuted }}>{fmtMinAsHora(parseFloat(row.col8 || "0"))}</span>
                   </div>
                 </div>
               );
@@ -4086,6 +4130,13 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
       if (slideId.startsWith("ce_sep_")) {
         const i = parseInt(slideId.split("_")[2], 10);
         if (!isNaN(i) && i < flows.length) return <Ce7Slide ceFlows={flows} flowIndex={i} theme={theme} pageNum={pageNum} totalPages={totalPages} />;
+      }
+      if (slideId === "ce_otb_global") {
+        // 1 slide consolidado con suma de funnel_otb de todos los flujos.
+        // Se emite cuando el CSM no filtra ningún flujo en Ce8.
+        if (flows.length === 0) return null;
+        const globalFlow = computeGlobalOtbFlow(flows);
+        return <Ce8Slide ceFlows={[globalFlow]} flowIndex={0} theme={theme} clientName={clientName} periodLabel={periodLabel} pageNum={pageNum} totalPages={totalPages} />;
       }
       if (slideId.startsWith("ce_otb_")) {
         const i = parseInt(slideId.split("_")[2], 10);
