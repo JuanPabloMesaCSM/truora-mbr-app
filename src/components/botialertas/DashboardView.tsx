@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   S, SEV_META, PROD_LIST, PROD_META,
-  fmtNum, fmtNumSigned, fmtPct, fmtRange, pctDelta,
+  fmtNum, fmtNumSigned, fmtPct, fmtMonthLong, fmtRangeHumano, pctDelta,
   TOP_MOVERS_MIN_VOL,
 } from "./types";
 import type { Alerta, Producto, Severidad } from "./types";
@@ -19,15 +19,14 @@ interface Props {
   scope: "all" | "mine";    // para el botón "copiar resumen"
 }
 
+type KpiKey = "riesgo" | "creciendo" | "estables" | "total";
+
 /* ========================================================================
-   DashboardView — vista de embudo:
-   1) Hero + Pulse banner
-   2) Por producto (expandible -> top movers)
-   3) Tabla consolidada (toggle)
-   4) Drawer 360 al click en cliente
+   DashboardView — vista de embudo
    ======================================================================== */
 export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin, scope }: Props) {
   const [expandedProduct, setExpandedProduct] = useState<Producto | null>(null);
+  const [expandedKpi, setExpandedKpi] = useState<KpiKey | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
   const [drawerClient, setDrawerClient] = useState<string | null>(null);
 
@@ -69,10 +68,9 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
       else if (r.severidad === "crecimiento") creciendo.add(r.cliente_id);
       else if (r.severidad === "estable" || r.severidad === "leve") estables.add(r.cliente_id);
     }
-    // estables no debe contar a alguien que también esté en riesgo o creciendo
     for (const id of riesgo) estables.delete(id);
     for (const id of creciendo) estables.delete(id);
-    return { riesgo: riesgo.size, creciendo: creciendo.size, estables: estables.size, total: total.size };
+    return { riesgo, creciendo, estables, total };
   }, [rows]);
 
   const topMovers = useMemo(() => {
@@ -87,8 +85,8 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         (a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0))
       );
       out[p] = {
-        caidas: sorted.filter((r) => Number(r.variacion_abs ?? 0) < 0).slice(0, 5),
-        crecimientos: sorted.filter((r) => Number(r.variacion_abs ?? 0) > 0).slice(0, 5),
+        caidas: sorted.filter((r) => Number(r.variacion_abs ?? 0) < 0),
+        crecimientos: sorted.filter((r) => Number(r.variacion_abs ?? 0) > 0),
       };
     }
     return out;
@@ -112,7 +110,6 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
       }
       byClient[r.cliente_id].cells[r.producto] = r;
     }
-    // Ordenar: clientes con más severidad primero, luego alfabético
     return Object.values(byClient).sort((a, b) => {
       const aSev = severityScore(a.cells);
       const bSev = severityScore(b.cells);
@@ -132,15 +129,29 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     return m;
   }, [allWeeksRows]);
 
+  /* ─── helpers para encabezados de fechas ───────────────────────── */
+  const sample = rows[0];
+  const mesActualLabel = sample ? fmtMonthLong(sample.periodo_actual_fin) : "—";
+  const mesPrevLabel   = sample ? fmtMonthLong(sample.periodo_anterior_fin) : "—";
+  const rangoActual    = sample ? fmtRangeHumano(sample.periodo_actual_inicio, sample.periodo_actual_fin) : "—";
+  const rangoPrev      = sample ? fmtRangeHumano(sample.periodo_anterior_inicio, sample.periodo_anterior_fin) : "—";
+
   /* ─── render ───────────────────────────────────────────────────── */
 
   const drawerData = drawerClient ? consolidatedRows.find((c) => c.cliente_id === drawerClient) : null;
 
   return (
     <>
-      <Pulse weekFin={weekFin} totalClientes={portfolioCounts.total} />
+      <Pulse weekFin={weekFin} totalClientes={portfolioCounts.total.size} rangoActual={rangoActual} rangoPrev={rangoPrev} />
 
-      <KpiBanner counts={portfolioCounts} />
+      <KpiBanner
+        counts={portfolioCounts}
+        expanded={expandedKpi}
+        onToggle={(k) => setExpandedKpi(expandedKpi === k ? null : k)}
+        consolidatedRows={consolidatedRows}
+        csmByEmail={csmByEmail}
+        onClickClient={(id) => setDrawerClient(id)}
+      />
 
       <CopyResumenButton
         weekFin={weekFin}
@@ -157,6 +168,8 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         topMovers={topMovers}
         csmByEmail={csmByEmail}
         onClickClient={(id) => setDrawerClient(id)}
+        mesActualLabel={mesActualLabel}
+        mesPrevLabel={mesPrevLabel}
       />
 
       <TableSection
@@ -165,11 +178,13 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         rows={consolidatedRows}
         csmByEmail={csmByEmail}
         onClickClient={(id) => setDrawerClient(id)}
+        mesActualLabel={mesActualLabel}
+        mesPrevLabel={mesPrevLabel}
       />
 
       <AnimatePresence>
         {drawerData && (
-          <ClientDrawer
+          <ClientModal
             data={drawerData}
             history={historyByClientProduct}
             csmByEmail={csmByEmail}
@@ -194,9 +209,11 @@ function severityScore(cells: Partial<Record<Producto, Alerta>>): number {
 }
 
 /* =========================================================================
-   PULSE — header con periodo y rangos
+   PULSE — header con periodo y rangos REALES
    ========================================================================= */
-function Pulse({ weekFin, totalClientes }: { weekFin: string; totalClientes: number }) {
+function Pulse({
+  weekFin, totalClientes, rangoActual, rangoPrev,
+}: { weekFin: string; totalClientes: number; rangoActual: string; rangoPrev: string }) {
   const fechaTitulo = new Date(weekFin).toLocaleDateString("es-CO", {
     day: "numeric", month: "long", year: "numeric",
   });
@@ -220,70 +237,227 @@ function Pulse({ weekFin, totalClientes }: { weekFin: string; totalClientes: num
       <h1 style={{
         fontSize: 32, fontWeight: 800, color: S.text,
         lineHeight: 1.1, letterSpacing: "-0.02em",
-        margin: 0, marginBottom: 8,
+        margin: 0, marginBottom: 12,
       }}>
         Semana del {fechaTitulo}
       </h1>
 
-      <p style={{ fontSize: 13, color: S.muted, margin: 0, lineHeight: 1.5 }}>
-        Comparativo MTD vs PMTD · {totalClientes} clientes con datos esta semana.
-      </p>
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
+        <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.5 }}>
+          <span style={{ color: S.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginRight: 6 }}>
+            Actual
+          </span>
+          <span style={{ color: S.text, fontWeight: 600 }}>{rangoActual}</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.5 }}>
+          <span style={{ color: S.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginRight: 6 }}>
+            Anterior
+          </span>
+          <span style={{ color: S.text, fontWeight: 600 }}>{rangoPrev}</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.5 }}>
+          <span style={{ color: S.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginRight: 6 }}>
+            Cobertura
+          </span>
+          <span style={{ color: S.text, fontWeight: 600 }}>{totalClientes} clientes con datos</span>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
 /* =========================================================================
-   KPI BANNER — En riesgo / Creciendo / Estables / Cobertura
+   KPI BANNER — clickeable + expand inline
    ========================================================================= */
 function KpiBanner({
-  counts,
+  counts, expanded, onToggle, consolidatedRows, csmByEmail, onClickClient,
 }: {
-  counts: { riesgo: number; creciendo: number; estables: number; total: number };
+  counts: { riesgo: Set<string>; creciendo: Set<string>; estables: Set<string>; total: Set<string> };
+  expanded: KpiKey | null;
+  onToggle: (k: KpiKey) => void;
+  consolidatedRows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
+  csmByEmail: Record<string, { nombre: string }>;
+  onClickClient: (cliente_id: string) => void;
 }) {
-  const items: { key: string; label: string; value: number; sub?: string; color: string; icon: typeof TrendingDown }[] = [
-    { key: "riesgo",    label: "En riesgo",    value: counts.riesgo,    sub: "críticas + fuertes", color: "#EF4444", icon: TrendingDown },
-    { key: "creciendo", label: "Creciendo",    value: counts.creciendo, sub: ">+30% MoM",          color: "#10B981", icon: TrendingUp },
-    { key: "estables",  label: "Estables",     value: counts.estables,                              color: "#94A3B8", icon: Minus },
-    { key: "total",     label: "Cartera",      value: counts.total,     sub: "clientes con datos", color: "#7DD3FC", icon: Minus },
+  const items: { key: KpiKey; label: string; size: number; sub?: string; color: string; icon: typeof TrendingDown; expandable: boolean }[] = [
+    { key: "riesgo",    label: "En riesgo",    size: counts.riesgo.size,    sub: "críticas + fuertes", color: "#EF4444", icon: TrendingDown, expandable: true },
+    { key: "creciendo", label: "Creciendo",    size: counts.creciendo.size, sub: ">+30% MoM",          color: "#10B981", icon: TrendingUp,   expandable: true },
+    { key: "estables",  label: "Estables",     size: counts.estables.size,                              color: "#94A3B8", icon: Minus,        expandable: true },
+    { key: "total",     label: "Cartera",      size: counts.total.size,     sub: "clientes con datos", color: "#7DD3FC", icon: Minus,        expandable: false },
   ];
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 12,
+      }}>
+        {items.map((it, i) => {
+          const Icon = it.icon;
+          const isActive = expanded === it.key;
+          return (
+            <motion.button
+              key={it.key}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.08 + i * 0.05, ease: "easeOut" }}
+              onClick={() => it.expandable && onToggle(it.key)}
+              disabled={!it.expandable}
+              style={{
+                position: "relative", overflow: "hidden",
+                background: isActive ? `${it.color}10` : S.surface,
+                border: `1px solid ${isActive ? `${it.color}50` : S.border}`,
+                borderRadius: 14, padding: "16px 18px 16px 22px",
+                textAlign: "left",
+                cursor: it.expandable ? "pointer" : "default",
+                transition: "all 0.18s",
+              }}
+              onMouseEnter={(e) => { if (it.expandable && !isActive) e.currentTarget.style.borderColor = S.borderHi; }}
+              onMouseLeave={(e) => { if (it.expandable && !isActive) e.currentTarget.style.borderColor = S.border; }}
+            >
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: it.color }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Icon size={11} color={it.color} strokeWidth={2.4} />
+                  <span style={{ fontSize: 10, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase", fontWeight: 600 }}>
+                    {it.label}
+                  </span>
+                </div>
+                {it.expandable && (
+                  <ChevronDown size={12} color={isActive ? it.color : S.dim}
+                    style={{ transition: "transform 0.18s", transform: isActive ? "rotate(180deg)" : "none" }} />
+                )}
+              </div>
+              <div style={{ fontSize: 32, fontWeight: 800, color: isActive ? it.color : S.text, lineHeight: 1, letterSpacing: "-0.02em" }}>
+                {it.size}
+              </div>
+              {it.sub && (
+                <div style={{ fontSize: 11, color: S.dim, marginTop: 6, fontWeight: 500 }}>
+                  {it.sub}
+                </div>
+              )}
+            </motion.button>
+          );
+        })}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && expanded !== "total" && (
+          <motion.div
+            key={expanded}
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <KpiExpandList
+              kpiKey={expanded}
+              clientIds={
+                expanded === "riesgo" ? counts.riesgo
+                : expanded === "creciendo" ? counts.creciendo
+                : counts.estables
+              }
+              consolidatedRows={consolidatedRows}
+              csmByEmail={csmByEmail}
+              onClickClient={onClickClient}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function KpiExpandList({
+  kpiKey, clientIds, consolidatedRows, csmByEmail, onClickClient,
+}: {
+  kpiKey: KpiKey;
+  clientIds: Set<string>;
+  consolidatedRows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
+  csmByEmail: Record<string, { nombre: string }>;
+  onClickClient: (cliente_id: string) => void;
+}) {
+  const accent = kpiKey === "riesgo" ? "#EF4444" : kpiKey === "creciendo" ? "#10B981" : "#94A3B8";
+  const titulo = kpiKey === "riesgo" ? "Clientes en riesgo" : kpiKey === "creciendo" ? "Clientes en crecimiento" : "Clientes estables";
+
+  const filtered = consolidatedRows.filter((c) => clientIds.has(c.cliente_id));
+
+  if (filtered.length === 0) {
+    return (
+      <div style={{ background: S.surfaceLo, border: `1px solid ${accent}30`, borderRadius: 14, padding: 16, color: S.dim, fontSize: 12 }}>
+        Sin clientes en esta categoría.
+      </div>
+    );
+  }
+
   return (
     <div style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-      gap: 12, marginBottom: 18,
+      background: S.surfaceLo, border: `1px solid ${accent}30`,
+      borderRadius: 14, padding: "14px 16px",
     }}>
-      {items.map((it, i) => {
-        const Icon = it.icon;
-        return (
-          <motion.div
-            key={it.key}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, delay: 0.08 + i * 0.05, ease: "easeOut" }}
-            style={{
-              position: "relative", overflow: "hidden",
-              background: S.surface, border: `1px solid ${S.border}`,
-              borderRadius: 14, padding: "16px 18px 16px 22px",
-            }}
-          >
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: it.color }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <Icon size={11} color={it.color} strokeWidth={2.4} />
-              <span style={{ fontSize: 10, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase", fontWeight: 600 }}>
-                {it.label}
-              </span>
-            </div>
-            <div style={{ fontSize: 32, fontWeight: 800, color: S.text, lineHeight: 1, letterSpacing: "-0.02em" }}>
-              {it.value}
-            </div>
-            {it.sub && (
-              <div style={{ fontSize: 11, color: S.dim, marginTop: 6, fontWeight: 500 }}>
-                {it.sub}
+      <div style={{ fontSize: 11, color: accent, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, marginBottom: 12 }}>
+        {titulo} · {filtered.length}
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+        gap: 8,
+      }}>
+        {filtered.map((c) => {
+          const csm = c.csm_email ? csmByEmail[c.csm_email]?.nombre || c.csm_email : "—";
+          return (
+            <button
+              key={c.cliente_id}
+              onClick={() => onClickClient(c.cliente_id)}
+              style={{
+                background: S.surface, border: `1px solid ${S.border}`,
+                borderRadius: 10, padding: "10px 12px",
+                textAlign: "left", cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 8,
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${accent}50`; e.currentTarget.style.background = `${accent}08`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = S.border; e.currentTarget.style.background = S.surface; }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: S.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {c.nombre}
+                </div>
+                <div style={{ fontSize: 10, color: S.dim, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {csm}
+                </div>
               </div>
-            )}
-          </motion.div>
-        );
-      })}
+              <div style={{ display: "flex", gap: 4 }}>
+                {PROD_LIST.map((p) => {
+                  const a = c.cells[p];
+                  if (!a) return null;
+                  const meets =
+                    (kpiKey === "riesgo" && (a.severidad === "critica" || a.severidad === "fuerte")) ||
+                    (kpiKey === "creciendo" && a.severidad === "crecimiento") ||
+                    (kpiKey === "estables" && (a.severidad === "estable" || a.severidad === "leve"));
+                  if (!meets) return null;
+                  return (
+                    <span key={p}
+                      style={{
+                        fontSize: 9, fontWeight: 700, color: PROD_META[p].color,
+                        background: `${PROD_META[p].color}1A`,
+                        border: `1px solid ${PROD_META[p].color}40`,
+                        padding: "2px 6px", borderRadius: 6,
+                        letterSpacing: "0.05em",
+                      }}
+                      title={`${PROD_META[p].label}: ${fmtPct(a.variacion_pct)}`}
+                    >
+                      {PROD_META[p].sigla}
+                    </span>
+                  );
+                })}
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -296,7 +470,7 @@ function CopyResumenButton({
 }: {
   weekFin: string;
   scope: "all" | "mine";
-  portfolioCounts: { riesgo: number; creciendo: number; estables: number; total: number };
+  portfolioCounts: { riesgo: Set<string>; creciendo: Set<string>; estables: Set<string>; total: Set<string> };
   productAggs: Record<Producto, { valor_actual: number; valor_anterior: number; variacion_pct: number | null }>;
   topMovers: Record<Producto, { caidas: Alerta[]; crecimientos: Alerta[] }>;
 }) {
@@ -309,10 +483,10 @@ function CopyResumenButton({
     lines.push(scope === "mine" ? "Cartera: solo mi cartera" : "Cartera: equipo completo");
     lines.push("");
     lines.push("Pulso del portafolio:");
-    lines.push(`• En riesgo:    ${portfolioCounts.riesgo} clientes (críticas + fuertes)`);
-    lines.push(`• Creciendo:    ${portfolioCounts.creciendo}`);
-    lines.push(`• Estables:     ${portfolioCounts.estables}`);
-    lines.push(`• Cobertura:    ${portfolioCounts.total} clientes con datos`);
+    lines.push(`• En riesgo:  ${portfolioCounts.riesgo.size} clientes (críticas + fuertes)`);
+    lines.push(`• Creciendo:  ${portfolioCounts.creciendo.size}`);
+    lines.push(`• Estables:   ${portfolioCounts.estables.size}`);
+    lines.push(`• Cobertura:  ${portfolioCounts.total.size} clientes con datos`);
     lines.push("");
     lines.push("Por producto:");
     for (const p of PROD_LIST) {
@@ -370,6 +544,7 @@ function CopyResumenButton({
    ========================================================================= */
 function ProductRow({
   aggs, expanded, onToggle, topMovers, csmByEmail, onClickClient,
+  mesActualLabel, mesPrevLabel,
 }: {
   aggs: Record<Producto, { valor_actual: number; valor_anterior: number; variacion_pct: number | null; variacion_abs: number; counts: Record<Severidad, number> }>;
   expanded: Producto | null;
@@ -377,6 +552,8 @@ function ProductRow({
   topMovers: Record<Producto, { caidas: Alerta[]; crecimientos: Alerta[] }>;
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  mesActualLabel: string;
+  mesPrevLabel: string;
 }) {
   return (
     <div style={{ marginBottom: 26 }}>
@@ -411,6 +588,8 @@ function ProductRow({
               crecimientos={topMovers[expanded].crecimientos}
               csmByEmail={csmByEmail}
               onClickClient={onClickClient}
+              mesActualLabel={mesActualLabel}
+              mesPrevLabel={mesPrevLabel}
             />
           </motion.div>
         )}
@@ -454,7 +633,6 @@ function ProductCard({
     >
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 3, background: m.color }} />
 
-      {/* header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 18 }}>{m.emoji}</span>
@@ -468,7 +646,6 @@ function ProductCard({
         <ChevronDown size={16} color={S.muted} style={{ transition: "transform 0.18s", transform: expanded ? "rotate(180deg)" : "none" }} />
       </div>
 
-      {/* numbers */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
         <div style={{ fontSize: 28, fontWeight: 800, color: S.text, letterSpacing: "-0.02em", lineHeight: 1 }}>
           {fmtNum(agg.valor_actual)}
@@ -478,7 +655,6 @@ function ProductCard({
         </div>
       </div>
 
-      {/* delta */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 14, fontWeight: 700, color: deltaColor }}>
           <TrendIcon size={14} strokeWidth={2.6} />
@@ -489,7 +665,6 @@ function ProductCard({
         </span>
       </div>
 
-      {/* severity badges */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {agg.counts.critica > 0 && (
           <SevBadge color={SEV_META.critica.color} label={`${agg.counts.critica} crítica${agg.counts.critica === 1 ? "" : "s"}`} />
@@ -522,16 +697,20 @@ function SevBadge({ color, label }: { color: string; label: string }) {
 }
 
 /* =========================================================================
-   PRODUCT DETAIL — top 5 caídas + top 5 crecimientos
+   PRODUCT DETAIL — todas las caídas + todos los crecimientos
+   con headers explícitos por columna
    ========================================================================= */
 function ProductDetail({
   producto, caidas, crecimientos, csmByEmail, onClickClient,
+  mesActualLabel, mesPrevLabel,
 }: {
   producto: Producto;
   caidas: Alerta[];
   crecimientos: Alerta[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  mesActualLabel: string;
+  mesPrevLabel: string;
 }) {
   const m = PROD_META[producto];
   return (
@@ -545,24 +724,28 @@ function ProductDetail({
         Detalle · {m.label}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: 18 }}>
         <MoversTable
-          title="⚠ Top 5 caídas"
+          title={`⚠ Caídas (${caidas.length})`}
           subtitle="ordenadas por impacto absoluto"
           rows={caidas}
           accent="#EF4444"
+          variant="caida"
           csmByEmail={csmByEmail}
           onClickClient={onClickClient}
-          emptyText="Sin caídas relevantes esta semana."
+          mesActualLabel={mesActualLabel}
+          mesPrevLabel={mesPrevLabel}
         />
         <MoversTable
-          title="📈 Top 5 crecimientos"
-          subtitle="ordenadas por impacto absoluto"
+          title={`📈 Crecimientos (${crecimientos.length})`}
+          subtitle="ordenados por impacto absoluto"
           rows={crecimientos}
           accent="#10B981"
+          variant="crecimiento"
           csmByEmail={csmByEmail}
           onClickClient={onClickClient}
-          emptyText="Sin crecimientos relevantes esta semana."
+          mesActualLabel={mesActualLabel}
+          mesPrevLabel={mesPrevLabel}
         />
       </div>
     </div>
@@ -570,16 +753,22 @@ function ProductDetail({
 }
 
 function MoversTable({
-  title, subtitle, rows, accent, csmByEmail, onClickClient, emptyText,
+  title, subtitle, rows, accent, variant, csmByEmail, onClickClient,
+  mesActualLabel, mesPrevLabel,
 }: {
   title: string;
   subtitle: string;
   rows: Alerta[];
   accent: string;
+  variant: "caida" | "crecimiento";
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
-  emptyText: string;
+  mesActualLabel: string;
+  mesPrevLabel: string;
 }) {
+  const labelDelta = variant === "caida" ? "Disminución" : "Aumento";
+  const labelPct   = variant === "caida" ? "Decreció"     : "Creció";
+
   return (
     <div>
       <div style={{ marginBottom: 10 }}>
@@ -587,57 +776,73 @@ function MoversTable({
         <div style={{ fontSize: 10.5, color: S.muted, marginTop: 2 }}>{subtitle}</div>
       </div>
       {rows.length === 0 ? (
-        <div style={{ fontSize: 12, color: S.dim, padding: "10px 0" }}>{emptyText}</div>
+        <div style={{ fontSize: 12, color: S.dim, padding: "10px 0" }}>
+          Sin {variant === "caida" ? "caídas" : "crecimientos"} esta semana.
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {rows.map((r) => {
-            const csm = r.cliente?.csm_email ? csmByEmail[r.cliente.csm_email]?.nombre : null;
-            return (
-              <button
-                key={r.id}
-                onClick={() => onClickClient(r.cliente_id)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto auto auto",
-                  gap: 10, alignItems: "center",
-                  background: "transparent",
-                  border: `1px solid ${S.border}`,
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                  cursor: "pointer", textAlign: "left",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = `${accent}50`;
-                  e.currentTarget.style.background = `${accent}08`;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = S.border;
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: S.text, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {r.cliente?.nombre ?? r.client_id_externo}
-                  </div>
-                  {csm && (
-                    <div style={{ fontSize: 10, color: S.dim, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {csm}
+        <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
+          {/* header */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(140px, 1.6fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)",
+            background: S.surfaceLo,
+            borderBottom: `1px solid ${S.border}`,
+            fontSize: 9.5, fontWeight: 700, color: S.muted,
+            letterSpacing: "0.08em", textTransform: "uppercase",
+          }}>
+            <div style={{ padding: "9px 12px" }}>Cliente</div>
+            <div style={{ padding: "9px 12px", textAlign: "right" }}>Total {mesPrevLabel}</div>
+            <div style={{ padding: "9px 12px", textAlign: "right" }}>Total {mesActualLabel}</div>
+            <div style={{ padding: "9px 12px", textAlign: "right" }}>{labelDelta}</div>
+            <div style={{ padding: "9px 12px", textAlign: "right" }}>{labelPct}</div>
+          </div>
+          {/* rows */}
+          <div style={{ maxHeight: 420, overflowY: "auto" }}>
+            {rows.map((r, i) => {
+              const csm = r.cliente?.csm_email ? csmByEmail[r.cliente.csm_email]?.nombre : null;
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => onClickClient(r.cliente_id)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(140px, 1.6fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)",
+                    width: "100%",
+                    background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                    border: "none",
+                    borderBottom: `1px solid ${S.border}`,
+                    cursor: "pointer", textAlign: "left",
+                    transition: "background 0.12s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = `${accent}10`)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)")}
+                >
+                  <div style={{ padding: "10px 12px", minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, color: S.text, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {r.cliente?.nombre ?? r.client_id_externo}
                     </div>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: S.muted, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                  {fmtNum(r.valor_anterior)} → {fmtNum(r.valor_actual)}
-                </div>
-                <div style={{ fontSize: 11, color: accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                  {fmtNumSigned(r.variacion_abs)}
-                </div>
-                <div style={{ fontSize: 12, color: accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", minWidth: 56, textAlign: "right" }}>
-                  {fmtPct(r.variacion_pct)}
-                </div>
-              </button>
-            );
-          })}
+                    {csm && (
+                      <div style={{ fontSize: 10, color: S.dim, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {csm}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: S.muted, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                    {fmtNum(r.valor_anterior)}
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                    {fmtNum(r.valor_actual)}
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 12, color: accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                    {fmtNumSigned(r.variacion_abs)}
+                  </div>
+                  <div style={{ padding: "10px 12px", fontSize: 12.5, color: accent, fontWeight: 700, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                    {fmtPct(r.variacion_pct)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -661,16 +866,19 @@ function SectionLabel({ label }: { label: string }) {
 }
 
 /* =========================================================================
-   TABLE SECTION — vista consolidada cliente × producto
+   TABLE SECTION
    ========================================================================= */
 function TableSection({
   open, onToggle, rows, csmByEmail, onClickClient,
+  mesActualLabel, mesPrevLabel,
 }: {
   open: boolean;
   onToggle: () => void;
   rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  mesActualLabel: string;
+  mesPrevLabel: string;
 }) {
   return (
     <div style={{ marginBottom: 40 }}>
@@ -700,7 +908,13 @@ function TableSection({
             transition={{ duration: 0.3, ease: "easeOut" }}
             style={{ overflow: "hidden" }}
           >
-            <ConsolidatedTable rows={rows} csmByEmail={csmByEmail} onClickClient={onClickClient} />
+            <ConsolidatedTable
+              rows={rows}
+              csmByEmail={csmByEmail}
+              onClickClient={onClickClient}
+              mesActualLabel={mesActualLabel}
+              mesPrevLabel={mesPrevLabel}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -709,32 +923,54 @@ function TableSection({
 }
 
 function ConsolidatedTable({
-  rows, csmByEmail, onClickClient,
+  rows, csmByEmail, onClickClient, mesActualLabel, mesPrevLabel,
 }: {
   rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  mesActualLabel: string;
+  mesPrevLabel: string;
 }) {
+  const cols = "minmax(180px, 1.6fr) repeat(3, minmax(200px, 1.4fr)) minmax(140px, 0.9fr)";
+
   return (
     <div style={{
       background: S.surface, border: `1px solid ${S.border}`,
       borderRadius: 14, overflow: "hidden",
     }}>
+      {/* Two-row header: 1) producto label, 2) sub-headers numericos */}
       <div style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(180px, 2fr) repeat(3, minmax(160px, 1fr)) minmax(120px, 0.8fr)",
+        display: "grid", gridTemplateColumns: cols,
         background: S.surfaceLo,
         borderBottom: `1px solid ${S.border}`,
-        fontSize: 10, fontWeight: 700, color: S.muted,
-        letterSpacing: "0.10em", textTransform: "uppercase",
       }}>
-        <div style={{ padding: "12px 14px" }}>Cliente</div>
+        <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase" }}>
+          Cliente
+        </div>
         {PROD_LIST.map((p) => (
-          <div key={p} style={{ padding: "12px 14px", color: PROD_META[p].color }}>
+          <div key={p} style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: PROD_META[p].color, letterSpacing: "0.10em", textTransform: "uppercase" }}>
             {PROD_META[p].sigla} · {PROD_META[p].label}
           </div>
         ))}
-        <div style={{ padding: "12px 14px" }}>CSM</div>
+        <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase" }}>
+          CSM
+        </div>
+      </div>
+      <div style={{
+        display: "grid", gridTemplateColumns: cols,
+        background: S.surfaceLo,
+        borderBottom: `1px solid ${S.border}`,
+        fontSize: 9.5, fontWeight: 600, color: S.dim,
+      }}>
+        <div style={{ padding: "0 14px 10px" }} />
+        {PROD_LIST.map((p) => (
+          <div key={p} style={{ padding: "0 14px 10px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            <span>{mesPrevLabel}</span>
+            <span>{mesActualLabel}</span>
+            <span style={{ textAlign: "right" }}>Variación</span>
+          </div>
+        ))}
+        <div style={{ padding: "0 14px 10px" }} />
       </div>
 
       <div>
@@ -745,8 +981,7 @@ function ConsolidatedTable({
               key={r.cliente_id}
               onClick={() => onClickClient(r.cliente_id)}
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(180px, 2fr) repeat(3, minmax(160px, 1fr)) minmax(120px, 0.8fr)",
+                display: "grid", gridTemplateColumns: cols,
                 width: "100%",
                 background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                 border: "none", cursor: "pointer", textAlign: "left",
@@ -776,31 +1011,45 @@ function ConsolidatedTable({
 }
 
 function ProductCell({ alerta }: { alerta?: Alerta }) {
-  if (!alerta) return <span style={{ fontSize: 12, color: S.dim }}>—</span>;
+  if (!alerta) {
+    return (
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6,
+        fontSize: 11, color: S.dim, fontVariantNumeric: "tabular-nums",
+      }}>
+        <span>—</span>
+        <span>—</span>
+        <span style={{ textAlign: "right" }}>—</span>
+      </div>
+    );
+  }
   const sev = SEV_META[alerta.severidad];
   const isImportant = ["critica", "fuerte", "crecimiento"].includes(alerta.severidad);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <div style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
-        fontSize: 12, fontWeight: 700,
-        color: isImportant ? sev.color : S.text,
-        fontVariantNumeric: "tabular-nums",
+    <div style={{
+      display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6,
+      fontSize: 11.5, fontVariantNumeric: "tabular-nums", alignItems: "center",
+    }}>
+      <span style={{ color: S.muted }}>{fmtNum(alerta.valor_anterior)}</span>
+      <span style={{ color: S.text, fontWeight: 600 }}>{fmtNum(alerta.valor_actual)}</span>
+      <span style={{
+        textAlign: "right", color: isImportant ? sev.color : S.muted,
+        fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 4,
       }}>
-        <span style={{ width: 6, height: 6, borderRadius: 999, background: sev.color, opacity: isImportant ? 1 : 0.5 }} />
+        <span style={{
+          width: 5, height: 5, borderRadius: 999, background: sev.color,
+          opacity: isImportant ? 1 : 0.4, flexShrink: 0,
+        }} />
         {fmtPct(alerta.variacion_pct)}
-      </div>
-      <div style={{ fontSize: 10.5, color: S.muted, fontVariantNumeric: "tabular-nums" }}>
-        {fmtNum(alerta.valor_anterior)} → {fmtNum(alerta.valor_actual)}
-      </div>
+      </span>
     </div>
   );
 }
 
 /* =========================================================================
-   CLIENT DRAWER — sparkline + 3 productos detalle
+   CLIENT MODAL — centrado, no sidebar
    ========================================================================= */
-function ClientDrawer({
+function ClientModal({
   data, history, csmByEmail, onClose,
 }: {
   data: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> };
@@ -808,11 +1057,16 @@ function ClientDrawer({
   csmByEmail: Record<string, { nombre: string }>;
   onClose: () => void;
 }) {
-  // ESC para cerrar
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // bloquea scroll del fondo mientras el modal está abierto
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [onClose]);
 
   const csm = data.csm_email ? csmByEmail[data.csm_email]?.nombre || data.csm_email : "Sin CSM asignado";
@@ -820,7 +1074,6 @@ function ClientDrawer({
 
   return (
     <>
-      {/* backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -829,27 +1082,43 @@ function ClientDrawer({
         onClick={onClose}
         style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.55)", zIndex: 50,
+          background: "rgba(0,0,0,0.65)",
+          backdropFilter: "blur(4px)",
+          WebkitBackdropFilter: "blur(4px)",
+          zIndex: 50,
         }}
       />
 
-      {/* panel */}
       <motion.div
-        initial={{ x: 480, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 480, opacity: 0 }}
-        transition={{ duration: 0.25, ease: "easeOut" }}
+        initial={{ scale: 0.96, opacity: 0, y: 12 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.96, opacity: 0, y: 12 }}
+        transition={{ duration: 0.22, ease: "easeOut" }}
+        role="dialog"
+        aria-modal="true"
         style={{
-          position: "fixed", top: 0, right: 0, bottom: 0,
-          width: "min(480px, 100vw)",
+          position: "fixed",
+          top: "50%", left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(720px, 92vw)",
+          maxHeight: "88vh",
           background: S.surfaceLo,
-          borderLeft: `1px solid ${S.borderHi}`,
-          padding: "24px 24px 32px", overflowY: "auto",
+          border: `1px solid ${S.borderHi}`,
+          borderRadius: 18,
+          boxShadow: "0 24px 60px rgba(0,0,0,0.55)",
+          display: "flex", flexDirection: "column",
           zIndex: 51,
+          overflow: "hidden",
         }}
       >
-        {/* header */}
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+        {/* header fijo */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+          padding: "20px 24px",
+          borderBottom: `1px solid ${S.border}`,
+          background: S.surfaceLo,
+          flexShrink: 0,
+        }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 10, color: "#7DD3FC", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, marginBottom: 8 }}>
               Detalle 360°
@@ -880,8 +1149,12 @@ function ClientDrawer({
           </button>
         </div>
 
-        {/* products */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* body scrollable */}
+        <div style={{
+          flex: 1, overflowY: "auto",
+          padding: "16px 24px 24px",
+          display: "flex", flexDirection: "column", gap: 12,
+        }}>
           {PROD_LIST.map((p) => {
             const a = data.cells[p];
             if (!a) return <ProductSection key={p} producto={p} alerta={null} history={[]} />;
@@ -904,7 +1177,7 @@ function ProductSection({
   const m = PROD_META[producto];
   if (!alerta) {
     return (
-      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 12, padding: "12px 14px", opacity: 0.6 }}>
+      <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 12, padding: "12px 14px", opacity: 0.55 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: S.muted }}>
           <span>{m.emoji}</span>
           <span>{m.label}</span>
@@ -947,28 +1220,51 @@ function ProductSection({
         <span style={{ fontSize: 11, color: S.muted }}>({fmtNumSigned(alerta.variacion_abs)})</span>
       </div>
 
-      {/* extras */}
       <ExtrasBlock producto={producto} alerta={alerta} />
 
-      {/* sparkline */}
+      {/* sparkline de variación: refleja la trayectoria real (cae cuando cae) */}
       {history.length >= 2 && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 10, color: S.muted, fontWeight: 600, letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 6 }}>
-            Histórico ({history.length} semana{history.length === 1 ? "" : "s"})
-          </div>
-          <Sparkline points={history.map((r) => Number(r.valor_actual ?? 0))} color={m.color} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: S.dim, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-            <span>{new Date(history[0].periodo_actual_fin).toLocaleDateString("es-CO", { day: "2-digit", month: "short" })}</span>
-            <span>{new Date(history[history.length - 1].periodo_actual_fin).toLocaleDateString("es-CO", { day: "2-digit", month: "short" })}</span>
-          </div>
-        </div>
+        <VariacionSparklineBlock history={history} color={m.color} />
       )}
 
-      {/* periodo footer */}
       <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${S.border}`, fontSize: 10.5, color: S.dim }}>
-        {fmtRange(alerta.periodo_anterior_inicio, alerta.periodo_anterior_fin)}
+        {fmtRangeHumano(alerta.periodo_anterior_inicio, alerta.periodo_anterior_fin)}
         {" → "}
-        {fmtRange(alerta.periodo_actual_inicio, alerta.periodo_actual_fin)}
+        {fmtRangeHumano(alerta.periodo_actual_inicio, alerta.periodo_actual_fin)}
+      </div>
+    </div>
+  );
+}
+
+function VariacionSparklineBlock({ history, color }: { history: Alerta[]; color: string }) {
+  const points = history
+    .map((r) => Number(r.variacion_pct))
+    .filter((v) => Number.isFinite(v));
+  if (points.length < 2) return null;
+
+  const lastVal = points[points.length - 1];
+  const firstVal = points[0];
+  const trendColor = lastVal < firstVal ? "#EF4444" : lastVal > firstVal ? "#10B981" : color;
+
+  const fechaInicio = new Date(history[0].periodo_actual_fin).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+  const fechaFin    = new Date(history[history.length - 1].periodo_actual_fin).toLocaleDateString("es-CO", { day: "2-digit", month: "short" });
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "baseline",
+        fontSize: 10, color: S.muted, fontWeight: 600,
+        letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 6,
+      }}>
+        <span>Variación histórica · {history.length} sem</span>
+        <span style={{ color: trendColor, fontWeight: 700, letterSpacing: 0, textTransform: "none" }}>
+          {firstVal.toFixed(1)}% → {lastVal.toFixed(1)}%
+        </span>
+      </div>
+      <Sparkline points={points} color={trendColor} />
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: S.dim, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+        <span>{fechaInicio}</span>
+        <span>{fechaFin}</span>
       </div>
     </div>
   );
@@ -1051,7 +1347,7 @@ function ExtraRowSmall({ label, prevText, currText }: { label: string; prevText:
 }
 
 /* =========================================================================
-   SPARKLINE — SVG chart simple
+   SPARKLINE — SVG con baseline 0 si aplica
    ========================================================================= */
 function Sparkline({ points, color }: { points: number[]; color: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -1066,16 +1362,17 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
     return () => ro.disconnect();
   }, []);
 
-  const height = 48;
+  const height = 56;
   const padding = 6;
   if (points.length < 2) {
     return <div ref={ref} style={{ height, fontSize: 10, color: S.dim }}>No hay suficientes datos.</div>;
   }
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const range = max - min || 1;
+  const min = Math.min(...points, 0);
+  const max = Math.max(...points, 0);
+  const range = (max - min) || 1;
   const stepX = (width - padding * 2) / (points.length - 1);
   const scaleY = (v: number) => height - padding - ((v - min) / range) * (height - padding * 2);
+  const baseY = scaleY(0);
 
   const linePath = points
     .map((v, i) => {
@@ -1085,9 +1382,14 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
     })
     .join(" ");
 
+  // area ahora cierra contra la línea base 0 (no contra el bottom)
+  const lastX = (padding + (points.length - 1) * stepX).toFixed(1);
+  const firstX = padding.toFixed(1);
   const areaPath =
     linePath +
-    ` L${(padding + (points.length - 1) * stepX).toFixed(1)} ${height - padding} L${padding} ${height - padding} Z`;
+    ` L${lastX} ${baseY.toFixed(1)} L${firstX} ${baseY.toFixed(1)} Z`;
+
+  const showBaseline = baseY > padding && baseY < height - padding;
 
   return (
     <div ref={ref} style={{ width: "100%", overflow: "hidden" }}>
@@ -1098,6 +1400,10 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
+        {showBaseline && (
+          <line x1={padding} y1={baseY} x2={width - padding} y2={baseY}
+                stroke={S.dim} strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
+        )}
         <path d={areaPath} fill={`url(#spark-${color.replace("#", "")})`} />
         <path d={linePath} fill="none" stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
         {points.map((v, i) => {
@@ -1120,4 +1426,3 @@ function Sparkline({ points, color }: { points: number[]; color: string }) {
     </div>
   );
 }
-

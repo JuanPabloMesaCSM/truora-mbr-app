@@ -99,6 +99,29 @@ export function fmtRange(inicio: string, fin: string): string {
   return `${i.toLocaleDateString("es-CO", opts)} – ${f.toLocaleDateString("es-CO", opts)}`;
 }
 
+const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+/** "Marzo" / "Abril" — sólo el mes, capitalizado */
+export function fmtMonthLong(dateStr: string): string {
+  // Parse YYYY-MM-DD to avoid timezone shenanigans (new Date("2026-03-31") en UTC se vuelve 30 marzo en BOG)
+  const parts = dateStr.split("-");
+  if (parts.length < 3) return "—";
+  const m = Number(parts[1]);
+  return MESES[m - 1] ?? "—";
+}
+
+/** "1–27 Abril 2026" */
+export function fmtRangeHumano(inicio: string, fin: string): string {
+  const pi = inicio.split("-");
+  const pf = fin.split("-");
+  if (pi.length < 3 || pf.length < 3) return "—";
+  const dI = Number(pi[2]);
+  const dF = Number(pf[2]);
+  const m = Number(pf[1]);
+  const y = pf[0];
+  return `${dI}–${dF} ${MESES[m - 1] ?? ""} ${y}`;
+}
+
 export function fmtWeek(fin: string): string {
   return new Date(fin).toLocaleDateString("es-CO", {
     day: "2-digit",
