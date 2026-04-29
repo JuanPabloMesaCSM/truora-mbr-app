@@ -130,10 +130,17 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     for (const c of Object.values(byClient)) {
       c.balance = PROD_LIST.reduce((s, p) => s + Number(c.cells[p]?.variacion_abs ?? 0), 0);
     }
-    // Sort por |balance| descendente — los que más mueven volumen (sin importar
-    // el signo o si clasificaron como alerta) flotan al tope. Esto surfacea
-    // clientes con caídas grandes en número pero severidad 'estable' (% bajo).
-    return Object.values(byClient).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
+    // Sort: primero los balances negativos (caídas en volumen) ordenados de
+    // mayor a menor magnitud, luego los positivos (crecimientos) en la misma
+    // lógica. El balance 0 se agrupa con los positivos al final.
+    // Esto surfacea clientes con caídas grandes en número aunque su severidad
+    // sea 'estable' por % bajo, y pone primero las "malas noticias" del equipo.
+    return Object.values(byClient).sort((a, b) => {
+      const aNeg = a.balance < 0;
+      const bNeg = b.balance < 0;
+      if (aNeg !== bNeg) return aNeg ? -1 : 1;
+      return Math.abs(b.balance) - Math.abs(a.balance);
+    });
   }, [rows]);
 
   // Histórico por TCI+producto (no por cliente_id) para que sobreviva si el dedup
