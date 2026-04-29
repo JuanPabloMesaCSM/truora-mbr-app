@@ -1,27 +1,34 @@
-// n8n Code node — BotiAlertas v2 / Classify (v3 — formato detallado por alerta)
+// n8n Code node — BotiAlertas v2 / Classify (v4 — alertas por volumen de consumo)
 // =========================================================================
-// Cambios vs v2 (2026-04-29):
-//   * Telegram cards detalladas (estilo BotiAlertas antiguo): periodo base,
-//     rangos comparados, cliente, metrica con prev/curr/variacion, y metricas
-//     extra por producto (Score BGC, Conversion DI, Desglose Inbound/Outbound/
-//     Notif para CE).
-//   * Footer con link directo al CSM Center.
-//   * Mantiene 1 Telegram por CSM agrupando cards (separadas por linea).
-//   * Si el mensaje supera 4000 chars, se parte preservando integridad de cards.
+// Cambios vs v3 (2026-04-29 al inicio del día):
+//   * Selección de alertas para Telegram cambia de "% sobre la cuenta" a
+//     "volumen de consumo" (variacion_abs). Por CSM, se mandan las top 5
+//     caídas y los top 5 crecimientos por |variacion_abs| absoluto.
+//     Motivo: clientes con caídas grandes en número pero % bajo (clasificados
+//     'estable') quedaban fuera de la alerta aunque su impacto en la cuenta
+//     era enorme. Caso real: un cliente con 1M → 950k (-5%, 'estable')
+//     no aparecía como alerta a pesar de las 50.000 conversaciones perdidas.
+//   * El % se mantiene como info en cada card pero ya NO determina la selección.
+//   * SEV_META extendido para incluir 'leve' y un display dinámico para 'estable'
+//     (caída moderada / crecimiento moderado según signo de variacion_abs)
+//     porque ahora estos rangos pueden aparecer en el Telegram.
+//   * Sin volume floor de 500 — ya no aplica, el ranking por volumen filtra solo.
 //
-// Estructura de salida (sin cambio):
-//   { kind: 'row',      payload: <fila boti_alertas> }
-//   { kind: 'telegram', payload: { chat_id, csm_email, csm_nombre, alert_count,
-//                                   text, part_index, part_total } }
-//
-// El Switch downstream rutea por `kind`. Telegram lee `payload.chat_id` y `text`.
+// Sin cambio:
+//   * boti_alertas sigue recibiendo TODAS las clasificaciones (la página
+//     /botialertas las muestra junto con la columna Balance). El cambio es
+//     solo en el subconjunto que se manda al Telegram.
+//   * Cards detalladas (período, rangos, cliente, métrica con prev/curr/var,
+//     extras por producto: Score BGC, Conversión DI, Desglose CE).
+//   * Splitter de mensajes >4000 chars.
+//   * BCC a admins (jdiaz + amarquez).
 
 // =========================================================================
 // 1. Constantes
 // =========================================================================
 const VOLUME_FLOOR_CLASSIFY = 50;
-const VOLUME_FLOOR_TELEGRAM = 500;
-const TELEGRAM_SEVERIDADES  = ['critica', 'fuerte', 'crecimiento'];
+// Top N por dirección (caídas / crecimientos) por CSM en el Telegram.
+const TELEGRAM_TOP_N = 5;
 // Telegram limita 4096 chars por mensaje. 4000 deja margen para BCC header
 // (~60-80 chars) que se prepende mas abajo.
 const TG_MAX_CHARS = 4000;
@@ -36,12 +43,14 @@ const METRIC_LABEL = {
   BGC: 'Checks',
   CE:  'Conversaciones totales',
 };
+// SEV_META: incluye 'leve' porque ahora puede aparecer en el Telegram.
+// 'estable' se renderiza dinámicamente por dirección (ver severidadDisplay).
 const SEV_META = {
   critica:     { emoji: '🔴', label: 'Caída crítica' },
   fuerte:      { emoji: '🟠', label: 'Caída fuerte' },
+  leve:        { emoji: '🟡', label: 'Caída leve' },
   crecimiento: { emoji: '📈', label: 'Crecimiento' },
 };
-const SEV_ORDER = ['critica', 'fuerte', 'crecimiento'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const SEPARATOR = '━━━━━━━━━━━━━━━━━━━━';
 const CSM_CENTER_URL = 'https://csmcenter.netlify.app/botialertas';
@@ -76,6 +85,17 @@ function classify(curr, prev) {
     variacion_pct: Math.round(variacion * 10) / 10,
     variacion_abs: c - p,
   };
+}
+
+// Display meta para la card. SEV_META cubre 'critica'/'fuerte'/'leve'/'crecimiento'.
+// 'estable' se diferencia por signo del variacion_abs porque la banda de %
+// es centrada (-10% < x < +30%) y puede ser ligeramente positiva o negativa.
+function severidadDisplay(cls) {
+  const m = SEV_META[cls.severidad];
+  if (m) return m;
+  if (cls.variacion_abs > 0) return { emoji: '🟢', label: 'Crecimiento moderado' };
+  if (cls.variacion_abs < 0) return { emoji: '🟡', label: 'Caída moderada' };
+  return { emoji: '⚪', label: 'Sin cambio relevante' };
 }
 
 function fmtNum(n) {
@@ -132,8 +152,7 @@ function fmtRange(inicio, fin) {
 // 3. Construir card detallada (estilo BotiAlertas antiguo)
 // =========================================================================
 function buildCard(productCode, clienteNombre, cls, curr, prev, extras, r) {
-  const meta = SEV_META[cls.severidad];
-  if (!meta) return null;
+  const meta = severidadDisplay(cls);
 
   const mesActual = fmtMonth(r.PERIODO_ACTUAL_FIN);
   const mesPrev   = fmtMonth(r.PERIODO_ANTERIOR_FIN);
@@ -234,14 +253,15 @@ const mapBgc = ctx.client_map.bgc || {};
 const mapCe  = ctx.client_map.ce  || {};
 
 // =========================================================================
-// 7. Procesar productos -> filas boti_alertas + cards Telegram
+// 7. Procesar productos -> filas boti_alertas + candidatos Telegram
 // =========================================================================
 const supabaseRows = [];
-// agrupador: { csm_email -> { chat_id, handle, nombre, buckets } }
+// agrupador: { csm_email -> { chat_id, handle, nombre, candidates: [...] } }
+// candidates es un array plano de { productCode, clienteNombre, cls, curr, prev, extras, r }.
+// La selección top 5 / top 5 se hace al construir los Telegrams (sección 8).
 const telegramByCsm = {};
 
-function pushCard(csm_email, severidad, cardText) {
-  if (TELEGRAM_SEVERIDADES.indexOf(severidad) === -1) return;
+function pushCandidate(csm_email, alertaData) {
   if (!csm_email) return; // oncall sin owner — no notificamos
   const csm = csmByEmail[csm_email];
   if (!csm || !csm.telegram_chat_id) return;
@@ -250,10 +270,10 @@ function pushCard(csm_email, severidad, cardText) {
       chat_id: csm.telegram_chat_id,
       handle:  csm.telegram_handle || csm_email,
       nombre:  csm.nombre || csm_email,
-      buckets: { critica: [], fuerte: [], crecimiento: [] },
+      candidates: [],
     };
   }
-  telegramByCsm[csm_email].buckets[severidad].push(cardText);
+  telegramByCsm[csm_email].candidates.push(alertaData);
 }
 
 function processProduct(productCode, rows, clientMap, getCurr, getPrev, buildExtras) {
@@ -289,11 +309,17 @@ function processProduct(productCode, rows, clientMap, getCurr, getPrev, buildExt
       },
     });
 
-    const maxVol = Math.max(curr, prev);
-    if (maxVol >= VOLUME_FLOOR_TELEGRAM && TELEGRAM_SEVERIDADES.indexOf(cls.severidad) !== -1) {
-      const card = buildCard(productCode, meta.nombre, cls, curr, prev, extras, r);
-      if (card) pushCard(meta.csm_email, cls.severidad, card);
-    }
+    // Empuja todas las clasificaciones al pool de candidatos del CSM.
+    // El ranking por volumen y la selección top 5 ocurren en la sección 8.
+    pushCandidate(meta.csm_email, {
+      productCode,
+      clienteNombre: meta.nombre,
+      cls,
+      curr,
+      prev,
+      extras,
+      r,
+    });
   }
 }
 
@@ -322,7 +348,10 @@ processProduct('CE', $('Snowflake CE').all(), mapCe,
   }));
 
 // =========================================================================
-// 8. Construir Telegrams (uno o varios por CSM si excede 4000 chars)
+// 8. Construir Telegrams — top 5 caídas + top 5 crecimientos por CSM
+//    ordenadas por volumen absoluto de la variación (variacion_abs).
+//    El % de cambio se conserva como info en cada card pero no determina
+//    quién entra al Telegram.
 // =========================================================================
 const today = new Date();
 const fechaStr = today.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -332,16 +361,44 @@ const telegramItems = [];
 for (const email in telegramByCsm) {
   if (!Object.prototype.hasOwnProperty.call(telegramByCsm, email)) continue;
   const cell = telegramByCsm[email];
+  const candidates = cell.candidates;
+
+  // Top N negativos: variacion_abs más negativa primero (orden ascendente
+  // de variacion_abs porque -100k < -10k).
+  const negatives = candidates
+    .filter(function (c) { return Number(c.cls.variacion_abs) < 0; })
+    .sort(function (a, b) { return Number(a.cls.variacion_abs) - Number(b.cls.variacion_abs); })
+    .slice(0, TELEGRAM_TOP_N);
+
+  // Top N positivos: variacion_abs más positiva primero (orden descendente).
+  const positives = candidates
+    .filter(function (c) { return Number(c.cls.variacion_abs) > 0; })
+    .sort(function (a, b) { return Number(b.cls.variacion_abs) - Number(a.cls.variacion_abs); })
+    .slice(0, TELEGRAM_TOP_N);
+
   const orderedCards = [];
-  for (const sev of SEV_ORDER) {
-    for (const c of cell.buckets[sev]) orderedCards.push(c);
+  for (const c of negatives) {
+    const card = buildCard(c.productCode, c.clienteNombre, c.cls, c.curr, c.prev, c.extras, c.r);
+    if (card) orderedCards.push(card);
   }
+  for (const c of positives) {
+    const card = buildCard(c.productCode, c.clienteNombre, c.cls, c.curr, c.prev, c.extras, c.r);
+    if (card) orderedCards.push(card);
+  }
+
   const total = orderedCards.length;
   if (total === 0) continue;
 
+  // Header: indicar que son top por volumen.
+  const negCount = negatives.length;
+  const posCount = positives.length;
+  const movementsParts = [];
+  if (negCount > 0) movementsParts.push(negCount + ' caída' + (negCount === 1 ? '' : 's'));
+  if (posCount > 0) movementsParts.push(posCount + ' crecimiento' + (posCount === 1 ? '' : 's'));
   const headerStr =
     '🚨 BotiAlertas — Semana del ' + fechaStr + '\n\n' +
-    'Hola ' + cell.nombre + ', tienes ' + total + ' alerta' + (total === 1 ? '' : 's') + ' en tu cartera.';
+    'Hola ' + cell.nombre + ', ' + movementsParts.join(' y ') +
+    ' por mayor variación de volumen en tu cartera.';
 
   const messages = buildMessages(headerStr, orderedCards, footerStr);
   for (let i = 0; i < messages.length; i++) {
