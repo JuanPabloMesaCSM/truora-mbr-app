@@ -7,7 +7,6 @@ import {
 import {
   S, SEV_META, PROD_LIST, PROD_META,
   fmtNum, fmtNumSigned, fmtPct, fmtMonthLong, fmtRangeHumano, pctDelta,
-  TOP_MOVERS_MIN_VOL,
 } from "./types";
 import type { Alerta, Producto, Severidad } from "./types";
 
@@ -74,17 +73,14 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
   }, [rows]);
 
   // Top movers: estricto a las 3 severidades del header (crítica + fuerte + crecimiento).
-  // 'leve' / 'estable' quedan fuera para que los conteos del card matcheen exactamente
-  // con la lista expandida.
+  // SIN filtro de volumen — los conteos del card y la lista deben matchear EXACTO.
+  // (El filtro VOLUME_FLOOR_TELEGRAM=500 vive en classify.js solo para evitar spam de
+  // Telegram, pero todas las clasificaciones se guardan en boti_alertas y deben mostrarse acá.)
   const topMovers = useMemo(() => {
     const out = {} as Record<Producto, { caidas: Alerta[]; crecimientos: Alerta[] }>;
     for (const p of PROD_LIST) {
       const rs = rows.filter((r) => r.producto === p);
-      const filtered = rs.filter((r) => {
-        const max = Math.max(Number(r.valor_actual ?? 0), Number(r.valor_anterior ?? 0));
-        return max >= TOP_MOVERS_MIN_VOL;
-      });
-      const sorted = [...filtered].sort(
+      const sorted = [...rs].sort(
         (a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0))
       );
       out[p] = {
@@ -95,24 +91,16 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     return out;
   }, [rows]);
 
-  // Resumen global cross-producto: para la sección agregada al final.
+  // Resumen global cross-producto.
   const globalRiesgo = useMemo(() => {
     return rows
       .filter((r) => r.severidad === "critica" || r.severidad === "fuerte")
-      .filter((r) => {
-        const max = Math.max(Number(r.valor_actual ?? 0), Number(r.valor_anterior ?? 0));
-        return max >= TOP_MOVERS_MIN_VOL;
-      })
       .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
   }, [rows]);
 
   const globalCrecimiento = useMemo(() => {
     return rows
       .filter((r) => r.severidad === "crecimiento")
-      .filter((r) => {
-        const max = Math.max(Number(r.valor_actual ?? 0), Number(r.valor_anterior ?? 0));
-        return max >= TOP_MOVERS_MIN_VOL;
-      })
       .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
   }, [rows]);
 
