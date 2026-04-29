@@ -110,6 +110,7 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
       nombre: string;
       csm_email: string | null;
       cells: Partial<Record<Producto, Alerta>>;
+      balance: number;
     }> = {};
     for (const r of rows) {
       if (!byClient[r.cliente_id]) {
@@ -118,16 +119,21 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
           nombre: r.cliente?.nombre ?? r.client_id_externo,
           csm_email: r.cliente?.csm_email ?? null,
           cells: {},
+          balance: 0,
         };
       }
       byClient[r.cliente_id].cells[r.producto] = r;
     }
-    return Object.values(byClient).sort((a, b) => {
-      const aSev = severityScore(a.cells);
-      const bSev = severityScore(b.cells);
-      if (aSev !== bSev) return bSev - aSev;
-      return a.nombre.localeCompare(b.nombre);
-    });
+    // Balance = suma de variacion_abs cross-producto. La suma de todos los balances
+    // debe igualar al delta del Oppy hero (matemáticamente: Σ_clients Σ_products
+    // variacion_abs = Σ_all_rows variacion_abs = totalActual - totalAnterior).
+    for (const c of Object.values(byClient)) {
+      c.balance = PROD_LIST.reduce((s, p) => s + Number(c.cells[p]?.variacion_abs ?? 0), 0);
+    }
+    // Sort por |balance| descendente — los que más mueven volumen (sin importar
+    // el signo o si clasificaron como alerta) flotan al tope. Esto surfacea
+    // clientes con caídas grandes en número pero severidad 'estable' (% bajo).
+    return Object.values(byClient).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance));
   }, [rows]);
 
   // Histórico por TCI+producto (no por cliente_id) para que sobreviva si el dedup
@@ -1081,7 +1087,7 @@ function TableSection({
 }: {
   open: boolean;
   onToggle: () => void;
-  rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
+  rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>>; balance: number }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
   mesActualLabel: string;
@@ -1132,13 +1138,18 @@ function TableSection({
 function ConsolidatedTable({
   rows, csmByEmail, onClickClient, mesActualLabel, mesPrevLabel,
 }: {
-  rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> }[];
+  rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>>; balance: number }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
   mesActualLabel: string;
   mesPrevLabel: string;
 }) {
-  const cols = "minmax(180px, 1.6fr) repeat(3, minmax(200px, 1.4fr)) minmax(140px, 0.9fr)";
+  // Cliente · DI · BGC · CE · CSM · Balance (este último cierra)
+  const cols = "minmax(170px, 1.5fr) repeat(3, minmax(190px, 1.3fr)) minmax(130px, 0.85fr) minmax(110px, 0.85fr)";
+
+  // Total de la columna balance (debe coincidir con el delta del Oppy hero).
+  const totalBalance = rows.reduce((s, r) => s + r.balance, 0);
+  const totalColor = totalBalance >= 0 ? "#10B981" : "#EF4444";
 
   return (
     <div style={{
@@ -1162,6 +1173,10 @@ function ConsolidatedTable({
         <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase" }}>
           CSM
         </div>
+        <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: "#7DD3FC", letterSpacing: "0.10em", textTransform: "uppercase", textAlign: "right" }}
+             title="Suma de variaciones absolutas DI + BGC + CE para este cliente. La suma de toda la columna debe coincidir con el pulso general de Oppy.">
+          Balance
+        </div>
       </div>
       <div style={{
         display: "grid", gridTemplateColumns: cols,
@@ -1178,11 +1193,13 @@ function ConsolidatedTable({
           </div>
         ))}
         <div style={{ padding: "0 14px 10px" }} />
+        <div style={{ padding: "0 14px 10px", textAlign: "right", fontStyle: "italic" }}>Σ DI+BGC+CE</div>
       </div>
 
       <div>
         {rows.map((r, i) => {
           const csm = r.csm_email ? csmByEmail[r.csm_email]?.nombre || r.csm_email : "—";
+          const bColor = r.balance > 0 ? "#10B981" : r.balance < 0 ? "#EF4444" : S.muted;
           return (
             <button
               key={r.cliente_id}
@@ -1209,9 +1226,33 @@ function ConsolidatedTable({
               <div style={{ padding: "12px 14px", fontSize: 11.5, color: S.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {csm}
               </div>
+              <div style={{ padding: "12px 14px", fontSize: 12.5, fontWeight: 700, color: bColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+                {fmtNumSigned(r.balance)}
+              </div>
             </button>
           );
         })}
+
+        {/* Footer total — cierra la columna Balance con la suma. Debe coincidir con Oppy delta. */}
+        <div style={{
+          display: "grid", gridTemplateColumns: cols,
+          background: S.surfaceLo,
+          borderTop: `2px solid ${S.borderHi}`,
+          fontSize: 11, fontWeight: 700,
+        }}>
+          <div style={{ padding: "12px 14px", color: S.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            Total
+          </div>
+          <div style={{ padding: "12px 14px" }} />
+          <div style={{ padding: "12px 14px" }} />
+          <div style={{ padding: "12px 14px" }} />
+          <div style={{ padding: "12px 14px", color: S.dim, fontSize: 10.5, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            = pulso Oppy
+          </div>
+          <div style={{ padding: "12px 14px", fontSize: 14, fontWeight: 800, color: totalColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+            {fmtNumSigned(totalBalance)}
+          </div>
+        </div>
       </div>
     </div>
   );
