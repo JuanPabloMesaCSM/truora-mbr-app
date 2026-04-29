@@ -35,23 +35,74 @@ export default function BotiAlertas() {
       setUserEmail(session.user.email);
       setAuthChecked(true);
 
-      const [{ data: alertas, error: aErr }, { data: csms, error: cErr }] = await Promise.all([
+      const [
+        { data: alertas, error: aErr },
+        { data: csms, error: cErr },
+        { data: clientes, error: clErr },
+      ] = await Promise.all([
         supabase
           .from("boti_alertas" as never)
           .select("*, cliente:clientes!cliente_id(nombre, csm_email)")
           .order("periodo_actual_fin", { ascending: false })
           .order("variacion_pct", { ascending: true }),
         supabase.from("csm").select("email, nombre"),
+        supabase.from("clientes").select("id, nombre, csm_email, client_id_di, client_id_bgc, client_id_ce"),
       ]);
+
+      if (clErr) console.warn("BotiAlertas: error fetching clientes:", clErr.message);
+
+      // Mapa TCI -> dueño canónico (excluye admins de la elección).
+      // Admin emails: gente que NO tiene cartera real (ven todo por RLS, no por csm_email).
+      // Histórico: Ana (amarquez) y JD (jdiaz) tenían el portafolio entero duplicado bajo su email
+      // para visibilidad cross-equipo. Con la nueva RLS de equipo, eso ya no es necesario y genera
+      // ruido al mostrarlos como CSM dueño. Acá los excluimos del display.
+      const ADMIN_EMAILS = new Set(["amarquez@truora.com", "jdiaz@truora.com"]);
+      const tciToCanonical: Record<string, { id: string; nombre: string; csm_email: string; isAdmin: boolean }> = {};
+      for (const c of (clientes ?? []) as Array<{ id: string; nombre: string; csm_email: string; client_id_di: string | null; client_id_bgc: string | null; client_id_ce: string | null }>) {
+        const isAdmin = ADMIN_EMAILS.has(c.csm_email);
+        for (const tci of [c.client_id_di, c.client_id_bgc, c.client_id_ce]) {
+          if (!tci) continue;
+          const existing = tciToCanonical[tci];
+          // Reemplaza si no hay entry, o el existing es admin y el current es real
+          if (!existing || (existing.isAdmin && !isAdmin)) {
+            tciToCanonical[tci] = { id: c.id, nombre: c.nombre, csm_email: c.csm_email, isAdmin };
+          }
+        }
+      }
 
       if (aErr) setError(aErr.message);
       else {
-        const list = (alertas ?? []) as unknown as Alerta[];
-        setRows(list);
-        if (list.length > 0) setSelectedWeek(list[0].periodo_actual_fin);
+        const raw = (alertas ?? []) as unknown as Alerta[];
+        // Enrich: override cliente_id, nombre y csm_email al dueño canónico (no-admin si existe).
+        // Necesario porque el dedup de prepare_whitelists.js puede haber elegido la fila admin
+        // duplicada — en ese caso, cliente_id apunta a Ana/jdiaz y el display muestra al admin
+        // como CSM, lo cual es incorrecto.
+        const enriched: Alerta[] = raw.map((r) => {
+          const real = tciToCanonical[r.client_id_externo];
+          if (!real) return r;
+          return {
+            ...r,
+            cliente_id: real.id,
+            cliente: { nombre: real.nombre, csm_email: real.csm_email },
+          };
+        });
+
+        // Dedup defensivo: si dedup en prepare_whitelists fallara y hubiera 2 filas para
+        // mismo (TCI, producto, semana), el override unifica cliente_id pero las filas
+        // siguen siendo 2. Aquí nos quedamos solo con la primera.
+        const seen = new Set<string>();
+        const deduped: Alerta[] = [];
+        for (const r of enriched) {
+          const key = `${r.client_id_externo}|${r.producto}|${r.periodo_actual_fin}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push(r);
+        }
+
+        setRows(deduped);
+        if (deduped.length > 0) setSelectedWeek(deduped[0].periodo_actual_fin);
       }
       if (cErr) {
-        // no es fatal: la tabla CSM column mostrará el email si falta el nombre
         console.warn("BotiAlertas: error fetching csm:", cErr.message);
       } else {
         setCsmRows((csms ?? []) as { email: string; nombre: string }[]);

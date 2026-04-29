@@ -73,6 +73,9 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     return { riesgo, creciendo, estables, total };
   }, [rows]);
 
+  // Top movers: estricto a las 3 severidades del header (crítica + fuerte + crecimiento).
+  // 'leve' / 'estable' quedan fuera para que los conteos del card matcheen exactamente
+  // con la lista expandida.
   const topMovers = useMemo(() => {
     const out = {} as Record<Producto, { caidas: Alerta[]; crecimientos: Alerta[] }>;
     for (const p of PROD_LIST) {
@@ -85,11 +88,32 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         (a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0))
       );
       out[p] = {
-        caidas: sorted.filter((r) => Number(r.variacion_abs ?? 0) < 0),
-        crecimientos: sorted.filter((r) => Number(r.variacion_abs ?? 0) > 0),
+        caidas: sorted.filter((r) => r.severidad === "critica" || r.severidad === "fuerte"),
+        crecimientos: sorted.filter((r) => r.severidad === "crecimiento"),
       };
     }
     return out;
+  }, [rows]);
+
+  // Resumen global cross-producto: para la sección agregada al final.
+  const globalRiesgo = useMemo(() => {
+    return rows
+      .filter((r) => r.severidad === "critica" || r.severidad === "fuerte")
+      .filter((r) => {
+        const max = Math.max(Number(r.valor_actual ?? 0), Number(r.valor_anterior ?? 0));
+        return max >= TOP_MOVERS_MIN_VOL;
+      })
+      .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
+  }, [rows]);
+
+  const globalCrecimiento = useMemo(() => {
+    return rows
+      .filter((r) => r.severidad === "crecimiento")
+      .filter((r) => {
+        const max = Math.max(Number(r.valor_actual ?? 0), Number(r.valor_anterior ?? 0));
+        return max >= TOP_MOVERS_MIN_VOL;
+      })
+      .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
   }, [rows]);
 
   const consolidatedRows = useMemo(() => {
@@ -118,10 +142,12 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     });
   }, [rows]);
 
-  const historyByClientProduct = useMemo(() => {
+  // Histórico por TCI+producto (no por cliente_id) para que sobreviva si el dedup
+  // de boti_alertas eligió cliente_ids distintos en distintas semanas.
+  const historyByTciProduct = useMemo(() => {
     const m: Record<string, Alerta[]> = {};
     for (const r of allWeeksRows) {
-      const key = r.cliente_id + "|" + r.producto;
+      const key = r.client_id_externo + "|" + r.producto;
       if (!m[key]) m[key] = [];
       m[key].push(r);
     }
@@ -182,11 +208,20 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         mesPrevLabel={mesPrevLabel}
       />
 
+      <GlobalSummary
+        riesgo={globalRiesgo}
+        crecimiento={globalCrecimiento}
+        csmByEmail={csmByEmail}
+        onClickClient={(id) => setDrawerClient(id)}
+        mesActualLabel={mesActualLabel}
+        mesPrevLabel={mesPrevLabel}
+      />
+
       <AnimatePresence>
         {drawerData && (
           <ClientModal
             data={drawerData}
-            history={historyByClientProduct}
+            history={historyByTciProduct}
             csmByEmail={csmByEmail}
             onClose={() => setDrawerClient(null)}
           />
@@ -194,6 +229,15 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
       </AnimatePresence>
     </>
   );
+}
+
+/** Color por severidad individual, usado en filas de tablas. */
+function sevColor(severidad: Severidad): string {
+  if (severidad === "critica") return "#EF4444";
+  if (severidad === "fuerte") return "#F59E0B";
+  if (severidad === "crecimiento") return "#10B981";
+  if (severidad === "leve") return "#FBBF24";
+  return "#94A3B8";
 }
 
 function severityScore(cells: Partial<Record<Producto, Alerta>>): number {
@@ -726,10 +770,9 @@ function ProductDetail({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: 18 }}>
         <MoversTable
-          title={`⚠ Caídas (${caidas.length})`}
-          subtitle="ordenadas por impacto absoluto"
+          title={`⚠ En riesgo (${caidas.length})`}
+          subtitle="críticas + fuertes · color por severidad"
           rows={caidas}
-          accent="#EF4444"
           variant="caida"
           csmByEmail={csmByEmail}
           onClickClient={onClickClient}
@@ -737,10 +780,9 @@ function ProductDetail({
           mesPrevLabel={mesPrevLabel}
         />
         <MoversTable
-          title={`📈 Crecimientos (${crecimientos.length})`}
+          title={`📈 Creciendo (${crecimientos.length})`}
           subtitle="ordenados por impacto absoluto"
           rows={crecimientos}
-          accent="#10B981"
           variant="crecimiento"
           csmByEmail={csmByEmail}
           onClickClient={onClickClient}
@@ -752,15 +794,69 @@ function ProductDetail({
   );
 }
 
+/* =========================================================================
+   GLOBAL SUMMARY — sección agregada cross-producto
+   En riesgo (críticas+fuertes de TODOS los productos) vs Creciendo (todos)
+   ========================================================================= */
+function GlobalSummary({
+  riesgo, crecimiento, csmByEmail, onClickClient, mesActualLabel, mesPrevLabel,
+}: {
+  riesgo: Alerta[];
+  crecimiento: Alerta[];
+  csmByEmail: Record<string, { nombre: string }>;
+  onClickClient: (cliente_id: string) => void;
+  mesActualLabel: string;
+  mesPrevLabel: string;
+}) {
+  if (riesgo.length === 0 && crecimiento.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <SectionLabel label="Resumen global por severidad" />
+      <div style={{
+        background: S.surfaceLo,
+        border: `1px solid ${S.border}`,
+        borderRadius: 16,
+        padding: "18px 20px",
+      }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: 18 }}>
+          <MoversTable
+            title={`⚠ En riesgo (${riesgo.length})`}
+            subtitle="todos los críticos + fuertes · color por severidad"
+            rows={riesgo}
+            variant="caida"
+            showProductCol
+            csmByEmail={csmByEmail}
+            onClickClient={onClickClient}
+            mesActualLabel={mesActualLabel}
+            mesPrevLabel={mesPrevLabel}
+          />
+          <MoversTable
+            title={`📈 Creciendo (${crecimiento.length})`}
+            subtitle="todos los crecimientos por producto"
+            rows={crecimiento}
+            variant="crecimiento"
+            showProductCol
+            csmByEmail={csmByEmail}
+            onClickClient={onClickClient}
+            mesActualLabel={mesActualLabel}
+            mesPrevLabel={mesPrevLabel}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MoversTable({
-  title, subtitle, rows, accent, variant, csmByEmail, onClickClient,
+  title, subtitle, rows, variant, showProductCol, csmByEmail, onClickClient,
   mesActualLabel, mesPrevLabel,
 }: {
   title: string;
   subtitle: string;
   rows: Alerta[];
-  accent: string;
   variant: "caida" | "crecimiento";
+  showProductCol?: boolean;
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
   mesActualLabel: string;
@@ -768,6 +864,11 @@ function MoversTable({
 }) {
   const labelDelta = variant === "caida" ? "Disminución" : "Aumento";
   const labelPct   = variant === "caida" ? "Decreció"     : "Creció";
+
+  // Cuando showProductCol=true, agregamos columna producto antes de los números.
+  const cols = showProductCol
+    ? "minmax(160px, 1.6fr) minmax(58px, 0.5fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)"
+    : "minmax(160px, 1.6fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)";
 
   return (
     <div>
@@ -777,36 +878,37 @@ function MoversTable({
       </div>
       {rows.length === 0 ? (
         <div style={{ fontSize: 12, color: S.dim, padding: "10px 0" }}>
-          Sin {variant === "caida" ? "caídas" : "crecimientos"} esta semana.
+          Sin {variant === "caida" ? "alertas en riesgo" : "crecimientos"} esta semana.
         </div>
       ) : (
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
           {/* header */}
           <div style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(140px, 1.6fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)",
+            display: "grid", gridTemplateColumns: cols,
             background: S.surfaceLo,
             borderBottom: `1px solid ${S.border}`,
             fontSize: 9.5, fontWeight: 700, color: S.muted,
             letterSpacing: "0.08em", textTransform: "uppercase",
           }}>
             <div style={{ padding: "9px 12px" }}>Cliente</div>
+            {showProductCol && <div style={{ padding: "9px 12px" }}>Prod</div>}
             <div style={{ padding: "9px 12px", textAlign: "right" }}>Total {mesPrevLabel}</div>
             <div style={{ padding: "9px 12px", textAlign: "right" }}>Total {mesActualLabel}</div>
             <div style={{ padding: "9px 12px", textAlign: "right" }}>{labelDelta}</div>
             <div style={{ padding: "9px 12px", textAlign: "right" }}>{labelPct}</div>
           </div>
-          {/* rows */}
-          <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          {/* rows: cada fila se colorea por su propia severidad */}
+          <div style={{ maxHeight: 460, overflowY: "auto" }}>
             {rows.map((r, i) => {
               const csm = r.cliente?.csm_email ? csmByEmail[r.cliente.csm_email]?.nombre : null;
+              const accent = sevColor(r.severidad);
+              const prodMeta = PROD_META[r.producto];
               return (
                 <button
                   key={r.id}
                   onClick={() => onClickClient(r.cliente_id)}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(140px, 1.6fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(70px, 0.8fr)",
+                    display: "grid", gridTemplateColumns: cols,
                     width: "100%",
                     background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
                     border: "none",
@@ -817,16 +919,31 @@ function MoversTable({
                   onMouseEnter={(e) => (e.currentTarget.style.background = `${accent}10`)}
                   onMouseLeave={(e) => (e.currentTarget.style.background = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)")}
                 >
-                  <div style={{ padding: "10px 12px", minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, color: S.text, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {r.cliente?.nombre ?? r.client_id_externo}
-                    </div>
-                    {csm && (
-                      <div style={{ fontSize: 10, color: S.dim, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {csm}
+                  <div style={{ padding: "10px 12px", minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* dot de severidad */}
+                    <span style={{ width: 7, height: 7, borderRadius: 999, background: accent, flexShrink: 0 }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12.5, color: S.text, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {r.cliente?.nombre ?? r.client_id_externo}
                       </div>
-                    )}
+                      {csm && (
+                        <div style={{ fontSize: 10, color: S.dim, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {csm}
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  {showProductCol && (
+                    <div style={{ padding: "10px 12px", display: "flex", alignItems: "center" }}>
+                      <span style={{
+                        fontSize: 9.5, fontWeight: 700, color: prodMeta.color,
+                        background: `${prodMeta.color}1A`, border: `1px solid ${prodMeta.color}40`,
+                        padding: "2px 7px", borderRadius: 999, letterSpacing: "0.05em",
+                      }}>
+                        {prodMeta.sigla}
+                      </span>
+                    </div>
+                  )}
                   <div style={{ padding: "10px 12px", fontSize: 12, color: S.muted, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
                     {fmtNum(r.valor_anterior)}
                   </div>
@@ -1073,23 +1190,24 @@ function ClientModal({
   const tci = Object.values(data.cells).find(Boolean)?.client_id_externo ?? "";
 
   return (
-    <>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(0,0,0,0.65)",
+        backdropFilter: "blur(4px)",
+        WebkitBackdropFilter: "blur(4px)",
+        zIndex: 50,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      }}
+    >
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.2 }}
-        onClick={onClose}
-        style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.65)",
-          backdropFilter: "blur(4px)",
-          WebkitBackdropFilter: "blur(4px)",
-          zIndex: 50,
-        }}
-      />
-
-      <motion.div
+        onClick={(e) => e.stopPropagation()}
         initial={{ scale: 0.96, opacity: 0, y: 12 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.96, opacity: 0, y: 12 }}
@@ -1097,17 +1215,13 @@ function ClientModal({
         role="dialog"
         aria-modal="true"
         style={{
-          position: "fixed",
-          top: "50%", left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: "min(720px, 92vw)",
-          maxHeight: "88vh",
+          width: "min(720px, 100%)",
+          maxHeight: "calc(100vh - 32px)",
           background: S.surfaceLo,
           border: `1px solid ${S.borderHi}`,
           borderRadius: 18,
           boxShadow: "0 24px 60px rgba(0,0,0,0.55)",
           display: "flex", flexDirection: "column",
-          zIndex: 51,
           overflow: "hidden",
         }}
       >
@@ -1158,12 +1272,13 @@ function ClientModal({
           {PROD_LIST.map((p) => {
             const a = data.cells[p];
             if (!a) return <ProductSection key={p} producto={p} alerta={null} history={[]} />;
-            const hist = history[`${data.cliente_id}|${p}`] ?? [];
+            // Histórico keyed por TCI (no por cliente_id) — sobrevive a dedupes inconsistentes.
+            const hist = history[`${a.client_id_externo}|${p}`] ?? [];
             return <ProductSection key={p} producto={p} alerta={a} history={hist} />;
           })}
         </div>
       </motion.div>
-    </>
+    </motion.div>
   );
 }
 
