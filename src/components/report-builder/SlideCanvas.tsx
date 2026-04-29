@@ -948,85 +948,212 @@ function Di9Slide({ data, theme, clientName, periodLabel, pageNum = 9 }: {
   data: Record<string, BlockRow[]>; theme: Theme;
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
-  const abandonoChartRef = useRef<HTMLCanvasElement>(null);
-  const abandonoInst     = useRef<Chart | null>(null);
+  const motivosChartRef = useRef<HTMLCanvasElement>(null);
+  const motivosInst     = useRef<Chart | null>(null);
   const t = tok(theme);
 
-  const abandonoRows = data["9_abandono"] || [];
+  // Totales desde 1_metricas_generales — única fuente de verdad para que el
+  // CSM pueda responder "de X fallidos, cuántos son expirados vs declinados".
+  const b1 = data["1_metricas_generales"]?.[0];
+  const totalProcesos    = parseInt(b1?.col1 || "0", 10);
+  const procFallidosBase = parseInt(b1?.col3 || "0", 10);
+  const expirados        = parseInt(b1?.col4 || "0", 10);
+  const declinados       = parseInt(b1?.col5 || "0", 10);
+  const erroresTec       = parseInt(b1?.col6 || "0", 10);
+  const cancelados       = parseInt(b1?.col7 || "0", 10);
+  // Misma fórmula que Di1 para que el "Total Fallidos" coincida con la dona
+  // del slide de métricas generales.
+  const totalFallidos = procFallidosBase + erroresTec;
 
-  const cancelados = abandonoRows.filter(r => r.col1 === "canceled")
-    .reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
-  const expirados  = abandonoRows.filter(r => r.col1 !== "canceled")
-    .reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
-  const totalAband = cancelados + expirados;
-  const pctExp = totalAband > 0 ? (expirados  / totalAband * 100).toFixed(1) : "0.0";
-  const pctCan = totalAband > 0 ? (cancelados / totalAband * 100).toFixed(1) : "0.0";
+  const pctFallidos = totalProcesos > 0 ? (totalFallidos / totalProcesos * 100).toFixed(1) : "0.0";
+  const pctExp      = totalFallidos > 0 ? (expirados  / totalFallidos * 100).toFixed(1) : "0.0";
+  const pctDec      = totalFallidos > 0 ? (declinados / totalFallidos * 100).toFixed(1) : "0.0";
+
+  // Motivos top (de 9_abandono — son los motivos de los expirados).
+  // Excluimos 'canceled' porque cancelados están reportados aparte (col7).
+  const abandonoRows = (data["9_abandono"] || [])
+    .filter(r => (r.col1 || "").toLowerCase() !== "canceled")
+    .map(r => ({ motivo: r.col1 || "—", cantidad: parseInt(r.col2 || "0", 10) }))
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, 6);
+
+  // Diccionario truora-domain — nombre técnico → explicación humana.
+  // Para abandono/expiración los motivos comunes son user_stopped_responding,
+  // agent_stopped_responding, etc. Si no hay match, se cae al snake_case.
+  const motivoLabel = (m: string) => {
+    const map: Record<string, string> = {
+      user_stopped_responding:  "Usuario dejó de responder",
+      agent_stopped_responding: "Agente dejó de responder",
+      no_face_detected:         "No se detectó rostro",
+      blurry_image:             "Imagen borrosa",
+      data_authorization_not_provided: "No autorizó permisos",
+      face_validation_not_started: "No completó la selfie",
+      abandoned_without_using_retries: "Abandonó sin reintentar",
+    };
+    return map[m] || m.replace(/_/g, " ");
+  };
+
+  const motivoLabels = abandonoRows.map(r => motivoLabel(r.motivo));
+  const motivoData   = abandonoRows.map(r => r.cantidad);
+  const depKey = JSON.stringify(motivoData);
 
   useEffect(() => {
-    if (!abandonoChartRef.current || totalAband === 0) return;
-    abandonoInst.current?.destroy();
-    abandonoInst.current = new Chart(abandonoChartRef.current, {
-      type: "doughnut",
+    if (!motivosChartRef.current || motivoData.length === 0) return;
+    motivosInst.current?.destroy();
+    motivosInst.current = new Chart(motivosChartRef.current, {
+      type: "bar",
       data: {
-        labels: [`Abandonados (${pctExp}%)`, `Cancelados (${pctCan}%)`],
-        datasets: [{ data: [expirados, cancelados],
-          backgroundColor: ["#F59E0B", "#EF4444"],
-          borderWidth: 4, borderColor: t.doughnutBg }],
+        labels: motivoLabels,
+        datasets: [{
+          data: motivoData,
+          backgroundColor: "#F59E0B",
+          borderRadius: 6,
+          datalabels: {
+            color: t.textPrimary, anchor: "end", align: "right",
+            font: { size: 11, weight: 700 },
+            formatter: (v: number) => v.toLocaleString("es-CO"),
+          } as any,
+        }],
       },
-      options: { cutout: "68%", plugins: {
-        legend: { position: "bottom", labels: { color: t.legendColor,
-          font: { size: 12, weight: 600 }, padding: 14, usePointStyle: true, pointStyleWidth: 9 } },
-        tooltip: { enabled: true },
-        datalabels: { display: false },
-      }},
+      options: {
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: true },
+        },
+        scales: {
+          x: { display: false, beginAtZero: true },
+          y: { grid: { display: false }, ticks: { color: t.chartText, font: { size: 11 }, padding: 6 } },
+        },
+        layout: { padding: { right: 60, left: 4 } },
+      },
     } as any);
-    return () => { abandonoInst.current?.destroy(); abandonoInst.current = null; };
-  }, [expirados, cancelados, pctExp, pctCan, t.doughnutBg, t.legendColor, totalAband]);
+    return () => { motivosInst.current?.destroy(); motivosInst.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.textPrimary, t.chartText]);
+
+  // Color tokens
+  const colorFallido = "#FF4B5C";
+  const colorExp     = "#F59E0B";
+  const colorDec     = "#EF4444";
 
   return (
     <SlideShell id="DI-9" theme={theme}>
-      <SlideHeader title={`Análisis de Abandono — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
-      <div style={bodyStyle}>
-        {/* Donut centrado */}
-        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
-          borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 8px", alignSelf: "flex-start", fontSize: 11, fontWeight: 700,
-            color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Abandono</p>
-          <div style={{ position: "relative", width: 320, height: 320, flexShrink: 0 }}>
-            <canvas ref={abandonoChartRef} style={{ width: "100%", height: "100%" }} />
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", pointerEvents: "none", paddingBottom: 36 }}>
-              <span style={{ fontSize: 48, fontWeight: 800, color: "#F59E0B", lineHeight: 1 }}>
-                {totalAband.toLocaleString("es-CO")}
-              </span>
-              <span style={{ fontSize: 11, color: t.textMuted, textTransform: "uppercase",
-                letterSpacing: "0.06em", marginTop: 4 }}>total</span>
+      <SlideHeader title={`Análisis de Fallos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 14 }}>
+        {/* ════ TREE: Total Fallidos → Expirados + Declinados ════ */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
+          {/* Total Fallidos card (centered) */}
+          <div style={{
+            width: "62%", alignSelf: "center",
+            background: t.cardBg, border: `1px solid ${colorFallido}40`,
+            boxShadow: t.cardShadow, borderRadius: 14,
+            padding: "12px 22px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <div>
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.12em" }}>Total Fallidos</p>
+              <p style={{ margin: "2px 0 0", fontSize: 11, color: t.textMuted, fontStyle: "italic" }}>
+                Procesos que no completaron la validación
+              </p>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ margin: 0, fontSize: 36, fontWeight: 800, color: colorFallido, lineHeight: 1 }}>
+                {totalFallidos.toLocaleString("es-CO")}
+              </p>
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: t.textSecondary, fontWeight: 600 }}>
+                {pctFallidos}% del total de procesos
+              </p>
             </div>
           </div>
-        </div>
-        {/* KPIs abandono */}
-        <div style={{ width: "38%", display: "flex", flexDirection: "column", gap: 16, flexShrink: 0 }}>
-          {[
-            { label: "Abandonados (expiraron)", val: expirados, pct: pctExp + "%", color: "#F59E0B" },
-            { label: "Cancelados (usuario abortó)", val: cancelados, pct: pctCan + "%", color: "#EF4444" },
-          ].map(item => (
-            <div key={item.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
-              boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
-              display: "flex", flexDirection: "column", justifyContent: "center" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-                textTransform: "uppercase", letterSpacing: "0.10em" }}>{item.label}</p>
-              <p style={{ margin: 0, fontSize: 40, fontWeight: 800, color: item.color, lineHeight: 1 }}>
-                {item.val.toLocaleString("es-CO")}
-              </p>
-              <p style={{ margin: "6px 0 0", fontSize: 18, fontWeight: 600, color: t.textSecondary }}>
-                {item.pct} del total
-              </p>
+
+          {/* Connector text */}
+          <div style={{
+            alignSelf: "center", display: "flex", alignItems: "center", gap: 8,
+            fontSize: 10, color: t.textMuted, fontWeight: 600,
+            textTransform: "uppercase", letterSpacing: "0.14em",
+          }}>
+            <span style={{ width: 24, height: 1, background: t.footerBorder }} />
+            se desglosa en
+            <span style={{ width: 24, height: 1, background: t.footerBorder }} />
+          </div>
+
+          {/* Expirados + Declinados row */}
+          <div style={{ display: "flex", gap: 14 }}>
+            <div style={{ flex: 1, background: t.cardBg, border: `1px solid ${colorExp}40`,
+              boxShadow: t.cardShadow, borderRadius: 14, padding: "12px 20px",
+              display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: t.textMuted,
+                  textTransform: "uppercase", letterSpacing: "0.10em" }}>Expirados</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: t.textMuted, fontStyle: "italic" }}>
+                  Abandono del usuario
+                </p>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: colorExp, lineHeight: 1 }}>
+                  {expirados.toLocaleString("es-CO")}
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
+                  {pctExp}% de los fallos
+                </p>
+              </div>
             </div>
-          ))}
+
+            <div style={{ flex: 1, background: t.cardBg, border: `1px solid ${colorDec}40`,
+              boxShadow: t.cardShadow, borderRadius: 14, padding: "12px 20px",
+              display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: t.textMuted,
+                  textTransform: "uppercase", letterSpacing: "0.10em" }}>Declinados</p>
+                <p style={{ margin: "2px 0 0", fontSize: 11, color: t.textMuted, fontStyle: "italic" }}>
+                  Rechazo del modelo
+                </p>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ margin: 0, fontSize: 32, fontWeight: 800, color: colorDec, lineHeight: 1 }}>
+                  {declinados.toLocaleString("es-CO")}
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: 11, color: t.textSecondary, fontWeight: 600 }}>
+                  {pctDec}% de los fallos
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer fino — solo si cancelados o errores tec son no-cero */}
+          {(cancelados > 0 || erroresTec > 0) && (
+            <p style={{ margin: 0, alignSelf: "center", fontSize: 10, color: t.textMuted, fontStyle: "italic" }}>
+              {cancelados > 0 && `Adicional: ${cancelados.toLocaleString("es-CO")} cancelados (usuario abortó manualmente)`}
+              {cancelados > 0 && erroresTec > 0 && " · "}
+              {erroresTec > 0 && `${erroresTec.toLocaleString("es-CO")} errores técnicos`}
+            </p>
+          )}
+        </div>
+
+        {/* ════ MOTIVOS DETALLE (de 9_abandono) ════ */}
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "12px 20px", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+              textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos de expiración</p>
+            <p style={{ margin: 0, fontSize: 10, color: t.textMuted, fontStyle: "italic" }}>
+              Detalle de declinados → DI-10
+            </p>
+          </div>
+          {motivoData.length === 0 ? (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <p style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>Sin motivos registrados este período.</p>
+            </div>
+          ) : (
+            <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+              <canvas ref={motivosChartRef} style={{ width: "100%", height: "100%" }} />
+            </div>
+          )}
         </div>
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Abandono" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Análisis de Fallos" />
     </SlideShell>
   );
 }
