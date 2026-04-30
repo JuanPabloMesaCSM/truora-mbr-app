@@ -20,8 +20,17 @@ export interface Alerta {
   severidad: Severidad;
   metricas_extra: Record<string, unknown>;
   creado_en: string;
+  /** true = snapshot disparado a pedido por un admin desde la UI.
+   *  false = snapshot del cron semanal jueves 8 PM. */
+  is_adhoc?: boolean;
   cliente: { nombre: string; csm_email: string | null } | null;
 }
+
+/** URL del webhook n8n que dispara una corrida ad-hoc.
+ *  Configurada en n8n: workflow "BotiAlertas Ad-hoc" → Webhook trigger.
+ *  Body esperado: { fecha_corte: "YYYY-MM-DD", email: "admin@truora.com" }. */
+export const BOTIALERTAS_ADHOC_WEBHOOK_URL =
+  "https://truora.app.n8n.cloud/webhook/botialertas-adhoc";
 
 /* Shell palette (matches WelcomeStep + canvas-mbr light/dark patterns) */
 export const S = {

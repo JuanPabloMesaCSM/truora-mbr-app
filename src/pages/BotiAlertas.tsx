@@ -1,16 +1,64 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User, Crown } from "lucide-react";
+import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User, Crown, CalendarPlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import DashboardView from "@/components/botialertas/DashboardView";
 import ClassicView from "@/components/botialertas/ClassicView";
+import AdhocModal from "@/components/botialertas/AdhocModal";
 import { S, fmtWeek, ADMIN_EMAILS } from "@/components/botialertas/types";
 import type { Alerta } from "@/components/botialertas/types";
 
 type ViewMode = "dashboard" | "classic";
 type Scope = "all" | "mine";
+
+type ClienteRow = {
+  id: string;
+  nombre: string;
+  csm_email: string;
+  client_id_di: string | null;
+  client_id_bgc: string | null;
+  client_id_ce: string | null;
+};
+
+/** Aplica TCI override + dedup a las filas de boti_alertas.
+ *  Lo extrajimos afuera del componente para reutilizarlo entre el initial
+ *  fetch y el refetch post-adhoc sin duplicar lógica. */
+function enrichAlertas(raw: Alerta[], clientes: ClienteRow[]): Alerta[] {
+  const tciToCanonical: Record<string, { id: string; nombre: string; csm_email: string; isAdmin: boolean }> = {};
+  for (const c of clientes) {
+    const isAdmin = ADMIN_EMAILS.has(c.csm_email);
+    for (const tci of [c.client_id_di, c.client_id_bgc, c.client_id_ce]) {
+      if (!tci) continue;
+      const existing = tciToCanonical[tci];
+      if (!existing || (existing.isAdmin && !isAdmin)) {
+        tciToCanonical[tci] = { id: c.id, nombre: c.nombre, csm_email: c.csm_email, isAdmin };
+      }
+    }
+  }
+
+  const enriched: Alerta[] = raw.map((r) => {
+    const real = tciToCanonical[r.client_id_externo];
+    if (!real) return r;
+    return {
+      ...r,
+      cliente_id: real.id,
+      cliente: { nombre: real.nombre, csm_email: real.csm_email },
+    };
+  });
+
+  // Dedup defensivo
+  const seen = new Set<string>();
+  const deduped: Alerta[] = [];
+  for (const r of enriched) {
+    const key = `${r.client_id_externo}|${r.producto}|${r.periodo_actual_fin}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(r);
+  }
+  return deduped;
+}
 
 export default function BotiAlertas() {
   const navigate = useNavigate();
@@ -26,8 +74,37 @@ export default function BotiAlertas() {
   // Para admins (Ana, JD): filtra por csm_email específico cuando no es null.
   // Cuando es null, muestran toda la cartera. CSMs reales no usan este state.
   const [adminCsmFilter, setAdminCsmFilter] = useState<string | null>(null);
+  // Modal "Filtrar fechas" para que admins disparen una corrida ad-hoc
+  const [adhocModalOpen, setAdhocModalOpen] = useState(false);
+  // Cache de `clientes` (rellenado en initial fetch). Lo usamos al refrescar
+  // después de un ad-hoc para aplicar el TCI override sin volver a pedir clientes.
+  const clientesCacheRef = useRef<ClienteRow[]>([]);
 
-  /* ── auth + fetch ─────────────────────────────────────────────── */
+  /* ── refetch alertas (lo llama handleAdhocSuccess para traer la nueva fila
+       que el flujo n8n acaba de upsertear) ─────────────────────────── */
+  const refetchAlertas = useCallback(async () => {
+    const { data: alertas, error: aErr } = await supabase
+      .from("boti_alertas" as never)
+      .select("*, cliente:clientes!cliente_id(nombre, csm_email)")
+      .order("periodo_actual_fin", { ascending: false })
+      .order("variacion_pct", { ascending: true });
+
+    if (aErr) {
+      setError(aErr.message);
+      return;
+    }
+    const raw = (alertas ?? []) as unknown as Alerta[];
+    setRows(enrichAlertas(raw, clientesCacheRef.current));
+  }, []);
+
+  /* ── handler ad-hoc: cuando el modal completa exitosamente, refresca
+       la tabla y setea la nueva fecha como semana activa ───────────── */
+  const handleAdhocSuccess = useCallback(async (fechaCorte: string) => {
+    await refetchAlertas();
+    setSelectedWeek(fechaCorte);
+  }, [refetchAlertas]);
+
+  /* ── auth + fetch initial ─────────────────────────────────────── */
   useEffect(() => {
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -52,55 +129,16 @@ export default function BotiAlertas() {
         supabase.from("clientes").select("id, nombre, csm_email, client_id_di, client_id_bgc, client_id_ce"),
       ]);
 
-      if (clErr) console.warn("BotiAlertas: error fetching clientes:", clErr.message);
+      // Guardar clientes en cache para refetch post-adhoc (sin re-fetch de clientes).
+      const clientesArr = (clientes ?? []) as ClienteRow[];
+      clientesCacheRef.current = clientesArr;
 
-      // Mapa TCI -> dueño canónico (excluye admins de la elección).
-      // Admin emails: gente que NO tiene cartera real (ven todo por RLS, no por csm_email).
-      // Histórico: Ana (amarquez) y JD (jdiaz) tenían el portafolio entero duplicado bajo su email
-      // para visibilidad cross-equipo. Con la nueva RLS de equipo, eso ya no es necesario y genera
-      // ruido al mostrarlos como CSM dueño. Acá los excluimos del display.
-      const tciToCanonical: Record<string, { id: string; nombre: string; csm_email: string; isAdmin: boolean }> = {};
-      for (const c of (clientes ?? []) as Array<{ id: string; nombre: string; csm_email: string; client_id_di: string | null; client_id_bgc: string | null; client_id_ce: string | null }>) {
-        const isAdmin = ADMIN_EMAILS.has(c.csm_email);
-        for (const tci of [c.client_id_di, c.client_id_bgc, c.client_id_ce]) {
-          if (!tci) continue;
-          const existing = tciToCanonical[tci];
-          // Reemplaza si no hay entry, o el existing es admin y el current es real
-          if (!existing || (existing.isAdmin && !isAdmin)) {
-            tciToCanonical[tci] = { id: c.id, nombre: c.nombre, csm_email: c.csm_email, isAdmin };
-          }
-        }
-      }
+      if (clErr) console.warn("BotiAlertas: error fetching clientes:", clErr.message);
 
       if (aErr) setError(aErr.message);
       else {
         const raw = (alertas ?? []) as unknown as Alerta[];
-        // Enrich: override cliente_id, nombre y csm_email al dueño canónico (no-admin si existe).
-        // Necesario porque el dedup de prepare_whitelists.js puede haber elegido la fila admin
-        // duplicada — en ese caso, cliente_id apunta a Ana/jdiaz y el display muestra al admin
-        // como CSM, lo cual es incorrecto.
-        const enriched: Alerta[] = raw.map((r) => {
-          const real = tciToCanonical[r.client_id_externo];
-          if (!real) return r;
-          return {
-            ...r,
-            cliente_id: real.id,
-            cliente: { nombre: real.nombre, csm_email: real.csm_email },
-          };
-        });
-
-        // Dedup defensivo: si dedup en prepare_whitelists fallara y hubiera 2 filas para
-        // mismo (TCI, producto, semana), el override unifica cliente_id pero las filas
-        // siguen siendo 2. Aquí nos quedamos solo con la primera.
-        const seen = new Set<string>();
-        const deduped: Alerta[] = [];
-        for (const r of enriched) {
-          const key = `${r.client_id_externo}|${r.producto}|${r.periodo_actual_fin}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          deduped.push(r);
-        }
-
+        const deduped = enrichAlertas(raw, clientesArr);
         setRows(deduped);
         if (deduped.length > 0) setSelectedWeek(deduped[0].periodo_actual_fin);
       }
@@ -131,24 +169,42 @@ export default function BotiAlertas() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   }, [csmRows]);
 
+  // Filas visibles según el rol: admins ven todas (incluyendo ad-hoc),
+  // CSMs reales ven solo las del cron semanal (is_adhoc=false).
+  const visibleRows = useMemo(() => {
+    if (isAdmin) return rows;
+    return rows.filter((r) => !r.is_adhoc);
+  }, [rows, isAdmin]);
+
   const weeks = useMemo(() => {
     const set = new Set<string>();
-    rows.forEach((r) => set.add(r.periodo_actual_fin));
+    visibleRows.forEach((r) => set.add(r.periodo_actual_fin));
     return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
+  }, [visibleRows]);
+
+  // Set de fechas que son ad-hoc (para mostrar el badge "Personalizada"
+  // en el dropdown — solo lo ven admins, ya que las filas adhoc se filtran
+  // antes para no-admins).
+  const adhocWeeks = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((r) => {
+      if (r.is_adhoc) set.add(r.periodo_actual_fin);
+    });
+    return set;
   }, [rows]);
 
   const scopedAllWeeks = useMemo(() => {
     // Admins: si seleccionaron un CSM en el dropdown, filtran por ese csm_email.
     // Si null, muestran toda la cartera. El toggle "all/mine" no aplica a admins.
     if (isAdmin) {
-      if (!adminCsmFilter) return rows;
-      return rows.filter((r) => r.cliente?.csm_email === adminCsmFilter);
+      if (!adminCsmFilter) return visibleRows;
+      return visibleRows.filter((r) => r.cliente?.csm_email === adminCsmFilter);
     }
     // CSMs reales: comportamiento original (toggle "all" / "mine").
-    if (scope === "all") return rows;
-    if (!userEmail) return rows;
-    return rows.filter((r) => r.cliente?.csm_email === userEmail);
-  }, [rows, scope, userEmail, isAdmin, adminCsmFilter]);
+    if (scope === "all") return visibleRows;
+    if (!userEmail) return visibleRows;
+    return visibleRows.filter((r) => r.cliente?.csm_email === userEmail);
+  }, [visibleRows, scope, userEmail, isAdmin, adminCsmFilter]);
 
   const weekRows = useMemo(() => {
     if (!selectedWeek) return [];
@@ -168,6 +224,7 @@ export default function BotiAlertas() {
         <TopBar
           onBack={() => navigate("/")}
           weeks={weeks}
+          adhocWeeks={adhocWeeks}
           selectedWeek={selectedWeek}
           onSelectWeek={setSelectedWeek}
           viewMode={viewMode}
@@ -178,6 +235,7 @@ export default function BotiAlertas() {
           adminCsmFilter={adminCsmFilter}
           setAdminCsmFilter={setAdminCsmFilter}
           realCsmList={realCsmList}
+          onClickAdhoc={() => setAdhocModalOpen(true)}
         />
 
         <main style={{ maxWidth: 1280, margin: "0 auto", padding: "92px 28px 60px" }}>
@@ -221,6 +279,15 @@ export default function BotiAlertas() {
           )}
         </main>
       </div>
+
+      {isAdmin && userEmail && (
+        <AdhocModal
+          open={adhocModalOpen}
+          onClose={() => setAdhocModalOpen(false)}
+          userEmail={userEmail}
+          onSuccess={handleAdhocSuccess}
+        />
+      )}
     </>
   );
 }
@@ -228,12 +295,14 @@ export default function BotiAlertas() {
 /* ─────────────────────────── Top bar ─────────────────────────── */
 
 function TopBar({
-  onBack, weeks, selectedWeek, onSelectWeek,
+  onBack, weeks, adhocWeeks, selectedWeek, onSelectWeek,
   viewMode, setViewMode, scope, setScope,
   isAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
+  onClickAdhoc,
 }: {
   onBack: () => void;
   weeks: string[];
+  adhocWeeks: Set<string>;
   selectedWeek: string | null;
   onSelectWeek: (w: string) => void;
   viewMode: ViewMode;
@@ -244,6 +313,7 @@ function TopBar({
   adminCsmFilter: string | null;
   setAdminCsmFilter: (e: string | null) => void;
   realCsmList: { email: string; nombre: string }[];
+  onClickAdhoc: () => void;
 }) {
   return (
     <div style={{
@@ -317,7 +387,34 @@ function TopBar({
           color="#7DD3FC"
         />
 
-        <WeekDropdown weeks={weeks} selected={selectedWeek} onSelect={onSelectWeek} />
+        {isAdmin && (
+          <button
+            onClick={onClickAdhoc}
+            title="Calcular alertas para una fecha personalizada"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 12, fontWeight: 600,
+              color: "#7C4DFF",
+              background: "rgba(124,77,255,0.10)",
+              border: "1px solid rgba(124,77,255,0.32)",
+              cursor: "pointer", padding: "7px 14px",
+              borderRadius: 999, transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(124,77,255,0.18)";
+              e.currentTarget.style.borderColor = "rgba(124,77,255,0.50)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(124,77,255,0.10)";
+              e.currentTarget.style.borderColor = "rgba(124,77,255,0.32)";
+            }}
+          >
+            <CalendarPlus size={13} />
+            <span>Filtrar fechas</span>
+          </button>
+        )}
+
+        <WeekDropdown weeks={weeks} adhocWeeks={adhocWeeks} selected={selectedWeek} onSelect={onSelectWeek} />
       </div>
     </div>
   );
@@ -509,9 +606,10 @@ function ToggleGroup({
 /* ─────────── Week dropdown ─────────── */
 
 function WeekDropdown({
-  weeks, selected, onSelect,
+  weeks, adhocWeeks, selected, onSelect,
 }: {
   weeks: string[];
+  adhocWeeks: Set<string>;
   selected: string | null;
   onSelect: (w: string) => void;
 }) {
@@ -575,6 +673,7 @@ function WeekDropdown({
         >
           {weeks.map((w, i) => {
             const isSel = w === selected;
+            const isAdhoc = adhocWeeks.has(w);
             return (
               <button
                 key={w}
@@ -593,16 +692,28 @@ function WeekDropdown({
                 onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
               >
                 <span>Semana del {fmtWeek(w)}</span>
-                {i === 0 && (
-                  <span style={{
-                    fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
-                    textTransform: "uppercase", color: "#7DD3FC",
-                    background: "rgba(56,189,248,0.15)",
-                    padding: "2px 6px", borderRadius: 4,
-                  }}>
-                    Última
-                  </span>
-                )}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  {isAdhoc && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
+                      textTransform: "uppercase", color: "#7C4DFF",
+                      background: "rgba(124,77,255,0.15)",
+                      padding: "2px 6px", borderRadius: 4,
+                    }}>
+                      Personalizada
+                    </span>
+                  )}
+                  {!isAdhoc && i === 0 && (
+                    <span style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
+                      textTransform: "uppercase", color: "#7DD3FC",
+                      background: "rgba(56,189,248,0.15)",
+                      padding: "2px 6px", borderRadius: 4,
+                    }}>
+                      Última
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}
