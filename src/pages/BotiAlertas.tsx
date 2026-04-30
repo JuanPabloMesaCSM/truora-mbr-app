@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User } from "lucide-react";
+import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User, Crown } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import DashboardView from "@/components/botialertas/DashboardView";
 import ClassicView from "@/components/botialertas/ClassicView";
-import { S, fmtWeek } from "@/components/botialertas/types";
+import { S, fmtWeek, ADMIN_EMAILS } from "@/components/botialertas/types";
 import type { Alerta } from "@/components/botialertas/types";
 
 type ViewMode = "dashboard" | "classic";
@@ -23,6 +23,9 @@ export default function BotiAlertas() {
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [scope, setScope] = useState<Scope>("all");
+  // Para admins (Ana, JD): filtra por csm_email específico cuando no es null.
+  // Cuando es null, muestran toda la cartera. CSMs reales no usan este state.
+  const [adminCsmFilter, setAdminCsmFilter] = useState<string | null>(null);
 
   /* ── auth + fetch ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -56,7 +59,6 @@ export default function BotiAlertas() {
       // Histórico: Ana (amarquez) y JD (jdiaz) tenían el portafolio entero duplicado bajo su email
       // para visibilidad cross-equipo. Con la nueva RLS de equipo, eso ya no es necesario y genera
       // ruido al mostrarlos como CSM dueño. Acá los excluimos del display.
-      const ADMIN_EMAILS = new Set(["amarquez@truora.com", "jdiaz@truora.com"]);
       const tciToCanonical: Record<string, { id: string; nombre: string; csm_email: string; isAdmin: boolean }> = {};
       for (const c of (clientes ?? []) as Array<{ id: string; nombre: string; csm_email: string; client_id_di: string | null; client_id_bgc: string | null; client_id_ce: string | null }>) {
         const isAdmin = ADMIN_EMAILS.has(c.csm_email);
@@ -112,10 +114,21 @@ export default function BotiAlertas() {
   }, [navigate]);
 
   /* ── derived ──────────────────────────────────────────────────── */
+  const isAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
+
   const csmByEmail = useMemo(() => {
     const m: Record<string, { nombre: string }> = {};
     for (const c of csmRows) m[c.email] = { nombre: c.nombre };
     return m;
+  }, [csmRows]);
+
+  // Lista de CSMs reales para el dropdown de admin (excluye admins, ordena por nombre)
+  const realCsmList = useMemo(() => {
+    return csmRows
+      .filter((c) => !ADMIN_EMAILS.has(c.email))
+      .filter((c) => c.email !== "soporte@truora.com")  // soporte no tiene cartera
+      .slice()
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   }, [csmRows]);
 
   const weeks = useMemo(() => {
@@ -125,10 +138,17 @@ export default function BotiAlertas() {
   }, [rows]);
 
   const scopedAllWeeks = useMemo(() => {
+    // Admins: si seleccionaron un CSM en el dropdown, filtran por ese csm_email.
+    // Si null, muestran toda la cartera. El toggle "all/mine" no aplica a admins.
+    if (isAdmin) {
+      if (!adminCsmFilter) return rows;
+      return rows.filter((r) => r.cliente?.csm_email === adminCsmFilter);
+    }
+    // CSMs reales: comportamiento original (toggle "all" / "mine").
     if (scope === "all") return rows;
     if (!userEmail) return rows;
     return rows.filter((r) => r.cliente?.csm_email === userEmail);
-  }, [rows, scope, userEmail]);
+  }, [rows, scope, userEmail, isAdmin, adminCsmFilter]);
 
   const weekRows = useMemo(() => {
     if (!selectedWeek) return [];
@@ -154,6 +174,10 @@ export default function BotiAlertas() {
           setViewMode={setViewMode}
           scope={scope}
           setScope={setScope}
+          isAdmin={isAdmin}
+          adminCsmFilter={adminCsmFilter}
+          setAdminCsmFilter={setAdminCsmFilter}
+          realCsmList={realCsmList}
         />
 
         <main style={{ maxWidth: 1280, margin: "0 auto", padding: "92px 28px 60px" }}>
@@ -174,8 +198,12 @@ export default function BotiAlertas() {
             <EmptyCard text="Aún no hay alertas. El flujo BotiAlertas corre los lunes a las 8:00 AM (hora Bogotá)." />
           )}
 
-          {!loading && !error && rows.length > 0 && weekRows.length === 0 && scope === "mine" && (
+          {!loading && !error && rows.length > 0 && weekRows.length === 0 && !isAdmin && scope === "mine" && (
             <EmptyCard text="No tienes clientes con alertas esta semana. Cambia a 'Toda la cartera' para ver al equipo." />
+          )}
+
+          {!loading && !error && rows.length > 0 && weekRows.length === 0 && isAdmin && adminCsmFilter && (
+            <EmptyCard text={`No hay alertas para ${csmByEmail[adminCsmFilter]?.nombre ?? adminCsmFilter} esta semana. Selecciona otra cartera o vuelve a "Toda la cartera".`} />
           )}
 
           {!loading && !error && weekRows.length > 0 && selectedWeek && (
@@ -202,6 +230,7 @@ export default function BotiAlertas() {
 function TopBar({
   onBack, weeks, selectedWeek, onSelectWeek,
   viewMode, setViewMode, scope, setScope,
+  isAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
 }: {
   onBack: () => void;
   weeks: string[];
@@ -211,6 +240,10 @@ function TopBar({
   setViewMode: (v: ViewMode) => void;
   scope: Scope;
   setScope: (s: Scope) => void;
+  isAdmin: boolean;
+  adminCsmFilter: string | null;
+  setAdminCsmFilter: (e: string | null) => void;
+  realCsmList: { email: string; nombre: string }[];
 }) {
   return (
     <div style={{
@@ -256,15 +289,23 @@ function TopBar({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <ToggleGroup
-          options={[
-            { value: "all",  label: "Toda la cartera", icon: Users },
-            { value: "mine", label: "Solo mi cartera", icon: User },
-          ]}
-          value={scope}
-          onChange={(v) => setScope(v as Scope)}
-          color="#7C4DFF"
-        />
+        {isAdmin ? (
+          <AdminCsmDropdown
+            csms={realCsmList}
+            selected={adminCsmFilter}
+            onSelect={setAdminCsmFilter}
+          />
+        ) : (
+          <ToggleGroup
+            options={[
+              { value: "all",  label: "Toda la cartera", icon: Users },
+              { value: "mine", label: "Solo mi cartera", icon: User },
+            ]}
+            value={scope}
+            onChange={(v) => setScope(v as Scope)}
+            color="#7C4DFF"
+          />
+        )}
 
         <ToggleGroup
           options={[
@@ -278,6 +319,143 @@ function TopBar({
 
         <WeekDropdown weeks={weeks} selected={selectedWeek} onSelect={onSelectWeek} />
       </div>
+    </div>
+  );
+}
+
+/* ─────────── Admin CSM dropdown (solo visible para Ana / JD) ─────────── */
+
+function AdminCsmDropdown({
+  csms, selected, onSelect,
+}: {
+  csms: { email: string; nombre: string }[];
+  selected: string | null;
+  onSelect: (e: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const ADMIN_COLOR = "#7C4DFF";
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const selectedNombre = selected
+    ? csms.find((c) => c.email === selected)?.nombre ?? selected
+    : "Toda la cartera";
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          fontSize: 12, fontWeight: 600,
+          color: ADMIN_COLOR,
+          background: `${ADMIN_COLOR}18`,
+          border: `1px solid ${ADMIN_COLOR}40`,
+          cursor: "pointer", padding: "7px 14px",
+          borderRadius: 999, transition: "all 0.15s",
+          minWidth: 220, justifyContent: "space-between",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Crown size={13} />
+          <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: `${ADMIN_COLOR}CC` }}>Admin</span>
+          <span style={{ color: S.text }}>·</span>
+          <span>{selectedNombre}</span>
+        </span>
+        <ChevronDown size={13} style={{ transition: "transform 0.18s", transform: open ? "rotate(180deg)" : "none" }} />
+      </button>
+
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.15 }}
+          style={{
+            position: "absolute", left: 0, top: "100%", marginTop: 8,
+            minWidth: 260,
+            background: S.surfaceHi,
+            border: `1px solid ${S.borderHi}`,
+            borderRadius: 12,
+            boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+            padding: 6,
+            maxHeight: 360, overflowY: "auto",
+            zIndex: 20,
+          }}
+        >
+          {/* Toda la cartera (default) */}
+          {(() => {
+            const isSel = selected === null;
+            return (
+              <button
+                onClick={() => { onSelect(null); setOpen(false); }}
+                style={{
+                  width: "100%", textAlign: "left",
+                  padding: "9px 12px", borderRadius: 8,
+                  background: isSel ? `${ADMIN_COLOR}18` : "transparent",
+                  border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  fontSize: 12, color: isSel ? ADMIN_COLOR : S.text,
+                  fontWeight: isSel ? 600 : 500,
+                  transition: "background 0.12s",
+                }}
+                onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Users size={12} />
+                  <span>Toda la cartera</span>
+                </span>
+                {isSel && <span style={{ fontSize: 10, color: ADMIN_COLOR }}>✓</span>}
+              </button>
+            );
+          })()}
+
+          {/* Divider */}
+          <div style={{ height: 1, background: S.border, margin: "6px 4px" }} />
+
+          {/* Lista de CSMs */}
+          {csms.map((c) => {
+            const isSel = c.email === selected;
+            return (
+              <button
+                key={c.email}
+                onClick={() => { onSelect(c.email); setOpen(false); }}
+                style={{
+                  width: "100%", textAlign: "left",
+                  padding: "9px 12px", borderRadius: 8,
+                  background: isSel ? `${ADMIN_COLOR}18` : "transparent",
+                  border: "none", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  fontSize: 12, color: isSel ? ADMIN_COLOR : S.text,
+                  fontWeight: isSel ? 600 : 500,
+                  transition: "background 0.12s",
+                }}
+                onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
+                onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.background = "transparent"; }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <User size={12} />
+                  <span>{c.nombre}</span>
+                </span>
+                {isSel && <span style={{ fontSize: 10, color: ADMIN_COLOR }}>✓</span>}
+              </button>
+            );
+          })}
+        </motion.div>
+      )}
     </div>
   );
 }

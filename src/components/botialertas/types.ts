@@ -138,3 +138,11 @@ export function pctDelta(curr: number, prev: number): number | null {
 
 /* For top movers: filter min volume to avoid noise (mirrors VOLUME_FLOOR_TELEGRAM=500) */
 export const TOP_MOVERS_MIN_VOL = 500;
+
+/* Admin emails: ven toda la cartera y pueden filtrar por CSM. No tienen
+ * cartera real (RLS les abre la visibilidad, no csm_email). Centralizado
+ * para que todos los componentes consulten esta misma lista. */
+export const ADMIN_EMAILS = new Set<string>([
+  "amarquez@truora.com",
+  "jdiaz@truora.com",
+]);
