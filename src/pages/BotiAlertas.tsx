@@ -5,12 +5,10 @@ import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User, Crown, CalendarPlu
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import DashboardView from "@/components/botialertas/DashboardView";
-import ClassicView from "@/components/botialertas/ClassicView";
 import AdhocModal from "@/components/botialertas/AdhocModal";
 import { S, fmtWeek, ADMIN_EMAILS, ADMIN_VIEW_EMAILS } from "@/components/botialertas/types";
 import type { Alerta } from "@/components/botialertas/types";
 
-type ViewMode = "dashboard" | "classic";
 type Scope = "all" | "mine";
 
 type ClienteRow = {
@@ -69,7 +67,6 @@ export default function BotiAlertas() {
   const [rows, setRows] = useState<Alerta[]>([]);
   const [csmRows, setCsmRows] = useState<{ email: string; nombre: string }[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [scope, setScope] = useState<Scope>("all");
   // Para admins (Ana, JD): filtra por csm_email específico cuando no es null.
   // Cuando es null, muestran toda la cartera. CSMs reales no usan este state.
@@ -232,8 +229,6 @@ export default function BotiAlertas() {
           adhocWeeks={adhocWeeks}
           selectedWeek={selectedWeek}
           onSelectWeek={setSelectedWeek}
-          viewMode={viewMode}
-          setViewMode={setViewMode}
           scope={scope}
           setScope={setScope}
           isAdminView={isAdminView}
@@ -271,17 +266,13 @@ export default function BotiAlertas() {
           )}
 
           {!loading && !error && weekRows.length > 0 && selectedWeek && (
-            viewMode === "dashboard" ? (
-              <DashboardView
-                rows={weekRows}
-                allWeeksRows={scopedAllWeeks}
-                csmByEmail={csmByEmail}
-                weekFin={selectedWeek}
-                scope={scope}
-              />
-            ) : (
-              <ClassicView rows={weekRows} />
-            )
+            <DashboardView
+              rows={weekRows}
+              allWeeksRows={scopedAllWeeks}
+              csmByEmail={csmByEmail}
+              weekFin={selectedWeek}
+              scope={scope}
+            />
           )}
         </main>
       </div>
@@ -302,7 +293,7 @@ export default function BotiAlertas() {
 
 function TopBar({
   onBack, weeks, adhocWeeks, selectedWeek, onSelectWeek,
-  viewMode, setViewMode, scope, setScope,
+  scope, setScope,
   isAdminView, isPureAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
   onClickAdhoc,
 }: {
@@ -311,8 +302,6 @@ function TopBar({
   adhocWeeks: Set<string>;
   selectedWeek: string | null;
   onSelectWeek: (w: string) => void;
-  viewMode: ViewMode;
-  setViewMode: (v: ViewMode) => void;
   scope: Scope;
   setScope: (s: Scope) => void;
   isAdminView: boolean;
@@ -389,16 +378,6 @@ function TopBar({
             color="#7C4DFF"
           />
         )}
-
-        <ToggleGroup
-          options={[
-            { value: "dashboard", label: "Dashboard" },
-            { value: "classic",   label: "Vista clásica" },
-          ]}
-          value={viewMode}
-          onChange={(v) => setViewMode(v as ViewMode)}
-          color="#7DD3FC"
-        />
 
         {isAdminView && (
           <button
