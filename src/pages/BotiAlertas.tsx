@@ -7,7 +7,7 @@ import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import DashboardView from "@/components/botialertas/DashboardView";
 import ClassicView from "@/components/botialertas/ClassicView";
 import AdhocModal from "@/components/botialertas/AdhocModal";
-import { S, fmtWeek, ADMIN_EMAILS } from "@/components/botialertas/types";
+import { S, fmtWeek, ADMIN_EMAILS, ADMIN_VIEW_EMAILS } from "@/components/botialertas/types";
 import type { Alerta } from "@/components/botialertas/types";
 
 type ViewMode = "dashboard" | "classic";
@@ -152,7 +152,10 @@ export default function BotiAlertas() {
   }, [navigate]);
 
   /* ── derived ──────────────────────────────────────────────────── */
-  const isAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
+  // Admin VIEW: ve el dropdown "Ver cartera de" (Ana, JD, JP Mesa para debug)
+  const isAdminView = !!userEmail && ADMIN_VIEW_EMAILS.has(userEmail);
+  // Admin puro: NO tiene cartera real (Ana, JD). JP NO entra acá.
+  const isPureAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
 
   const csmByEmail = useMemo(() => {
     const m: Record<string, { nombre: string }> = {};
@@ -160,7 +163,9 @@ export default function BotiAlertas() {
     return m;
   }, [csmRows]);
 
-  // Lista de CSMs reales para el dropdown de admin (excluye admins, ordena por nombre)
+  // Lista de CSMs reales para el dropdown de admin.
+  // Excluye admins puros (Ana, JD) — JP sí queda incluido para que pueda
+  // verse a sí mismo en la lista cuando entra como admin view.
   const realCsmList = useMemo(() => {
     return csmRows
       .filter((c) => !ADMIN_EMAILS.has(c.email))
@@ -169,12 +174,12 @@ export default function BotiAlertas() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   }, [csmRows]);
 
-  // Filas visibles según el rol: admins ven todas (incluyendo ad-hoc),
+  // Filas visibles según el rol: admin view ve todas (incluyendo ad-hoc),
   // CSMs reales ven solo las del cron semanal (is_adhoc=false).
   const visibleRows = useMemo(() => {
-    if (isAdmin) return rows;
+    if (isAdminView) return rows;
     return rows.filter((r) => !r.is_adhoc);
-  }, [rows, isAdmin]);
+  }, [rows, isAdminView]);
 
   const weeks = useMemo(() => {
     const set = new Set<string>();
@@ -194,17 +199,17 @@ export default function BotiAlertas() {
   }, [rows]);
 
   const scopedAllWeeks = useMemo(() => {
-    // Admins: si seleccionaron un CSM en el dropdown, filtran por ese csm_email.
-    // Si null, muestran toda la cartera. El toggle "all/mine" no aplica a admins.
-    if (isAdmin) {
-      if (!adminCsmFilter) return visibleRows;
+    // Admin view + selección de CSM en dropdown: prevalece el filtro del dropdown.
+    if (isAdminView && adminCsmFilter) {
       return visibleRows.filter((r) => r.cliente?.csm_email === adminCsmFilter);
     }
-    // CSMs reales: comportamiento original (toggle "all" / "mine").
-    if (scope === "all") return visibleRows;
-    if (!userEmail) return visibleRows;
-    return visibleRows.filter((r) => r.cliente?.csm_email === userEmail);
-  }, [visibleRows, scope, userEmail, isAdmin, adminCsmFilter]);
+    // Toggle "Solo mi cartera" (CSMs reales + JP en modo admin view).
+    if (scope === "mine" && userEmail) {
+      return visibleRows.filter((r) => r.cliente?.csm_email === userEmail);
+    }
+    // Default: toda la cartera visible.
+    return visibleRows;
+  }, [visibleRows, scope, userEmail, isAdminView, adminCsmFilter]);
 
   const weekRows = useMemo(() => {
     if (!selectedWeek) return [];
@@ -231,7 +236,8 @@ export default function BotiAlertas() {
           setViewMode={setViewMode}
           scope={scope}
           setScope={setScope}
-          isAdmin={isAdmin}
+          isAdminView={isAdminView}
+          isPureAdmin={isPureAdmin}
           adminCsmFilter={adminCsmFilter}
           setAdminCsmFilter={setAdminCsmFilter}
           realCsmList={realCsmList}
@@ -256,11 +262,11 @@ export default function BotiAlertas() {
             <EmptyCard text="Aún no hay alertas. El flujo BotiAlertas corre los lunes a las 8:00 AM (hora Bogotá)." />
           )}
 
-          {!loading && !error && rows.length > 0 && weekRows.length === 0 && !isAdmin && scope === "mine" && (
+          {!loading && !error && rows.length > 0 && weekRows.length === 0 && scope === "mine" && !adminCsmFilter && (
             <EmptyCard text="No tienes clientes con alertas esta semana. Cambia a 'Toda la cartera' para ver al equipo." />
           )}
 
-          {!loading && !error && rows.length > 0 && weekRows.length === 0 && isAdmin && adminCsmFilter && (
+          {!loading && !error && rows.length > 0 && weekRows.length === 0 && isAdminView && adminCsmFilter && (
             <EmptyCard text={`No hay alertas para ${csmByEmail[adminCsmFilter]?.nombre ?? adminCsmFilter} esta semana. Selecciona otra cartera o vuelve a "Toda la cartera".`} />
           )}
 
@@ -280,7 +286,7 @@ export default function BotiAlertas() {
         </main>
       </div>
 
-      {isAdmin && userEmail && (
+      {isAdminView && userEmail && (
         <AdhocModal
           open={adhocModalOpen}
           onClose={() => setAdhocModalOpen(false)}
@@ -297,7 +303,7 @@ export default function BotiAlertas() {
 function TopBar({
   onBack, weeks, adhocWeeks, selectedWeek, onSelectWeek,
   viewMode, setViewMode, scope, setScope,
-  isAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
+  isAdminView, isPureAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
   onClickAdhoc,
 }: {
   onBack: () => void;
@@ -309,7 +315,8 @@ function TopBar({
   setViewMode: (v: ViewMode) => void;
   scope: Scope;
   setScope: (s: Scope) => void;
-  isAdmin: boolean;
+  isAdminView: boolean;
+  isPureAdmin: boolean;
   adminCsmFilter: string | null;
   setAdminCsmFilter: (e: string | null) => void;
   realCsmList: { email: string; nombre: string }[];
@@ -359,13 +366,19 @@ function TopBar({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {isAdmin ? (
+        {/* Admin view (Ana, JD, JP): muestra dropdown ADMIN */}
+        {isAdminView && (
           <AdminCsmDropdown
             csms={realCsmList}
             selected={adminCsmFilter}
             onSelect={setAdminCsmFilter}
           />
-        ) : (
+        )}
+
+        {/* Toggle "Toda / Solo mi cartera": visible para CSMs reales y JP
+            (admin view con cartera). Pure admins (Ana, JD) NO lo ven porque
+            no tienen cartera real. */}
+        {!isPureAdmin && (
           <ToggleGroup
             options={[
               { value: "all",  label: "Toda la cartera", icon: Users },
@@ -387,7 +400,7 @@ function TopBar({
           color="#7DD3FC"
         />
 
-        {isAdmin && (
+        {isAdminView && (
           <button
             onClick={onClickAdhoc}
             title="Calcular alertas para una fecha personalizada"

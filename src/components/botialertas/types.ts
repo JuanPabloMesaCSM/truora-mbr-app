@@ -148,10 +148,19 @@ export function pctDelta(curr: number, prev: number): number | null {
 /* For top movers: filter min volume to avoid noise (mirrors VOLUME_FLOOR_TELEGRAM=500) */
 export const TOP_MOVERS_MIN_VOL = 500;
 
-/* Admin emails: ven toda la cartera y pueden filtrar por CSM. No tienen
- * cartera real (RLS les abre la visibilidad, no csm_email). Centralizado
- * para que todos los componentes consulten esta misma lista. */
+/* Admin emails: NO tienen cartera real (RLS les abre la visibilidad,
+ * no csm_email). Se excluyen del dropdown "Ver cartera de" porque
+ * no tendría sentido seleccionarlos. */
 export const ADMIN_EMAILS = new Set<string>([
   "amarquez@truora.com",
   "jdiaz@truora.com",
+]);
+
+/* Admin VIEW emails: ven la vista admin (dropdown "Ver cartera de").
+ * Incluye los admins puros + JP Mesa para debug/visibilidad cross-equipo.
+ * JP además mantiene su toggle "Solo mi cartera" porque sí tiene cartera. */
+export const ADMIN_VIEW_EMAILS = new Set<string>([
+  "amarquez@truora.com",
+  "jdiaz@truora.com",
+  "jpmesa@truora.com",
 ]);
