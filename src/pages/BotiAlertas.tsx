@@ -272,6 +272,7 @@ export default function BotiAlertas() {
               csmByEmail={csmByEmail}
               weekFin={selectedWeek}
               scope={scope}
+              userEmail={userEmail}
             />
           )}
         </main>

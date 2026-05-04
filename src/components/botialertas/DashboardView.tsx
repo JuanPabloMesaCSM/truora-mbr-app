@@ -2,13 +2,15 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   TrendingUp, TrendingDown, Minus, ChevronDown, ChevronRight,
-  X as XIcon, ClipboardCopy, Check,
+  X as XIcon, ClipboardCopy, Check, MessageSquareText,
 } from "lucide-react";
 import {
-  S, SEV_META, PROD_LIST, PROD_META,
+  S, SEV_META, PROD_LIST, PROD_META, ADMIN_EMAILS,
   fmtNum, fmtNumSigned, fmtPct, fmtMonthLong, fmtRangeHumano, pctDelta,
 } from "./types";
 import type { Alerta, Producto, Severidad } from "./types";
+import NotasSection from "./NotasSection";
+import { useNotasCounts } from "@/hooks/useClienteNotas";
 
 interface Props {
   rows: Alerta[];           // filas de la semana seleccionada (ya filtradas por scope)
@@ -16,6 +18,7 @@ interface Props {
   csmByEmail: Record<string, { nombre: string }>;
   weekFin: string;          // YYYY-MM-DD de la semana seleccionada
   scope: "all" | "mine";    // para el botón "copiar resumen"
+  userEmail: string | null; // email del usuario logueado, para auth de notas
 }
 
 type KpiKey = "riesgo" | "creciendo" | "estables" | "total";
@@ -23,11 +26,20 @@ type KpiKey = "riesgo" | "creciendo" | "estables" | "total";
 /* ========================================================================
    DashboardView — vista de embudo
    ======================================================================== */
-export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin, scope }: Props) {
+export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin, scope, userEmail }: Props) {
   const [expandedProduct, setExpandedProduct] = useState<Producto | null>(null);
   const [expandedKpi, setExpandedKpi] = useState<KpiKey | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
   const [drawerClient, setDrawerClient] = useState<string | null>(null);
+  const [drawerOpenWithNotes, setDrawerOpenWithNotes] = useState(false);
+
+  // Counts de notas por TCI para badges en la tabla.
+  const visibleTcis = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) if (r.client_id_externo) set.add(r.client_id_externo);
+    return Array.from(set);
+  }, [rows]);
+  const notasCounts = useNotasCounts(visibleTcis);
 
   /* ─── aggregations ─────────────────────────────────────────────── */
 
@@ -218,7 +230,9 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         onToggle={() => setTableOpen((o) => !o)}
         rows={consolidatedRows}
         csmByEmail={csmByEmail}
-        onClickClient={(id) => setDrawerClient(id)}
+        onClickClient={(id) => { setDrawerOpenWithNotes(false); setDrawerClient(id); }}
+        onClickNotes={(id) => { setDrawerOpenWithNotes(true); setDrawerClient(id); }}
+        notasCounts={notasCounts}
         mesActualLabel={mesActualLabel}
         mesPrevLabel={mesPrevLabel}
       />
@@ -238,7 +252,10 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
             data={drawerData}
             history={historyByTciProduct}
             csmByEmail={csmByEmail}
-            onClose={() => setDrawerClient(null)}
+            userEmail={userEmail}
+            notasCount={notasCounts[Object.values(drawerData.cells).find(Boolean)?.client_id_externo ?? ""] ?? 0}
+            initialNotesOpen={drawerOpenWithNotes}
+            onClose={() => { setDrawerClient(null); setDrawerOpenWithNotes(false); }}
           />
         )}
       </AnimatePresence>
@@ -1089,7 +1106,7 @@ function SectionLabel({ label }: { label: string }) {
    TABLE SECTION
    ========================================================================= */
 function TableSection({
-  open, onToggle, rows, csmByEmail, onClickClient,
+  open, onToggle, rows, csmByEmail, onClickClient, onClickNotes, notasCounts,
   mesActualLabel, mesPrevLabel,
 }: {
   open: boolean;
@@ -1097,6 +1114,8 @@ function TableSection({
   rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>>; balance: number }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  onClickNotes: (cliente_id: string) => void;
+  notasCounts: Record<string, number>;
   mesActualLabel: string;
   mesPrevLabel: string;
 }) {
@@ -1132,6 +1151,8 @@ function TableSection({
               rows={rows}
               csmByEmail={csmByEmail}
               onClickClient={onClickClient}
+              onClickNotes={onClickNotes}
+              notasCounts={notasCounts}
               mesActualLabel={mesActualLabel}
               mesPrevLabel={mesPrevLabel}
             />
@@ -1143,16 +1164,18 @@ function TableSection({
 }
 
 function ConsolidatedTable({
-  rows, csmByEmail, onClickClient, mesActualLabel, mesPrevLabel,
+  rows, csmByEmail, onClickClient, onClickNotes, notasCounts, mesActualLabel, mesPrevLabel,
 }: {
   rows: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>>; balance: number }[];
   csmByEmail: Record<string, { nombre: string }>;
   onClickClient: (cliente_id: string) => void;
+  onClickNotes: (cliente_id: string) => void;
+  notasCounts: Record<string, number>;
   mesActualLabel: string;
   mesPrevLabel: string;
 }) {
-  // Cliente · DI · BGC · CE · CSM · Balance (este último cierra)
-  const cols = "minmax(170px, 1.5fr) repeat(3, minmax(190px, 1.3fr)) minmax(130px, 0.85fr) minmax(110px, 0.85fr)";
+  // Cliente · DI · BGC · CE · CSM · 📝 · Balance (este último cierra)
+  const cols = "minmax(170px, 1.5fr) repeat(3, minmax(190px, 1.3fr)) minmax(130px, 0.85fr) 56px minmax(110px, 0.85fr)";
 
   // Total de la columna balance (debe coincidir con el delta del Oppy hero).
   const totalBalance = rows.reduce((s, r) => s + r.balance, 0);
@@ -1180,6 +1203,10 @@ function ConsolidatedTable({
         <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: S.muted, letterSpacing: "0.10em", textTransform: "uppercase" }}>
           CSM
         </div>
+        <div style={{ padding: "12px 6px 4px", fontSize: 10, fontWeight: 700, color: "#7DD3FC", letterSpacing: "0.10em", textTransform: "uppercase", textAlign: "center" }}
+             title="Notas del equipo: motivos, acciones y contexto del cliente. Click para ver/escribir.">
+          Notas
+        </div>
         <div style={{ padding: "12px 14px 4px", fontSize: 10, fontWeight: 700, color: "#7DD3FC", letterSpacing: "0.10em", textTransform: "uppercase", textAlign: "right" }}
              title="Suma de variaciones absolutas DI + BGC + CE para este cliente. La suma de toda la columna debe coincidir con el pulso general de Oppy.">
           Balance
@@ -1200,6 +1227,7 @@ function ConsolidatedTable({
           </div>
         ))}
         <div style={{ padding: "0 14px 10px" }} />
+        <div style={{ padding: "0 6px 10px" }} />
         <div style={{ padding: "0 14px 10px", textAlign: "right", fontStyle: "italic" }}>Σ DI+BGC+CE</div>
       </div>
 
@@ -1207,15 +1235,20 @@ function ConsolidatedTable({
         {rows.map((r, i) => {
           const csm = r.csm_email ? csmByEmail[r.csm_email]?.nombre || r.csm_email : "—";
           const bColor = r.balance > 0 ? "#10B981" : r.balance < 0 ? "#EF4444" : S.muted;
+          const tci = Object.values(r.cells).find(Boolean)?.client_id_externo ?? "";
+          const noteCount = tci ? (notasCounts[tci] ?? 0) : 0;
           return (
-            <button
+            <div
               key={r.cliente_id}
               onClick={() => onClickClient(r.cliente_id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter") onClickClient(r.cliente_id); }}
               style={{
                 display: "grid", gridTemplateColumns: cols,
                 width: "100%",
                 background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
-                border: "none", cursor: "pointer", textAlign: "left",
+                cursor: "pointer", textAlign: "left",
                 borderBottom: `1px solid ${S.border}`,
                 transition: "background 0.12s",
               }}
@@ -1233,10 +1266,35 @@ function ConsolidatedTable({
               <div style={{ padding: "12px 14px", fontSize: 11.5, color: S.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {csm}
               </div>
+              <div style={{ padding: "8px 6px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {noteCount > 0 ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onClickNotes(r.cliente_id); }}
+                    title={`${noteCount} nota${noteCount === 1 ? "" : "s"} del equipo · click para ver`}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      background: "rgba(125,211,252,0.10)",
+                      border: "1px solid rgba(125,211,252,0.30)",
+                      color: "#7DD3FC",
+                      borderRadius: 999, padding: "3px 9px",
+                      fontSize: 11, fontWeight: 700,
+                      cursor: "pointer", transition: "all 0.15s",
+                      fontVariantNumeric: "tabular-nums", lineHeight: 1,
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(125,211,252,0.18)"; e.currentTarget.style.borderColor = "rgba(125,211,252,0.55)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(125,211,252,0.10)"; e.currentTarget.style.borderColor = "rgba(125,211,252,0.30)"; }}
+                  >
+                    <MessageSquareText size={10} strokeWidth={2.4} />
+                    {noteCount}
+                  </button>
+                ) : (
+                  <span style={{ color: S.dim, fontSize: 11 }}>—</span>
+                )}
+              </div>
               <div style={{ padding: "12px 14px", fontSize: 12.5, fontWeight: 700, color: bColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
                 {fmtNumSigned(r.balance)}
               </div>
-            </button>
+            </div>
           );
         })}
 
@@ -1256,6 +1314,7 @@ function ConsolidatedTable({
           <div style={{ padding: "12px 14px", color: S.dim, fontSize: 10.5, fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             = pulso Oppy
           </div>
+          <div style={{ padding: "12px 6px" }} />
           <div style={{ padding: "12px 14px", fontSize: 14, fontWeight: 800, color: totalColor, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
             {fmtNumSigned(totalBalance)}
           </div>
@@ -1305,13 +1364,18 @@ function ProductCell({ alerta }: { alerta?: Alerta }) {
    CLIENT MODAL — centrado, no sidebar
    ========================================================================= */
 function ClientModal({
-  data, history, csmByEmail, onClose,
+  data, history, csmByEmail, userEmail, notasCount, initialNotesOpen, onClose,
 }: {
   data: { cliente_id: string; nombre: string; csm_email: string | null; cells: Partial<Record<Producto, Alerta>> };
   history: Record<string, Alerta[]>;
   csmByEmail: Record<string, { nombre: string }>;
+  userEmail: string | null;
+  notasCount: number;
+  initialNotesOpen: boolean;
   onClose: () => void;
 }) {
+  const [notesOpen, setNotesOpen] = useState(initialNotesOpen);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -1326,6 +1390,9 @@ function ClientModal({
 
   const csm = data.csm_email ? csmByEmail[data.csm_email]?.nombre || data.csm_email : "Sin CSM asignado";
   const tci = Object.values(data.cells).find(Boolean)?.client_id_externo ?? "";
+
+  const isAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
+  const isOwner = !!userEmail && data.csm_email === userEmail;
 
   return (
     <motion.div
@@ -1385,20 +1452,44 @@ function ClientModal({
               CSM: <span style={{ color: S.text, fontWeight: 600 }}>{csm}</span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent", border: `1px solid ${S.border}`,
-              borderRadius: 10, width: 30, height: 30,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: S.muted, cursor: "pointer", flexShrink: 0,
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = S.text; e.currentTarget.style.borderColor = S.borderHi; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = S.muted; e.currentTarget.style.borderColor = S.border; }}
-          >
-            <XIcon size={14} />
-          </button>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={() => setNotesOpen((v) => !v)}
+              title={notesOpen ? "Ocultar notas" : "Ver notas del equipo"}
+              style={{
+                background: notesOpen ? "rgba(125,211,252,0.16)" : "transparent",
+                border: `1px solid ${notesOpen ? "rgba(125,211,252,0.45)" : S.border}`,
+                borderRadius: 10, height: 30, padding: "0 10px",
+                display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+                color: notesOpen ? "#7DD3FC" : S.muted,
+                cursor: "pointer", transition: "all 0.15s",
+                fontSize: 11.5, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+              }}
+              onMouseEnter={(e) => {
+                if (!notesOpen) { e.currentTarget.style.color = "#7DD3FC"; e.currentTarget.style.borderColor = "rgba(125,211,252,0.4)"; }
+              }}
+              onMouseLeave={(e) => {
+                if (!notesOpen) { e.currentTarget.style.color = S.muted; e.currentTarget.style.borderColor = S.border; }
+              }}
+            >
+              <MessageSquareText size={13} strokeWidth={2.4} />
+              {notasCount > 0 && <span>{notasCount}</span>}
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent", border: `1px solid ${S.border}`,
+                borderRadius: 10, width: 30, height: 30,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: S.muted, cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = S.text; e.currentTarget.style.borderColor = S.borderHi; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = S.muted; e.currentTarget.style.borderColor = S.border; }}
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
         </div>
 
         {/* body scrollable */}
@@ -1407,6 +1498,28 @@ function ClientModal({
           padding: "16px 24px 24px",
           display: "flex", flexDirection: "column", gap: 12,
         }}>
+          <AnimatePresence initial={false}>
+            {notesOpen && tci && (
+              <motion.div
+                key="notas"
+                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                animate={{ opacity: 1, height: "auto", marginBottom: 0 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                style={{ overflow: "hidden" }}
+              >
+                <NotasSection
+                  tci={tci}
+                  cliente_id={data.cliente_id}
+                  currentUserEmail={userEmail}
+                  isAdmin={isAdmin}
+                  isOwner={isOwner}
+                  csmByEmail={csmByEmail}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {PROD_LIST.map((p) => {
             const a = data.cells[p];
             if (!a) return <ProductSection key={p} producto={p} alerta={null} history={[]} />;
