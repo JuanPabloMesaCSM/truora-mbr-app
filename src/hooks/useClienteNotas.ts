@@ -68,20 +68,30 @@ export function useClienteNotas(tci: string | null): UseClienteNotasResult {
     setError(null);
 
     const fetchNotas = async () => {
-      const { data, error } = await supabase
-        .from("cliente_notas" as never)
-        .select("*")
-        .eq("client_id_externo", tci)
-        .order("creado_en", { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from("cliente_notas" as never)
+          .select("*")
+          .eq("client_id_externo", tci)
+          .order("creado_en", { ascending: false });
 
-      if (cancelled) return;
-      if (error) {
-        setError(error.message);
+        if (cancelled) return;
+        if (error) {
+          console.warn("[useClienteNotas] fetch error:", error);
+          setError(error.message);
+          setNotas([]);
+        } else {
+          setNotas((data ?? []) as ClienteNota[]);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn("[useClienteNotas] fetch threw:", e);
+        setError(msg);
         setNotas([]);
-      } else {
-        setNotas((data ?? []) as ClienteNota[]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchNotas();
