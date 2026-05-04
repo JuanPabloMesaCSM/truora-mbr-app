@@ -1502,11 +1502,11 @@ function ClientModal({
             {notesOpen && tci && (
               <motion.div
                 key="notas"
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                animate={{ opacity: 1, height: "auto", marginBottom: 0 }}
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}
-                style={{ overflow: "hidden" }}
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+                style={{ flexShrink: 0 }}
               >
                 <NotasSection
                   tci={tci}
