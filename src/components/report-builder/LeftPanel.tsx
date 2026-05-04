@@ -356,16 +356,21 @@ export function LeftPanel({
                           {(['ai', 'manual', null] as const).map(m => {
                             const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo' : 'Sin insight';
                             const active = insight.mode === m;
+                            const disabled = m === 'ai'; // Insights AI temporalmente deshabilitado
                             return (
                               <button
                                 key={String(m)}
-                                onClick={e => { e.stopPropagation(); setModuleInsight(mod.id, m); }}
+                                onClick={e => { e.stopPropagation(); if (!disabled) setModuleInsight(mod.id, m); }}
+                                disabled={disabled}
+                                title={disabled ? 'Aún no disponible' : undefined}
                                 style={{
                                   flex: 1, padding: '5px 0', borderRadius: 6,
-                                  fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                                  background: active ? (m === null ? S.surface3 : color) : S.surface2,
-                                  color: active ? (m === null ? S.muted : '#fff') : S.dim,
-                                  border: `1px solid ${active ? (m === null ? S.border : color) : S.border}`,
+                                  fontSize: 10, fontWeight: 600,
+                                  cursor: disabled ? 'not-allowed' : 'pointer',
+                                  background: disabled ? S.surface3 : (active ? (m === null ? S.surface3 : color) : S.surface2),
+                                  color: disabled ? S.dim : (active ? (m === null ? S.muted : '#fff') : S.dim),
+                                  border: `1px solid ${disabled ? S.border : (active ? (m === null ? S.border : color) : S.border)}`,
+                                  opacity: disabled ? 0.55 : 1,
                                   transition: 'all 0.12s',
                                 }}
                               >
@@ -374,6 +379,9 @@ export function LeftPanel({
                             );
                           })}
                         </div>
+                        <p style={{ fontSize: 9.5, marginTop: 6, color: S.dim, fontStyle: 'italic', lineHeight: 1.4 }}>
+                          ⓘ "Con IA" aún no disponible.
+                        </p>
                         {insight.mode === 'manual' && (
                           <p style={{ fontSize: 10, marginTop: 6, color: S.dim, lineHeight: 1.4 }}>
                             ✎ Escríbelo directamente en el slide una vez generes el reporte.
@@ -451,16 +459,21 @@ export function LeftPanel({
             {(['ai', 'manual', null] as const).map(m => {
               const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo' : 'Sin análisis';
               const active = insightsMode === m;
+              const disabled = m === 'ai'; // Insights AI temporalmente deshabilitado
               return (
                 <button
                   key={String(m)}
-                  onClick={() => setInsightsMode(m)}
+                  onClick={() => { if (!disabled) setInsightsMode(m); }}
+                  disabled={disabled}
+                  title={disabled ? 'Aún no disponible' : undefined}
                   style={{
                     flex: 1, padding: '5px 0', borderRadius: 6,
-                    fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                    background: active ? (m === null ? S.surface3 : color) : S.surface2,
-                    color: active ? (m === null ? S.muted : '#fff') : S.dim,
-                    border: `1px solid ${active ? (m === null ? S.border : color) : S.border}`,
+                    fontSize: 10, fontWeight: 600,
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    background: disabled ? S.surface3 : (active ? (m === null ? S.surface3 : color) : S.surface2),
+                    color: disabled ? S.dim : (active ? (m === null ? S.muted : '#fff') : S.dim),
+                    border: `1px solid ${disabled ? S.border : (active ? (m === null ? S.border : color) : S.border)}`,
+                    opacity: disabled ? 0.55 : 1,
                     transition: 'all 0.12s',
                   }}
                 >
@@ -469,6 +482,10 @@ export function LeftPanel({
               );
             })}
           </div>
+
+          <p style={{ fontSize: 9.5, color: S.dim, fontStyle: 'italic', marginBottom: insightsMode === 'manual' ? 6 : 0, lineHeight: 1.4 }}>
+            ⓘ "Con IA" aún no disponible — estamos resolviendo un error.
+          </p>
 
           {insightsMode === 'manual' && (
             <p style={{ fontSize: 10, color: S.dim, lineHeight: 1.4 }}>

@@ -61,7 +61,9 @@ const Index = ({ source = 'regular' }: IndexProps) => {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [periodValue, setPeriodValue] = useState('');
   const [activeModuleIds, setActiveModuleIds] = useState<string[]>([]);
-  const [insightsMode, setInsightsMode] = useState<'ai' | 'manual' | null>('ai');
+  // Insights AI desactivado temporalmente: default = null (sin análisis).
+  // El botón "Con IA" en LeftPanel está deshabilitado con tooltip "Aún no disponible".
+  const [insightsMode, setInsightsMode] = useState<'ai' | 'manual' | null>(null);
   const [insightsActivos, setInsightsActivos] = useState<Record<string, boolean>>({});
   const [sheetUrl, setSheetUrl] = useState('');
   const [moduleInsights, setModuleInsights] = useState<Record<string, ModuleInsight>>({});
