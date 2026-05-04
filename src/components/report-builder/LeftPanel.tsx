@@ -262,28 +262,98 @@ export function LeftPanel({
             Módulos del reporte
           </p>
 
-          {/* Base module (fixed) */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '10px 12px', borderRadius: 10, marginBottom: 4,
-            background: `${color}10`, border: `1px solid ${color}25`,
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: S.text, margin: '0 0 1px', lineHeight: 1.2 }}>
-                {modules.base.label}
-              </p>
-              <p style={{ fontSize: 10, color: S.muted, margin: 0, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                {modules.base.description}
-              </p>
-            </div>
-            <div style={{
-              flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
-              fontSize: 9, fontWeight: 700, color: S.dim,
-              background: S.surface3, padding: '2px 6px', borderRadius: 6,
-            }}>
-              <Lock size={8} /> FIJO
-            </div>
-          </div>
+          {/* Base module (fixed) — siempre activo, también acepta insight */}
+          {(() => {
+            const baseInsight: ModuleInsight = moduleInsights[modules.base.id] ?? { mode: null, text: '' };
+            return (
+              <div style={{ marginBottom: 4 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 12px',
+                  borderRadius: '10px 10px 0 0',
+                  background: `${color}10`, border: `1px solid ${color}25`,
+                  borderBottom: 'none',
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: S.text, margin: 0, lineHeight: 1.2 }}>
+                        {modules.base.label}
+                      </p>
+                      {baseInsight.mode && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700,
+                          padding: '1px 5px', borderRadius: 4,
+                          background: baseInsight.mode === 'ai' ? `${color}25` : 'rgba(34,197,94,0.15)',
+                          color: baseInsight.mode === 'ai' ? color : '#22C55E',
+                        }}>
+                          ✦ {baseInsight.mode === 'ai' ? 'IA' : 'Manual'}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 10, color: S.muted, margin: 0, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                      {modules.base.description}
+                    </p>
+                  </div>
+                  <div style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 9, fontWeight: 700, color: S.dim,
+                    background: S.surface3, padding: '2px 6px', borderRadius: 6,
+                  }}>
+                    <Lock size={8} /> FIJO
+                  </div>
+                </div>
+
+                {/* Insight panel — siempre visible para el módulo base */}
+                <div style={{
+                  padding: '10px 12px',
+                  background: `${color}06`,
+                  borderLeft: `2px solid ${color}30`,
+                  borderRight: `1px solid ${color}30`,
+                  borderBottom: `1px solid ${color}30`,
+                  borderRadius: '0 0 10px 10px',
+                }}>
+                  <p style={{ fontSize: 10, fontWeight: 600, color: S.muted, marginBottom: 7 }}>
+                    ✦ ¿Agregar insight a este slide?
+                  </p>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    {(['ai', 'manual', null] as const).map(m => {
+                      const label = m === 'ai' ? 'Con IA' : m === 'manual' ? 'Escribirlo' : 'Sin insight';
+                      const active = baseInsight.mode === m;
+                      const disabled = m === 'ai'; // Insights AI temporalmente deshabilitado
+                      return (
+                        <button
+                          key={String(m)}
+                          onClick={e => { e.stopPropagation(); if (!disabled) setModuleInsight(modules.base.id, m); }}
+                          disabled={disabled}
+                          title={disabled ? 'Aún no disponible' : undefined}
+                          style={{
+                            flex: 1, padding: '5px 0', borderRadius: 6,
+                            fontSize: 10, fontWeight: 600,
+                            cursor: disabled ? 'not-allowed' : 'pointer',
+                            background: disabled ? S.surface3 : (active ? (m === null ? S.surface3 : color) : S.surface2),
+                            color: disabled ? S.dim : (active ? (m === null ? S.muted : '#fff') : S.dim),
+                            border: `1px solid ${disabled ? S.border : (active ? (m === null ? S.border : color) : S.border)}`,
+                            opacity: disabled ? 0.55 : 1,
+                            transition: 'all 0.12s',
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: 9.5, marginTop: 6, color: S.dim, fontStyle: 'italic', lineHeight: 1.4 }}>
+                    ⓘ "Con IA" aún no disponible.
+                  </p>
+                  {baseInsight.mode === 'manual' && (
+                    <p style={{ fontSize: 10, marginTop: 6, color: S.dim, lineHeight: 1.4 }}>
+                      ✎ Escríbelo directamente en el slide una vez generes el reporte.
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Optional modules */}
           {modules.optional.map(mod => {

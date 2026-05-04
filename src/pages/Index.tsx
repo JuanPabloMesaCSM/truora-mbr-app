@@ -415,7 +415,14 @@ const Index = ({ source = 'regular' }: IndexProps) => {
       insights_ai: insightsMode === 'ai',
       insights_mode: insightsMode,
       modulos: [
-        { id: modules.base.id, activo: true, insight_mode: null, insight_text: null },
+        {
+          id: modules.base.id,
+          activo: true,
+          insight_mode: moduleInsights[modules.base.id]?.mode ?? null,
+          insight_text: moduleInsights[modules.base.id]?.mode === 'manual'
+            ? (moduleInsights[modules.base.id]?.text || null)
+            : null,
+        },
         ...activeModuleIds.map(id => ({
           id,
           activo: true,
