@@ -135,7 +135,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.cliente_notas;
 --    WHERE table_name = 'cliente_notas';
 --
 -- 2) RLS policies:
---    SELECT polname, cmd FROM pg_policies WHERE tablename = 'cliente_notas';
+--    SELECT policyname, cmd FROM pg_policies WHERE tablename = 'cliente_notas';
 --    Esperado: 4 filas (SELECT, INSERT, UPDATE, DELETE).
 --
 -- 3) Realtime:

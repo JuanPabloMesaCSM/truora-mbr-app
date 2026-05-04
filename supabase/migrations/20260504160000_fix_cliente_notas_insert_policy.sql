@@ -26,5 +26,5 @@ CREATE POLICY "CSM duenio o admin crea notas" ON public.cliente_notas
   );
 
 -- Verificacion:
---   SELECT polname, cmd FROM pg_policies WHERE tablename = 'cliente_notas';
+--   SELECT policyname, cmd FROM pg_policies WHERE tablename = 'cliente_notas';
 -- Esperado: 4 filas (SELECT, INSERT, UPDATE, DELETE).
