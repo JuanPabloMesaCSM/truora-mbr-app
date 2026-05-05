@@ -5,16 +5,32 @@ import { ArrowLeft, Activity, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import { S } from "@/components/botialertas/types";
-import { ClientePicker, PeriodoPicker, ProductosPicker } from "@/components/dashboard/Pickers";
+import {
+  ClientePicker,
+  PeriodoPicker,
+  ProductosPicker,
+  TipoFalloPicker,
+} from "@/components/dashboard/Pickers";
 import ClienteView from "@/components/dashboard/ClienteView";
 import { useDashboardData } from "@/hooks/useDashboardData";
-import { buildPreset, type ClienteRow, type Producto, type PeriodoSeleccion } from "@/components/dashboard/types";
+import {
+  buildPreset,
+  type ClienteRow,
+  type Producto,
+  type PeriodoSeleccion,
+  type TipoFallo,
+} from "@/components/dashboard/types";
 
 /**
- * Página /dashboard — vista cliente individual.
+ * Página /dashboard — vista cliente individual con búsqueda por TCI.
  *
- * El CSM elige (cliente, periodo, productos) en el top bar y se dispara el
- * webhook n8n que devuelve counters + tendencia + razones de rechazo.
+ * Flujo:
+ *   1. Sin cliente: panel central con search-by-TCI hero + periodo picker grande.
+ *   2. Con cliente: pickers suben al top bar; main muestra ClienteView con
+ *      4 charts por producto (Recharts).
+ *
+ * Filtro global tipo_fallo (declinado/expirado/ambos): persiste en top bar
+ * cuando hay cliente. Afecta principalmente las visuales de razones DI.
  *
  * RLS team-wide: cualquier CSM ve cualquier cliente (consistente con la
  * decisión 2026-04-29 de boti_alertas + clientes).
@@ -25,15 +41,15 @@ export default function Dashboard() {
   const [authChecked, setAuthChecked] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
-  // Lista completa de clientes activos (lo lee de Supabase al mount).
   const [clientes, setClientes] = useState<ClienteRow[]>([]);
   const [clientesLoading, setClientesLoading] = useState(true);
   const [clientesError, setClientesError] = useState<string | null>(null);
 
-  // Selección del top bar.
-  const [selectedClienteId, setSelectedClienteId] = useState<string | null>(null);
+  /* ── selección activa del CSM ─────────────────────────────────── */
+  const [selectedCliente, setSelectedCliente] = useState<ClienteRow | null>(null);
   const [periodo, setPeriodo] = useState<PeriodoSeleccion>(() => buildPreset("ult_3_meses"));
   const [productosSel, setProductosSel] = useState<Set<Producto>>(new Set(["DI", "BGC", "CE"]));
+  const [tipoFallo, setTipoFallo] = useState<TipoFallo>("ambos");
 
   /* ── auth + fetch initial ─────────────────────────────────────── */
   useEffect(() => {
@@ -49,8 +65,7 @@ export default function Dashboard() {
       const { data, error } = await supabase
         .from("clientes")
         .select("id, nombre, csm_email, client_id_di, client_id_bgc, client_id_ce, activo")
-        .eq("activo", true)
-        .order("nombre", { ascending: true });
+        .eq("activo", true);
 
       if (error) {
         setClientesError(error.message);
@@ -61,50 +76,47 @@ export default function Dashboard() {
     })();
   }, [navigate]);
 
-  /* ── derived: cliente seleccionado + productos disponibles ────── */
-  const cliente = useMemo(
-    () => clientes.find((c) => c.id === selectedClienteId) ?? null,
-    [clientes, selectedClienteId]
-  );
-
+  /* ── productos disponibles según cliente seleccionado ─────────── */
   const productosAvail = useMemo(() => {
     const s = new Set<Producto>();
-    if (cliente?.client_id_di) s.add("DI");
-    if (cliente?.client_id_bgc) s.add("BGC");
-    if (cliente?.client_id_ce) s.add("CE");
+    if (selectedCliente?.client_id_di) s.add("DI");
+    if (selectedCliente?.client_id_bgc) s.add("BGC");
+    if (selectedCliente?.client_id_ce) s.add("CE");
     return s;
-  }, [cliente]);
+  }, [selectedCliente]);
 
   // Cuando cambia el cliente, ajustar productos seleccionados a los disponibles.
   useEffect(() => {
-    if (!cliente) return;
+    if (!selectedCliente) return;
     setProductosSel((prev) => {
       const next = new Set<Producto>();
       prev.forEach((p) => { if (productosAvail.has(p)) next.add(p); });
-      // Si quedó vacío (cliente sin overlap), usar todos los disponibles.
       if (next.size === 0) productosAvail.forEach((p) => next.add(p));
       return next;
     });
-  }, [cliente, productosAvail]);
+  }, [selectedCliente, productosAvail]);
 
   /* ── params para el webhook ───────────────────────────────────── */
   const dashboardParams = useMemo(() => {
-    if (!cliente || !userEmail || productosSel.size === 0) return null;
+    if (!selectedCliente || !userEmail || productosSel.size === 0) return null;
     return {
-      clientIdDi:  productosSel.has("DI")  ? cliente.client_id_di  : null,
-      clientIdBgc: productosSel.has("BGC") ? cliente.client_id_bgc : null,
-      clientIdCe:  productosSel.has("CE")  ? cliente.client_id_ce  : null,
+      clientIdDi:  productosSel.has("DI")  ? selectedCliente.client_id_di  : null,
+      clientIdBgc: productosSel.has("BGC") ? selectedCliente.client_id_bgc : null,
+      clientIdCe:  productosSel.has("CE")  ? selectedCliente.client_id_ce  : null,
       fechaInicio: periodo.inicio,
       fechaFin:    periodo.fin,
       productos:   Array.from(productosSel),
+      tipoFallo,
       email:       userEmail,
     };
-  }, [cliente, userEmail, productosSel, periodo]);
+  }, [selectedCliente, userEmail, productosSel, periodo, tipoFallo]);
 
   const { data, loading, error } = useDashboardData(dashboardParams);
 
   /* ── render ───────────────────────────────────────────────────── */
   if (!authChecked) return null;
+
+  const hasSelection = !!selectedCliente;
 
   return (
     <>
@@ -115,41 +127,49 @@ export default function Dashboard() {
       }}>
         <TopBar
           onBack={() => navigate("/")}
+          hasSelection={hasSelection}
           clientes={clientes}
-          selectedClienteId={selectedClienteId}
-          onSelectCliente={setSelectedClienteId}
+          selectedCliente={selectedCliente}
+          onSelectCliente={setSelectedCliente}
           periodo={periodo}
           onPeriodoChange={setPeriodo}
           productosSel={productosSel}
           productosAvail={productosAvail}
           onProductosChange={setProductosSel}
+          tipoFallo={tipoFallo}
+          onTipoFalloChange={setTipoFallo}
         />
 
-        <main style={{ maxWidth: 1280, margin: "0 auto", padding: "92px 28px 60px" }}>
-          {clientesLoading && <EmptyCard text="Cargando clientes…" />}
-
-          {clientesError && (
-            <div style={errorBoxStyle}>
-              Error al cargar clientes: {clientesError}
-            </div>
+        <main style={{ maxWidth: 1320, margin: "0 auto", padding: "92px 28px 60px" }}>
+          {/* Panel central (sin cliente seleccionado) */}
+          {!hasSelection && (
+            <CentralPicker
+              loading={clientesLoading}
+              error={clientesError}
+              clientes={clientes}
+              onSelectCliente={setSelectedCliente}
+              periodo={periodo}
+              onPeriodoChange={setPeriodo}
+            />
           )}
 
-          {!clientesLoading && !cliente && (
-            <EmptyCard text="Seleccioná un cliente arriba para ver sus métricas." />
+          {/* Vista cliente */}
+          {hasSelection && loading && (
+            <LoadingCard cliente={selectedCliente!.nombre} periodo={periodo} />
           )}
 
-          {cliente && loading && (
-            <LoadingCard cliente={cliente.nombre} periodo={periodo} />
-          )}
-
-          {cliente && error && (
+          {hasSelection && error && (
             <div style={errorBoxStyle}>
               Error al cargar métricas: {error}
             </div>
           )}
 
-          {cliente && data && !loading && !error && (
-            <ClienteView cliente={cliente} data={data} />
+          {hasSelection && data && !loading && !error && (
+            <ClienteView
+              cliente={selectedCliente!}
+              data={data}
+              tipoFallo={tipoFallo}
+            />
           )}
         </main>
       </div>
@@ -161,24 +181,30 @@ export default function Dashboard() {
 
 function TopBar({
   onBack,
+  hasSelection,
   clientes,
-  selectedClienteId,
+  selectedCliente,
   onSelectCliente,
   periodo,
   onPeriodoChange,
   productosSel,
   productosAvail,
   onProductosChange,
+  tipoFallo,
+  onTipoFalloChange,
 }: {
   onBack: () => void;
+  hasSelection: boolean;
   clientes: ClienteRow[];
-  selectedClienteId: string | null;
-  onSelectCliente: (id: string | null) => void;
+  selectedCliente: ClienteRow | null;
+  onSelectCliente: (c: ClienteRow | null) => void;
   periodo: PeriodoSeleccion;
   onPeriodoChange: (p: PeriodoSeleccion) => void;
   productosSel: Set<Producto>;
   productosAvail: Set<Producto>;
   onProductosChange: (s: Set<Producto>) => void;
+  tipoFallo: TipoFallo;
+  onTipoFalloChange: (t: TipoFallo) => void;
 }) {
   return (
     <div style={{
@@ -191,7 +217,8 @@ function TopBar({
       borderBottom: `1px solid ${S.border}`,
       zIndex: 10,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      {/* Izquierda: volver + título */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
         <button
           onClick={onBack}
           style={{
@@ -213,44 +240,125 @@ function TopBar({
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <ClientePicker
-          clientes={clientes}
-          selectedId={selectedClienteId}
-          onSelect={onSelectCliente}
-        />
-        <PeriodoPicker value={periodo} onChange={onPeriodoChange} />
-        {selectedClienteId && (
+      {/* Derecha: pickers solo cuando hay cliente seleccionado */}
+      {hasSelection && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <ClientePicker
+            clientes={clientes}
+            selected={selectedCliente}
+            onSelect={onSelectCliente}
+            variant="compact"
+          />
+          <PeriodoPicker value={periodo} onChange={onPeriodoChange} />
           <ProductosPicker
             selected={productosSel}
             available={productosAvail}
             onChange={onProductosChange}
           />
-        )}
-      </div>
+          <TipoFalloPicker value={tipoFallo} onChange={onTipoFalloChange} />
+        </div>
+      )}
     </div>
   );
+}
+
+/* ─────────────────────────── Central picker (sin cliente) ─────────────────────────── */
+
+function CentralPicker({
+  loading,
+  error,
+  clientes,
+  onSelectCliente,
+  periodo,
+  onPeriodoChange,
+}: {
+  loading: boolean;
+  error: string | null;
+  clientes: ClienteRow[];
+  onSelectCliente: (c: ClienteRow | null) => void;
+  periodo: PeriodoSeleccion;
+  onPeriodoChange: (p: PeriodoSeleccion) => void;
+}) {
+  if (loading) {
+    return (
+      <div style={emptyCardStyle}>Cargando clientes…</div>
+    );
+  }
+  if (error) {
+    return (
+      <div style={errorBoxStyle}>
+        Error al cargar clientes: {error}
+      </div>
+    );
+  }
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      style={{
+        marginTop: 28,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 18,
+      }}
+    >
+      <ClientePicker
+        clientes={clientes}
+        selected={null}
+        onSelect={onSelectCliente}
+        variant="hero"
+      />
+
+      {/* Periodo picker grande con foco en "rango personalizado" */}
+      <div
+        style={{
+          background: S.surface,
+          border: `1px solid ${S.border}`,
+          borderRadius: 16,
+          padding: "20px 26px",
+          maxWidth: 620,
+          width: "100%",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#7DD3FC",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: 4,
+            }}
+          >
+            Periodo
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>
+            {labelPeriodo(periodo)}
+          </div>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
+            Tip: para rangos custom (ej. "todo el 2026"), usá <strong style={{ color: S.text }}>Rango personalizado</strong>.
+          </div>
+        </div>
+        <PeriodoPicker value={periodo} onChange={onPeriodoChange} />
+      </div>
+    </motion.div>
+  );
+}
+
+function labelPeriodo(p: PeriodoSeleccion): string {
+  if (p.preset === "custom") return `${p.inicio} → ${p.fin}`;
+  return `${p.inicio} → ${p.fin}`;
 }
 
 /* ─────────────────────────── Estados ─────────────────────────── */
-
-function EmptyCard({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        background: S.surface,
-        border: `1px solid ${S.border}`,
-        borderRadius: 14,
-        padding: "60px 30px",
-        textAlign: "center",
-        fontSize: 14,
-        color: S.muted,
-      }}
-    >
-      {text}
-    </div>
-  );
-}
 
 function LoadingCard({ cliente, periodo }: { cliente: string; periodo: PeriodoSeleccion }) {
   return (
@@ -279,6 +387,16 @@ function LoadingCard({ cliente, periodo }: { cliente: string; periodo: PeriodoSe
     </motion.div>
   );
 }
+
+const emptyCardStyle: React.CSSProperties = {
+  background: S.surface,
+  border: `1px solid ${S.border}`,
+  borderRadius: 14,
+  padding: "60px 30px",
+  textAlign: "center",
+  fontSize: 14,
+  color: S.muted,
+};
 
 const errorBoxStyle: React.CSSProperties = {
   background: "rgba(239,68,68,0.10)",

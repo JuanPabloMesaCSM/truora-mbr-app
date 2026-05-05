@@ -1,6 +1,6 @@
 -- Dashboard /dashboard — DI (Digital Identity)
 --
--- Query per-cliente, rango arbitrario. Devuelve 6 bloques en formato
+-- Query per-cliente, rango arbitrario. Devuelve 9 bloques en formato
 -- normalizado (bloque, periodo, col1..col_extra4) — mismo shape que el
 -- Report Builder. El backend del dashboard parsea por `bloque` y arma el JSON
 -- de respuesta del webhook /dashboard-metrics-detail.
@@ -9,17 +9,26 @@
 --   {{CLIENT_ID}}     → string TCI del cliente, ej '5aurr2fgj3q0abioshk661qekh'
 --   {{FECHA_INICIO}}  → primer dia del rango, ej '2026-01-01'
 --   {{FECHA_FIN}}     → ultimo dia del rango, ej '2026-03-31'
+--   {{TIPO_FALLO}}    → 'declinado' | 'expirado' | 'ambos' (default 'ambos')
+--                       Filtra los bloques 12 y 13 (razones tendencia + agregadas).
+--                       NO afecta bloque 1 (totales) ni 4 (historico) ni 7-10
+--                       (compatibilidad con frontend pre-toggle).
 --
 -- Periodo previo = mismo ancho hacia atras: [FECHA_INICIO - duracion .. FECHA_INICIO - 1].
 -- Ej: rango actual 2026-01-01..2026-03-31 (90 dias) -> prev 2025-10-03..2025-12-31.
 --
 -- Bloques que retorna:
---   1_metricas_generales : totales del rango + comparativo prev
---   4_historico_mensual  : una fila por mes en [FECHA_INICIO..FECHA_FIN]
---   7_razones_doc        : top 5 motivos de rechazo en validacion documento
---   8_razones_rostro     : top 5 motivos de rechazo en validacion rostro
---   9_abandono           : top 6 motivos de expiracion (usuario abandono)
---   10_declinados        : top 6 motivos de rechazo (modelo declino)
+--   1_metricas_generales         : totales del rango + comparativo prev
+--   4_historico_mensual          : una fila por mes en [FECHA_INICIO..FECHA_FIN]
+--   7_razones_doc                : top 5 motivos de rechazo doc (legacy, sin filtro)
+--   8_razones_rostro             : top 5 motivos de rechazo rostro (legacy)
+--   9_abandono                   : top 6 motivos de expiracion (legacy)
+--   10_declinados                : top 6 motivos de rechazo (legacy)
+--   12_razones_tendencia_mensual : top 5 razones del rango × N meses (con TIPO_FALLO)
+--   13_razones_agregadas_pct     : todas las razones del rango con vol/total/pct
+--   consumo_mensual              : SHARED_COUNTERS_DYNAMO desglose por sub-validacion
+--                                  (document_validation, passive_liveness, face_search,
+--                                  face_manual_review, document_manual_review)
 --
 -- Reglas criticas (heredadas del Report Builder, ver snowflake-queries.md):
 --   * cancelados detectados con lista explicita CANCELED_REASON IN (...) o
@@ -29,6 +38,9 @@
 --     (identity_process_id, type) ORDER BY creation_date DESC.
 --   * filtros base: STATUS IS NOT NULL, IS_USED no false, DECLINED_REASON
 --     no 'not_used'.
+--   * `expirado` definido como STATUS='failure' AND DECLINED_REASON vacio
+--     (Metabase usa el mismo criterio: empty string -> "expired"). En `clasif_actual`
+--     viene marcado como `es_expirado=1`.
 
 WITH params AS (
   SELECT
@@ -357,6 +369,161 @@ bloque10 AS (
     NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
     NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
   FROM declinados CROSS JOIN periodos pe
+),
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque 12: tendencia mensual top 5 razones (con filtro TIPO_FALLO)
+-- ═══════════════════════════════════════════════════════════════════
+-- Filtro TIPO_FALLO permite ver: solo declinados / solo expirados / ambos.
+-- Replica la logica del Metabase de Truora: DECLINED_REASON='' representa
+-- expirado (el query del CSM lo etiqueta literal como 'expired'), valores
+-- no vacios son declinados explicitos.
+clasif_filtrada AS (
+  SELECT
+    process_id,
+    mes_local,
+    declined_reason,
+    es_declinado,
+    es_expirado,
+    -- Etiqueta limpia para mostrar: si DECLINED_REASON esta vacio = 'expired'
+    CASE
+      WHEN declined_reason IS NULL OR TRIM(declined_reason) = '' THEN 'expired'
+      ELSE declined_reason
+    END AS razon_label
+  FROM clasif_actual
+  WHERE (
+    ('{{TIPO_FALLO}}' = 'ambos'     AND (es_declinado = 1 OR es_expirado = 1))
+    OR ('{{TIPO_FALLO}}' = 'declinado' AND es_declinado = 1)
+    OR ('{{TIPO_FALLO}}' = 'expirado'  AND es_expirado  = 1)
+  )
+),
+
+-- Top 5 razones del rango total (orden por volumen DESC)
+top5_razones AS (
+  SELECT
+    razon_label,
+    COUNT(DISTINCT process_id) AS total_rango
+  FROM clasif_filtrada
+  GROUP BY razon_label
+  QUALIFY ROW_NUMBER() OVER (ORDER BY total_rango DESC) <= 5
+),
+
+-- Volumen total fallidos por mes (denominador para porcentaje)
+fallidos_por_mes AS (
+  SELECT
+    mes_local,
+    COUNT(DISTINCT process_id) AS total_fallidos_mes
+  FROM clasif_filtrada
+  GROUP BY mes_local
+),
+
+-- Volumen por (mes, razon) solo para las top 5 — incluye ceros para meses
+-- en los que la razon no aparecio (cross join con meses + razones)
+meses_unicos AS (
+  SELECT DISTINCT mes_local FROM clasif_filtrada
+),
+mes_x_razon AS (
+  SELECT
+    m.mes_local,
+    t.razon_label,
+    t.total_rango
+  FROM meses_unicos m CROSS JOIN top5_razones t
+),
+razones_por_mes_volumen AS (
+  SELECT
+    mxr.mes_local,
+    mxr.razon_label,
+    mxr.total_rango,
+    COALESCE(COUNT(DISTINCT cf.process_id), 0) AS volumen
+  FROM mes_x_razon mxr
+  LEFT JOIN clasif_filtrada cf
+    ON cf.mes_local = mxr.mes_local
+   AND cf.razon_label = mxr.razon_label
+  GROUP BY mxr.mes_local, mxr.razon_label, mxr.total_rango
+),
+
+bloque12 AS (
+  SELECT
+    '12_razones_tendencia_mensual'                              AS bloque,
+    rpm.mes_local                                               AS periodo,
+    rpm.razon_label::VARCHAR                                    AS col1,  -- razon
+    rpm.volumen::VARCHAR                                        AS col2,  -- volumen del mes
+    fpm.total_fallidos_mes::VARCHAR                             AS col3,  -- total fallidos del mes
+    ROUND(rpm.volumen::FLOAT / NULLIF(fpm.total_fallidos_mes, 0) * 100, 2)::VARCHAR AS col4, -- pct dentro del mes
+    rpm.total_rango::VARCHAR                                    AS col5,  -- total de la razon en el rango (orden top5)
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM razones_por_mes_volumen rpm
+  LEFT JOIN fallidos_por_mes fpm ON fpm.mes_local = rpm.mes_local
+),
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque 13: lista completa de razones agregadas con %  (con filtro TIPO_FALLO)
+-- ═══════════════════════════════════════════════════════════════════
+-- Power-tabla con heatmap. Lista todas las razones del rango, no solo top 5.
+total_fallidos_rango AS (
+  SELECT COUNT(DISTINCT process_id) AS total
+  FROM clasif_filtrada
+),
+razones_agregadas AS (
+  SELECT
+    razon_label,
+    COUNT(DISTINCT process_id) AS volumen
+  FROM clasif_filtrada
+  GROUP BY razon_label
+),
+bloque13 AS (
+  SELECT
+    '13_razones_agregadas_pct'                                  AS bloque,
+    pe.fecha_inicio                                             AS periodo,
+    ra.razon_label::VARCHAR                                     AS col1,  -- razon
+    ra.volumen::VARCHAR                                         AS col2,  -- volumen del rango
+    tfr.total::VARCHAR                                          AS col3,  -- total fallidos del rango
+    ROUND(ra.volumen::FLOAT / NULLIF(tfr.total, 0) * 100, 2)::VARCHAR AS col4, -- porcentaje
+    NULL::VARCHAR AS col5, NULL::VARCHAR AS col6, NULL::VARCHAR AS col7,
+    NULL::VARCHAR AS col8, NULL::VARCHAR AS col9, NULL::VARCHAR AS col10,
+    NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM razones_agregadas ra
+  CROSS JOIN total_fallidos_rango tfr
+  CROSS JOIN periodos pe
+),
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque consumo_mensual: SHARED_COUNTERS_DYNAMO (consumo facturable)
+-- ═══════════════════════════════════════════════════════════════════
+-- Una fila por (mes, PRODUCT_IDENTIFIER) con USAGE.
+-- Para DI filtramos PRODUCT='validations' que cubre:
+--   document_validation, passive_liveness, face_search,
+--   face_manual_review, document_manual_review.
+-- USAGE cuenta cada sub-validacion (no es lo mismo que procesos unicos
+-- de IDENTITY_PROCESSES — son metricas complementarias).
+consumo_dynamo AS (
+  SELECT
+    s.PERIOD,
+    s.PRODUCT_IDENTIFIER,
+    s.USAGE
+  FROM TRUORA.TRUORA_SCHEMA.SHARED_COUNTERS_DYNAMO s
+  CROSS JOIN periodos pe
+  WHERE s.CLIENT_ID = pe.client_id
+    AND s.PERIOD BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(s.PRODUCT) = 'validations'
+),
+bloque_consumo AS (
+  SELECT
+    'consumo_mensual'                                           AS bloque,
+    PERIOD                                                      AS periodo,
+    PRODUCT_IDENTIFIER::VARCHAR                                 AS col1,  -- sub-validacion
+    USAGE::VARCHAR                                              AS col2,  -- volumen
+    NULL::VARCHAR AS col3, NULL::VARCHAR AS col4, NULL::VARCHAR AS col5,
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM consumo_dynamo
 )
 
 SELECT * FROM bloque1
@@ -365,4 +532,7 @@ UNION ALL SELECT * FROM bloque7
 UNION ALL SELECT * FROM bloque8
 UNION ALL SELECT * FROM bloque9
 UNION ALL SELECT * FROM bloque10
+UNION ALL SELECT * FROM bloque12
+UNION ALL SELECT * FROM bloque13
+UNION ALL SELECT * FROM bloque_consumo
 ORDER BY bloque, periodo;

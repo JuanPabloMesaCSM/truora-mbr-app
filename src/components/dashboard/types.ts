@@ -116,6 +116,62 @@ export const PRESET_LABELS: Record<PeriodoPresetId, string> = {
   custom: "Rango personalizado",
 };
 
+/* ─────────────────────────── Filtro tipo_fallo ─────────────────────────── */
+
+export type TipoFallo = "ambos" | "declinado" | "expirado";
+
+export const TIPO_FALLO_LABELS: Record<TipoFallo, string> = {
+  ambos: "Todos los fallos",
+  declinado: "Solo declinados",
+  expirado: "Solo expirados",
+};
+
+/* ─────────────────────────── Parsers consumo mensual ─────────────────────────── */
+
+/** Una fila por (mes, sub-producto) con USAGE.
+ *  Aplica a los 3 productos — el mismo bloque viene en data.DI / .BGC / .CE
+ *  con `col1`=PRODUCT_IDENTIFIER (ej: document_validation, checks, outbound)
+ *  y `col2`=USAGE (volumen del mes). */
+export interface ConsumoMensualRow {
+  periodo: string;     // YYYY-MM-01
+  subProducto: string; // PRODUCT_IDENTIFIER
+  volumen: number;
+}
+
+export function parseConsumoMensual(bloques: BloqueMap | null): ConsumoMensualRow[] {
+  if (!bloques) return [];
+  const rows = bloques["consumo_mensual"] ?? [];
+  return rows
+    .map((r) => ({
+      periodo: r.periodo ?? "",
+      subProducto: r.col1 ?? "—",
+      volumen: numOrZero(r.col2),
+    }))
+    .filter((x) => x.periodo);
+}
+
+/** Pivota ConsumoMensualRow en formato amigable para Recharts:
+ *  cada fila = un mes, cada columna = un sub-producto. */
+export function pivotConsumoMensual(rows: ConsumoMensualRow[]): {
+  data: Array<{ periodo: string } & Record<string, number>>;
+  series: string[];
+} {
+  const series = Array.from(new Set(rows.map((r) => r.subProducto))).sort();
+  const byPeriodo: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
+    byPeriodo[r.periodo][r.subProducto] = r.volumen;
+  }
+  const data = Object.keys(byPeriodo)
+    .sort()
+    .map((periodo) => {
+      const rec: { periodo: string } & Record<string, number> = { periodo };
+      for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
+      return rec;
+    });
+  return { data, series };
+}
+
 /* ─────────────────────────── Parsers DI ─────────────────────────── */
 
 export interface DiMetricasGenerales {
@@ -187,6 +243,227 @@ export function parseRazonesGenerico(bloques: BloqueMap | null, bloqueKey: strin
     }))
     .filter((x) => x.total > 0)
     .sort((a, b) => b.total - a.total);
+}
+
+/* ─────────────────────────── Parsers DI razones tendencia/agregadas (bloques 12 y 13) ─────────────────────────── */
+
+/** Bloque 12: tendencia mensual top 5 razones. Una fila por (mes, razón).
+ *  col1=razon, col2=volumen mes, col3=total fallidos del mes,
+ *  col4=pct dentro del mes, col5=total razón en rango (orden top 5). */
+export interface DiRazonTendenciaRow {
+  periodo: string;
+  razon: string;
+  volumen: number;
+  totalFallidosMes: number;
+  pctMes: number | null;
+  totalRangoRazon: number;
+}
+
+export function parseDiRazonesTendencia(bloques: BloqueMap | null): DiRazonTendenciaRow[] {
+  if (!bloques) return [];
+  const rows = bloques["12_razones_tendencia_mensual"] ?? [];
+  return rows
+    .map((r) => ({
+      periodo: r.periodo ?? "",
+      razon: r.col1 ?? "—",
+      volumen: numOrZero(r.col2),
+      totalFallidosMes: numOrZero(r.col3),
+      pctMes: numOrNull(r.col4),
+      totalRangoRazon: numOrZero(r.col5),
+    }))
+    .filter((x) => x.periodo);
+}
+
+/** Pivota DiRazonTendenciaRow para Recharts: 1 fila por mes, 1 columna por razón.
+ *  series viene ordenado por totalRangoRazon DESC (la razón #1 aparece primera). */
+export function pivotDiRazonesTendencia(rows: DiRazonTendenciaRow[]): {
+  data: Array<{ periodo: string } & Record<string, number>>;
+  series: string[];
+} {
+  // Series ordenadas por volumen total del rango (top 5 ya viene del SQL)
+  const seriesMap: Record<string, number> = {};
+  for (const r of rows) seriesMap[r.razon] = r.totalRangoRazon;
+  const series = Object.keys(seriesMap).sort((a, b) => seriesMap[b] - seriesMap[a]);
+
+  const byPeriodo: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
+    byPeriodo[r.periodo][r.razon] = r.volumen;
+  }
+  const data = Object.keys(byPeriodo)
+    .sort()
+    .map((periodo) => {
+      const rec: { periodo: string } & Record<string, number> = { periodo };
+      for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
+      return rec;
+    });
+  return { data, series };
+}
+
+/** Bloque 13: lista completa de razones agregadas con porcentaje sobre fallidos del rango.
+ *  col1=razon, col2=volumen, col3=total fallidos rango, col4=porcentaje. */
+export interface DiRazonAgregadaRow {
+  razon: string;
+  volumen: number;
+  totalFallidos: number;
+  pct: number | null;
+}
+
+export function parseDiRazonesAgregadas(bloques: BloqueMap | null): DiRazonAgregadaRow[] {
+  if (!bloques) return [];
+  const rows = bloques["13_razones_agregadas_pct"] ?? [];
+  return rows
+    .map((r) => ({
+      razon: r.col1 ?? "—",
+      volumen: numOrZero(r.col2),
+      totalFallidos: numOrZero(r.col3),
+      pct: numOrNull(r.col4),
+    }))
+    .filter((x) => x.volumen > 0)
+    .sort((a, b) => b.volumen - a.volumen);
+}
+
+/* ─────────────────────────── Parsers BGC nuevos (bloque 8) ─────────────────────────── */
+
+/** Bloque 8 BGC: tendencia mensual % rejection por país (top 5 países).
+ *  Una fila por (mes, país). */
+export interface BgcRejectionTendenciaRow {
+  periodo: string;
+  pais: string;
+  totalCompletados: number;
+  pasados: number;
+  rechazados: number;
+  pctRejection: number | null;
+  pctPass: number | null;
+}
+
+export function parseBgcRejectionTendencia(bloques: BloqueMap | null): BgcRejectionTendenciaRow[] {
+  if (!bloques) return [];
+  const rows = bloques["8_rejection_tendencia_mensual"] ?? [];
+  return rows
+    .map((r) => ({
+      periodo: r.periodo ?? "",
+      pais: r.col1 ?? "—",
+      totalCompletados: numOrZero(r.col2),
+      pasados: numOrZero(r.col3),
+      rechazados: numOrZero(r.col4),
+      pctRejection: numOrNull(r.col5),
+      pctPass: numOrNull(r.col6),
+    }))
+    .filter((x) => x.periodo);
+}
+
+/** Pivota BgcRejectionTendenciaRow para Recharts: 1 fila por mes, 1 columna por país (con % rejection). */
+export function pivotBgcRejectionTendencia(rows: BgcRejectionTendenciaRow[]): {
+  data: Array<{ periodo: string } & Record<string, number>>;
+  series: string[];
+} {
+  const seriesMap: Record<string, number> = {};
+  for (const r of rows) {
+    seriesMap[r.pais] = (seriesMap[r.pais] ?? 0) + r.totalCompletados;
+  }
+  const series = Object.keys(seriesMap).sort((a, b) => seriesMap[b] - seriesMap[a]);
+
+  const byPeriodo: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
+    byPeriodo[r.periodo][r.pais] = r.pctRejection ?? 0;
+  }
+  const data = Object.keys(byPeriodo)
+    .sort()
+    .map((periodo) => {
+      const rec: { periodo: string } & Record<string, number> = { periodo };
+      for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
+      return rec;
+    });
+  return { data, series };
+}
+
+/* ─────────────────────────── Parsers CE nuevos (bloque 4) ─────────────────────────── */
+
+/** Bloque 4 CE: tendencia mensual top 5 categorías de fallo outbound.
+ *  Una fila por (mes, categoría). */
+export interface CeFalloTendenciaRow {
+  periodo: string;
+  categoria: string;
+  volumen: number;
+  totalFallosMes: number;
+  pctMes: number | null;
+  totalRangoCategoria: number;
+}
+
+export function parseCeFallosTendencia(bloques: BloqueMap | null): CeFalloTendenciaRow[] {
+  if (!bloques) return [];
+  const rows = bloques["4_fallos_tendencia_mensual"] ?? [];
+  return rows
+    .map((r) => ({
+      periodo: r.periodo ?? "",
+      categoria: r.col1 ?? "—",
+      volumen: numOrZero(r.col2),
+      totalFallosMes: numOrZero(r.col3),
+      pctMes: numOrNull(r.col4),
+      totalRangoCategoria: numOrZero(r.col5),
+    }))
+    .filter((x) => x.periodo);
+}
+
+export function pivotCeFallosTendencia(rows: CeFalloTendenciaRow[]): {
+  data: Array<{ periodo: string } & Record<string, number>>;
+  series: string[];
+} {
+  const seriesMap: Record<string, number> = {};
+  for (const r of rows) seriesMap[r.categoria] = r.totalRangoCategoria;
+  const series = Object.keys(seriesMap).sort((a, b) => seriesMap[b] - seriesMap[a]);
+
+  const byPeriodo: Record<string, Record<string, number>> = {};
+  for (const r of rows) {
+    if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
+    byPeriodo[r.periodo][r.categoria] = r.volumen;
+  }
+  const data = Object.keys(byPeriodo)
+    .sort()
+    .map((periodo) => {
+      const rec: { periodo: string } & Record<string, number> = { periodo };
+      for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
+      return rec;
+    });
+  return { data, series };
+}
+
+/* ─────────────────────────── Heatmap helper ─────────────────────────── */
+
+/** Devuelve un color HEX en gradiente verde→amarillo→rojo según el percentil
+ *  del valor dentro del rango [0..max]. Usado por la tabla de razones. */
+export function heatmapColor(pct: number, alpha: number = 1): string {
+  const p = Math.max(0, Math.min(100, pct)) / 100;
+  // Gradiente: verde (#10B981) → amarillo (#F59E0B) → rojo (#EF4444)
+  let r: number, g: number, b: number;
+  if (p < 0.5) {
+    // verde a amarillo
+    const t = p * 2;
+    r = Math.round(16 + (245 - 16) * t);
+    g = Math.round(185 + (158 - 185) * t);
+    b = Math.round(129 + (11 - 129) * t);
+  } else {
+    // amarillo a rojo
+    const t = (p - 0.5) * 2;
+    r = Math.round(245 + (239 - 245) * t);
+    g = Math.round(158 + (68 - 158) * t);
+    b = Math.round(11 + (68 - 11) * t);
+  }
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* ─────────────────────────── Formato de mes en charts ─────────────────────────── */
+
+const MESES_CORTOS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+/** "2026-03-01" → "Mar 2026". Usado en eje X de charts. */
+export function fmtMonthShort(periodo: string): string {
+  const parts = periodo.split("-");
+  if (parts.length < 3) return periodo;
+  const m = Number(parts[1]);
+  return `${MESES_CORTOS[m - 1] ?? ""} ${parts[0]}`;
 }
 
 /* ─────────────────────────── Parsers BGC ─────────────────────────── */

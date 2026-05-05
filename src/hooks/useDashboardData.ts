@@ -3,6 +3,7 @@ import {
   DASHBOARD_DETAIL_WEBHOOK_URL,
   type DashboardResponse,
   type Producto,
+  type TipoFallo,
 } from "@/components/dashboard/types";
 
 /**
@@ -27,6 +28,7 @@ export interface DashboardParams {
   fechaInicio: string;
   fechaFin: string;
   productos: Producto[];
+  tipoFallo: TipoFallo;
   email: string;
 }
 
@@ -68,6 +70,7 @@ export function useDashboardData(params: DashboardParams | null) {
           fecha_inicio: p.fechaInicio,
           fecha_fin: p.fechaFin,
           productos: p.productos,
+          tipo_fallo: p.tipoFallo,
           email: p.email,
         }),
         signal: ac.signal,
@@ -126,6 +129,7 @@ export function useDashboardData(params: DashboardParams | null) {
     params?.fechaInicio,
     params?.fechaFin,
     params && params.productos.join(","),
+    params?.tipoFallo,
     params?.email,
   ]);
 

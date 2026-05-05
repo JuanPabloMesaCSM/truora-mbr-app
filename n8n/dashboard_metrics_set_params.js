@@ -33,6 +33,14 @@ const fechaFin    = body.fecha_fin;
 const productos   = Array.isArray(body.productos) ? body.productos : [];
 const email       = body.email || 'unknown';
 
+// Filtro global declinados/expirados/ambos. Solo afecta los bloques 12 y 13
+// del SQL DI (razones tendencia + agregadas). Default 'ambos' para no romper
+// llamadas legacy del frontend que aun no manden este campo.
+let tipoFallo = body.tipo_fallo || 'ambos';
+if (['declinado', 'expirado', 'ambos'].indexOf(tipoFallo) === -1) {
+  tipoFallo = 'ambos';
+}
+
 if (!fechaInicio || !fechaFin) {
   throw new Error('fecha_inicio y fecha_fin son requeridos');
 }
@@ -55,6 +63,7 @@ return [{
     fecha_fin:     fechaFin,
     productos:     productos,
     email:         email,
+    tipo_fallo:    tipoFallo,
     run_di:        runDi,
     run_bgc:       runBgc,
     run_ce:        runCe

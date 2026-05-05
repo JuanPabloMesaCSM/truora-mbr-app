@@ -3,20 +3,19 @@ import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { S, PROD_META, fmtNum, fmtPct } from "@/components/botialertas/types";
 import {
   parseDiMetricasGenerales,
-  parseDiHistorico,
-  parseRazonesGenerico,
   parseBgcResumen,
-  parseBgcPorPais,
   parseBgcAnomalias,
-  parseBgcHistorico,
   parseCeConsumo,
   parseCeFallos,
-  parseCeHistorico,
-  labelRazon,
   type DashboardResponse,
   type ClienteRow,
   type Producto,
+  type TipoFallo,
 } from "./types";
+import ConsumoMensualChart from "./charts/ConsumoMensualChart";
+import ConversionChart from "./charts/ConversionChart";
+import TendenciaRazonesChart from "./charts/TendenciaRazonesChart";
+import RazonesTablaHeatmap from "./charts/RazonesTablaHeatmap";
 
 /**
  * Vista cliente individual del dashboard.
@@ -34,19 +33,17 @@ import {
 export default function ClienteView({
   cliente,
   data,
+  tipoFallo,
 }: {
   cliente: ClienteRow;
   data: DashboardResponse;
+  tipoFallo: TipoFallo;
 }) {
   const di = parseDiMetricasGenerales(data.data.DI);
-  const diHist = parseDiHistorico(data.data.DI);
   const bgc = parseBgcResumen(data.data.BGC);
-  const bgcPaises = parseBgcPorPais(data.data.BGC);
   const bgcAnomalias = parseBgcAnomalias(data.data.BGC);
-  const bgcHist = parseBgcHistorico(data.data.BGC);
   const ce = parseCeConsumo(data.data.CE);
   const ceFallos = parseCeFallos(data.data.CE);
-  const ceHist = parseCeHistorico(data.data.CE);
 
   const ranEjecutados = data.productos_ejecutados;
 
@@ -127,148 +124,150 @@ export default function ClienteView({
         />
       )}
 
-      {/* Tendencia mensual — placeholder hasta charts (Fase 2) */}
-      {(diHist.length > 0 || bgcHist.length > 0 || ceHist.length > 0) && (
-        <Section title="Tendencia mensual">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-            {ranEjecutados.DI && diHist.length > 0 && (
-              <TendenciaTable
-                producto="DI"
-                rows={diHist.map((m) => ({
-                  periodo: m.periodo,
-                  metrica: fmtNum(m.totalProcesos),
-                  extra: m.conversionPct != null ? `${m.conversionPct.toFixed(1)}% conv.` : "",
-                }))}
-              />
-            )}
-            {ranEjecutados.BGC && bgcHist.length > 0 && (
-              <TendenciaTable
-                producto="BGC"
-                rows={bgcHist.map((m) => ({
-                  periodo: m.periodo,
-                  metrica: fmtNum(m.totalChecks),
-                  extra: m.passRatePct != null ? `${m.passRatePct.toFixed(1)}% pass` : "",
-                }))}
-              />
-            )}
-            {ranEjecutados.CE && ceHist.length > 0 && (
-              <TendenciaTable
-                producto="CE"
-                rows={ceHist.map((m) => ({
-                  periodo: m.periodo,
-                  metrica: fmtNum(m.total),
-                  extra: `${fmtNum(m.inbound)} in · ${fmtNum(m.outbound)} out`,
-                }))}
-              />
-            )}
-          </div>
-        </Section>
-      )}
-
-      {/* Razones DI */}
+      {/* DI charts */}
       {ranEjecutados.DI && data.data.DI && (
-        <Section title="Principales razones — DI">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
-            <RazonesCard
-              titulo="Rechazo documento"
-              items={parseRazonesGenerico(data.data.DI, "7_razones_doc")}
-              color={PROD_META.DI.color}
-            />
-            <RazonesCard
-              titulo="Rechazo rostro"
-              items={parseRazonesGenerico(data.data.DI, "8_razones_rostro")}
-              color={PROD_META.DI.color}
-            />
-            <RazonesCard
-              titulo="Abandono / cancelación"
-              items={parseRazonesGenerico(data.data.DI, "9_abandono")}
-              color={PROD_META.DI.color}
-            />
-            <RazonesCard
-              titulo="Modelo declinó"
-              items={parseRazonesGenerico(data.data.DI, "10_declinados")}
-              color={PROD_META.DI.color}
-            />
-          </div>
-        </Section>
+        <ProductCharts
+          producto="DI"
+          bloques={data.data.DI}
+          tipoFallo={tipoFallo}
+        />
       )}
 
-      {/* BGC: por país + anomalías */}
+      {/* BGC charts */}
       {ranEjecutados.BGC && data.data.BGC && (
-        <Section title="BGC — desglose">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-            {bgcPaises.length > 0 && (
-              <div style={cardStyle()}>
-                <div style={cardHeaderStyle(PROD_META.BGC.color)}>Por país</div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle()}>País</th>
-                      <th style={thStyle("right")}>Checks</th>
-                      <th style={thStyle("right")}>Pass</th>
-                      <th style={thStyle("right")}>%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bgcPaises.map((p) => (
-                      <tr key={p.pais}>
-                        <td style={tdStyle()}>{p.pais}</td>
-                        <td style={tdStyle("right")}>{fmtNum(p.totalChecks)}</td>
-                        <td style={tdStyle("right")}>{p.passRatePct != null ? `${p.passRatePct.toFixed(1)}%` : "—"}</td>
-                        <td style={tdStyle("right", S.muted)}>{p.pctSobreTotal != null ? `${p.pctSobreTotal.toFixed(1)}%` : "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {bgcAnomalias.length > 0 && (
-              <div style={cardStyle()}>
-                <div style={cardHeaderStyle("#F59E0B", <AlertTriangle size={12} />)}>
-                  Anomalías labels High
-                </div>
-                <div style={{ fontSize: 11, color: S.muted, marginBottom: 10, lineHeight: 1.5 }}>
-                  Labels que dicen "High" pero el score promedio quedó arriba de 6.
-                  Puede indicar umbral mal calibrado.
-                </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead>
-                    <tr>
-                      <th style={thStyle()}>Label</th>
-                      <th style={thStyle("right")}>Score</th>
-                      <th style={thStyle("right")}>N</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bgcAnomalias.map((a) => (
-                      <tr key={a.label}>
-                        <td style={tdStyle()}>{a.label}</td>
-                        <td style={tdStyle("right", a.esAnomalia ? "#F59E0B" : S.text)}>
-                          {a.scorePromedio != null ? a.scorePromedio.toFixed(2) : "—"}
-                        </td>
-                        <td style={tdStyle("right", S.muted)}>{fmtNum(a.totalChecks)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        <ProductCharts
+          producto="BGC"
+          bloques={data.data.BGC}
+          tipoFallo={tipoFallo}
+        />
+      )}
+
+      {/* CE charts */}
+      {ranEjecutados.CE && data.data.CE && (
+        <ProductCharts
+          producto="CE"
+          bloques={data.data.CE}
+          tipoFallo={tipoFallo}
+        />
+      )}
+
+      {/* BGC: anomalías labels High (sigue como tabla aparte — es una alerta puntual) */}
+      {ranEjecutados.BGC && bgcAnomalias.length > 0 && (
+        <Section title="BGC — anomalías labels High">
+          <div style={cardStyle()}>
+            <div style={cardHeaderStyle("#F59E0B", <AlertTriangle size={12} />)}>
+              Score promedio &gt; 6 con label "High"
+            </div>
+            <div style={{ fontSize: 11, color: S.muted, marginBottom: 10, lineHeight: 1.5 }}>
+              Estos labels marcan riesgo "alto" pero el score promedio terminó arriba de 6 (umbral pass).
+              Puede indicar umbral mal calibrado en los modelos del cliente — vale la pena revisar.
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={thStyle()}>Label</th>
+                  <th style={thStyle("right")}>Score</th>
+                  <th style={thStyle("right")}>N</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bgcAnomalias.map((a) => (
+                  <tr key={a.label}>
+                    <td style={tdStyle()}>{a.label}</td>
+                    <td style={tdStyle("right", a.esAnomalia ? "#F59E0B" : S.text)}>
+                      {a.scorePromedio != null ? a.scorePromedio.toFixed(2) : "—"}
+                    </td>
+                    <td style={tdStyle("right", S.muted)}>{fmtNum(a.totalChecks)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Section>
       )}
 
-      {/* CE: fallos outbound */}
-      {ranEjecutados.CE && ceFallos.items.length > 0 && (
-        <Section title="CE — fallos outbound">
-          <RazonesCard
-            titulo={`Total fallos: ${fmtNum(ceFallos.items.reduce((s, x) => s + x.totalFallos, 0))} (${ceFallos.pctExito != null ? `${ceFallos.pctExito.toFixed(0)}% éxito` : "—"})`}
-            items={ceFallos.items.map((f) => ({ motivo: f.categoria, total: f.totalFallos }))}
-            color={PROD_META.CE.color}
-            useLabelMap={false}
-          />
-        </Section>
+      {/* CE: % éxito outbound como dato suelto (no necesita chart propio) */}
+      {ranEjecutados.CE && ceFallos.items.length > 0 && ceFallos.pctExito != null && (
+        <div
+          style={{
+            background: S.surface,
+            border: `1px solid ${S.border}`,
+            borderRadius: 14,
+            padding: "14px 18px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ color: S.muted }}>
+            Tasa de éxito outbound del rango
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 18, color: PROD_META.CE.color }}>
+            {ceFallos.pctExito.toFixed(1)}%
+          </span>
+        </div>
       )}
     </motion.div>
+  );
+}
+
+/* ─────────────────────────── ProductCharts: 4 charts por producto ─────────────────────────── */
+
+function ProductCharts({
+  producto,
+  bloques,
+  tipoFallo,
+}: {
+  producto: Producto;
+  bloques: import("./types").BloqueMap;
+  tipoFallo: TipoFallo;
+}) {
+  const meta = PROD_META[producto];
+  return (
+    <div>
+      {/* Header del producto */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          marginBottom: 14,
+          paddingLeft: 4,
+        }}
+      >
+        <span style={{ fontSize: 18 }}>{meta.emoji}</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: S.text }}>{meta.label}</span>
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: meta.color,
+            background: `${meta.color}1A`,
+            padding: "3px 8px",
+            borderRadius: 4,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {meta.sigla}
+        </span>
+      </div>
+
+      {/* Grid de 4 charts: 2 columnas en pantallas anchas, 1 en mobile */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+          gap: 16,
+        }}
+      >
+        <ConsumoMensualChart bloques={bloques} productLabel={producto} />
+        <ConversionChart bloques={bloques} producto={producto} />
+        <TendenciaRazonesChart bloques={bloques} producto={producto} tipoFallo={tipoFallo} />
+        <RazonesTablaHeatmap bloques={bloques} producto={producto} />
+      </div>
+    </div>
   );
 }
 

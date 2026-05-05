@@ -11,10 +11,15 @@
 -- Periodo previo = mismo ancho hacia atras.
 --
 -- Bloques que retorna:
---   1_resumen_general    : totales del rango + comparativo prev
---   2_por_pais           : agregado por pais en el rango (1 fila por pais)
---   6_labels_high_score  : labels High con score > 6 (anomalia, es_anomalia=1)
---   7_historico_mensual  : una fila por mes en [FECHA_INICIO..FECHA_FIN]
+--   1_resumen_general              : totales del rango + comparativo prev
+--   2_por_pais                     : agregado por pais en el rango (1 fila por pais)
+--   6_labels_high_score            : labels High con score > 6 (anomalia, es_anomalia=1)
+--   7_historico_mensual            : una fila por mes en [FECHA_INICIO..FECHA_FIN]
+--   8_rejection_tendencia_mensual  : tendencia mensual de % rejection por pais
+--                                    (top 5 paises por volumen del rango)
+--   consumo_mensual                : SHARED_COUNTERS_DYNAMO desglose por sub-producto
+--                                    (PRODUCT='checks'). Hoy 1 sola serie 'checks'
+--                                    pero el shape es identico al de DI/CE.
 --
 -- Reglas criticas:
 --   * Filtro DELETED IS NULL OR DELETED = FALSE.
@@ -223,10 +228,88 @@ bloque7 AS (
     NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
     NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
   FROM hist_mensual
+),
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque 8: tendencia mensual % rejection por pais (top 5 paises)
+-- ═══════════════════════════════════════════════════════════════════
+-- BGC no tiene `declined_reason` como DI; el equivalente conceptual es
+-- "% de checks completados con score <= 6" (rejection rate). Lo segmentamos
+-- por pais para identificar drift territorial (ej: Mexico subiendo rejection
+-- mes a mes mientras Colombia se mantiene).
+top5_paises_bgc AS (
+  SELECT
+    country,
+    COUNT(*) AS total_completados
+  FROM checks_actual
+  WHERE country IS NOT NULL
+    AND status = 'completed'
+  GROUP BY country
+  QUALIFY ROW_NUMBER() OVER (ORDER BY total_completados DESC) <= 5
+),
+
+checks_pais_mes AS (
+  SELECT
+    ca.mes_local,
+    ca.country,
+    COUNT(*) AS total_completados,
+    COUNT(CASE WHEN ca.score_norm > 6 THEN 1 END) AS pasados,
+    COUNT(CASE WHEN ca.score_norm <= 6 THEN 1 END) AS rechazados
+  FROM checks_actual ca
+  JOIN top5_paises_bgc tp ON tp.country = ca.country
+  WHERE ca.status = 'completed'
+  GROUP BY ca.mes_local, ca.country
+),
+
+bloque8 AS (
+  SELECT
+    '8_rejection_tendencia_mensual'                             AS bloque,
+    cpm.mes_local                                               AS periodo,
+    cpm.country::VARCHAR                                        AS col1,  -- pais
+    cpm.total_completados::VARCHAR                              AS col2,  -- volumen completados
+    cpm.pasados::VARCHAR                                        AS col3,
+    cpm.rechazados::VARCHAR                                     AS col4,
+    ROUND(cpm.rechazados::FLOAT / NULLIF(cpm.total_completados, 0) * 100, 2)::VARCHAR AS col5, -- % rejection
+    ROUND(cpm.pasados::FLOAT    / NULLIF(cpm.total_completados, 0) * 100, 2)::VARCHAR AS col6, -- % pass
+    NULL::VARCHAR AS col7, NULL::VARCHAR AS col8, NULL::VARCHAR AS col9,
+    NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM checks_pais_mes cpm
+),
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque consumo_mensual: SHARED_COUNTERS_DYNAMO (PRODUCT='checks')
+-- ═══════════════════════════════════════════════════════════════════
+consumo_dynamo_bgc AS (
+  SELECT
+    s.PERIOD,
+    s.PRODUCT_IDENTIFIER,
+    s.USAGE
+  FROM TRUORA.TRUORA_SCHEMA.SHARED_COUNTERS_DYNAMO s
+  CROSS JOIN periodos pe
+  WHERE s.CLIENT_ID = pe.client_id
+    AND s.PERIOD BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(s.PRODUCT) = 'checks'
+),
+bloque_consumo AS (
+  SELECT
+    'consumo_mensual'                                           AS bloque,
+    PERIOD                                                      AS periodo,
+    PRODUCT_IDENTIFIER::VARCHAR                                 AS col1,
+    USAGE::VARCHAR                                              AS col2,
+    NULL::VARCHAR AS col3, NULL::VARCHAR AS col4, NULL::VARCHAR AS col5,
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM consumo_dynamo_bgc
 )
 
 SELECT * FROM bloque1
 UNION ALL SELECT * FROM bloque2
 UNION ALL SELECT * FROM bloque6
 UNION ALL SELECT * FROM bloque7
+UNION ALL SELECT * FROM bloque8
+UNION ALL SELECT * FROM bloque_consumo
 ORDER BY bloque, periodo;
