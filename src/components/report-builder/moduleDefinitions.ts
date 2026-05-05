@@ -128,10 +128,16 @@ const MONTH_NAMES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
+// Periodos seleccionables: desde Noviembre 2025 en adelante (los meses
+// previos quedaron deprecados — datos viejos no se reportan).
+const PERIODS_START = { year: 2025, month: 10 }; // mes 0-indexed, 10 = Noviembre
+
 export function generatePeriods() {
   const periods: { label: string; value: string }[] = [];
   for (const year of [2025, 2026]) {
     for (let m = 0; m < 12; m++) {
+      if (year < PERIODS_START.year) continue;
+      if (year === PERIODS_START.year && m < PERIODS_START.month) continue;
       periods.push({
         label: `${MONTH_NAMES[m]} ${year}`,
         value: `${year}-${String(m + 1).padStart(2, '0')}`,

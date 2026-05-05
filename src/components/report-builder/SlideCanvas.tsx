@@ -1378,7 +1378,7 @@ function Bgc2Slide({ data, theme, clientName, periodLabel, pageNum = 2 }: {
             backgroundColor: labels.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length]),
             borderRadius: 8, yAxisID: "yVol",
             datalabels: { display: false } as any },
-          { type: "line" as any, label: "Pass Rate %", data: passRates,
+          { type: "line" as any, label: "Checks exitosos %", data: passRates,
             borderColor: BGC.success, backgroundColor: "transparent", borderWidth: 3,
             pointRadius: 6, pointBackgroundColor: "#fff", pointBorderColor: BGC.success,
             pointBorderWidth: 2, yAxisID: "yRate",
@@ -1402,7 +1402,7 @@ function Bgc2Slide({ data, theme, clientName, periodLabel, pageNum = 2 }: {
   }, [depKey, t.chartText]);
 
   const tableColW = ["10%", "24%", "20%", "22%", "24%"];
-  const tableCols = ["País", "Checks", "Pass Rate", "Score", "% Total"];
+  const tableCols = ["País", "Checks", "Checks exitosos", "Puntaje", "% Total"];
 
   return (
     <SlideShell id="BGC-2" theme={theme}>
@@ -1498,9 +1498,9 @@ function Bgc3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
       data: {
         labels: countries,
         datasets: [
-          { label: "Aprobados (score > 6)", data: pctApp,
+          { label: "Checks exitosos (puntaje > 6)", data: pctApp,
             backgroundColor: BGC.success, stack: "stack", borderRadius: 0 },
-          { label: "Rechazados (score ≤ 6)", data: pctRej,
+          { label: "Con advertencias (puntaje ≤ 6)", data: pctRej,
             backgroundColor: BGC.danger,  stack: "stack", borderRadius: 0 },
         ],
       },
@@ -1526,12 +1526,12 @@ function Bgc3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
 
   return (
     <SlideShell id="BGC-3" theme={theme}>
-      <SlideHeader title={`Aprobados vs rechazados por país — ${periodLabel}`} subtitle={`Background Check · ${clientName}`} theme={theme} />
+      <SlideHeader title={`Distribución de puntaje por país — ${periodLabel}`} subtitle={`Background Check · ${clientName}`} theme={theme} />
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 80 }}>
           {[
-            { label: "Aprobados global", val: globalApp + "%", color: BGC.success, sub: "score > 6" },
-            { label: "Rechazados global", val: globalRej + "%", color: BGC.danger,  sub: "score ≤ 6" },
+            { label: "Checks exitosos global", val: globalApp + "%", color: BGC.success, sub: "puntaje > 6" },
+            { label: "Con advertencias global", val: globalRej + "%", color: BGC.danger,  sub: "puntaje ≤ 6" },
           ].map(k => (
             <div key={k.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
               borderRadius: 12, padding: "12px 20px", display: "flex", alignItems: "center", gap: 16 }}>
@@ -1759,14 +1759,14 @@ function Bgc5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
             datalabels: { display: true, anchor: "end", align: "top",
               color: BGC.primary, font: { size: 12, weight: 700 },
               formatter: (v: number) => v.toLocaleString("es-CO") } as any },
-          { type: "line" as any, label: "Pass Rate %", data: passRates,
+          { type: "line" as any, label: "Checks exitosos %", data: passRates,
             borderColor: BGC.success, backgroundColor: "transparent", borderWidth: 3,
             pointRadius: 7, pointBackgroundColor: "#fff", pointBorderColor: BGC.success,
             pointBorderWidth: 2.5, yAxisID: "yRate", order: 0,
             datalabels: { display: true, anchor: "end", align: "top",
               color: BGC.success, font: { size: 13, weight: 700 },
               formatter: (v: number) => v.toFixed(1) + "%" } as any },
-          { type: "line" as any, label: "Score promedio (pts)", data: scores,
+          { type: "line" as any, label: "Puntaje de confianza (pts)", data: scores,
             borderColor: BGC.warning, backgroundColor: "transparent", borderWidth: 3,
             borderDash: [6, 3] as any,
             pointRadius: 7, pointBackgroundColor: "#fff", pointBorderColor: BGC.warning,
@@ -1821,7 +1821,7 @@ function Bgc5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
                     {parseFloat(row.col5 || "0").toFixed(1)}%
                   </span>
                   <span style={{ fontSize: 9, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>
-                    pass rate
+                    exitosos
                   </span>
                 </div>
                 <div style={{ width: 1, height: 28, background: t.footerBorder, flexShrink: 0 }} />
@@ -1830,7 +1830,7 @@ function Bgc5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
                     {parseFloat(row.col4 || "0").toFixed(1)}
                   </span>
                   <span style={{ fontSize: 9, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 2 }}>
-                    score avg
+                    puntaje
                   </span>
                 </div>
               </div>
@@ -1946,7 +1946,7 @@ function Bgc6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
   }, [depKey, t.legendColor, t.chartText]);
 
   const tColW = ["14%", "34%", "24%", "28%"];
-  const tCols = ["País", "Tipo", "Completados", "Pass Rate"];
+  const tCols = ["País", "Tipo", "Completados", "Checks exitosos"];
 
   return (
     <SlideShell id="BGC-6" theme={theme}>
@@ -2049,7 +2049,7 @@ function Bgc7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   }
 
   const tColW = ["34%", "20%", "22%", "24%"];
-  const tCols = ["Tipo", "Checks", "Pass Rate", "% Total"];
+  const tCols = ["Tipo", "Checks", "Checks exitosos", "% Total"];
   const totalChecks = rows.reduce((s, r) => s + parseInt(r.col3 || "0", 10), 0);
 
   return (
