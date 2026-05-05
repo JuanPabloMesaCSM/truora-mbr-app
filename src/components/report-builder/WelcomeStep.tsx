@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell } from "lucide-react";
+import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell, Activity } from "lucide-react";
 import { type Product, type CsmRow, PRODUCT_COLORS } from "./moduleDefinitions";
 import { FeedbackModal } from "./FeedbackModal";
 
@@ -149,6 +149,24 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
           >
             <Bell size={13} />
             <span>BotiAlertas</span>
+          </button>
+
+          {/* Dashboard de cartera */}
+          <button
+            onClick={() => navigate('/dashboard')}
+            title="Métricas por cliente y periodo (counters, conversión, razones de rechazo)"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600,
+              color: '#C4B3FF',
+              background: 'rgba(124,77,255,0.10)',
+              border: '1px solid rgba(124,77,255,0.30)',
+              cursor: 'pointer', padding: '6px 12px',
+              borderRadius: 999, transition: 'all 0.15s',
+            }}
+          >
+            <Activity size={13} />
+            <span>Dashboard</span>
           </button>
 
           {/* Feedback */}
