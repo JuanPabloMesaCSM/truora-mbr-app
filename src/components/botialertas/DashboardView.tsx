@@ -84,36 +84,39 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
     return { riesgo, creciendo, estables, total };
   }, [rows]);
 
-  // Top movers: estricto a las 3 severidades del header (crítica + fuerte + crecimiento).
-  // SIN filtro de volumen — los conteos del card y la lista deben matchear EXACTO.
-  // (El filtro VOLUME_FLOOR_TELEGRAM=500 vive en classify.js solo para evitar spam de
-  // Telegram, pero todas las clasificaciones se guardan en boti_alertas y deben mostrarse acá.)
+  // Top movers: por VOLUMEN absoluto (no por severidad %). La intención es que
+  // la suma de la lista cuadre con el delta del card del producto. Antes
+  // filtrabamos por severidad ('critica'|'fuerte'|'crecimiento'), pero eso
+  // dejaba afuera clientes con caída/crecimiento grande en número y % bajo
+  // (ej: 1M → 950k = -50k pero solo -5%, severidad 'estable'). El color de la
+  // fila sigue dependiendo de la severidad — el orden y la inclusión, no.
   const topMovers = useMemo(() => {
     const out = {} as Record<Producto, { caidas: Alerta[]; crecimientos: Alerta[] }>;
     for (const p of PROD_LIST) {
       const rs = rows.filter((r) => r.producto === p);
-      const sorted = [...rs].sort(
-        (a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0))
-      );
-      out[p] = {
-        caidas: sorted.filter((r) => r.severidad === "critica" || r.severidad === "fuerte"),
-        crecimientos: sorted.filter((r) => r.severidad === "crecimiento"),
-      };
+      const caidas = rs
+        .filter((r) => Number(r.variacion_abs ?? 0) < 0)
+        .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
+      const crecimientos = rs
+        .filter((r) => Number(r.variacion_abs ?? 0) > 0)
+        .sort((a, b) => Number(b.variacion_abs ?? 0) - Number(a.variacion_abs ?? 0));
+      out[p] = { caidas, crecimientos };
     }
     return out;
   }, [rows]);
 
-  // Resumen global cross-producto.
+  // Resumen global cross-producto, mismo criterio: ordena por volumen absoluto,
+  // todos los que cayeron / todos los que crecieron, sin filtro de severidad.
   const globalRiesgo = useMemo(() => {
     return rows
-      .filter((r) => r.severidad === "critica" || r.severidad === "fuerte")
+      .filter((r) => Number(r.variacion_abs ?? 0) < 0)
       .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
   }, [rows]);
 
   const globalCrecimiento = useMemo(() => {
     return rows
-      .filter((r) => r.severidad === "crecimiento")
-      .sort((a, b) => Math.abs(Number(b.variacion_abs ?? 0)) - Math.abs(Number(a.variacion_abs ?? 0)));
+      .filter((r) => Number(r.variacion_abs ?? 0) > 0)
+      .sort((a, b) => Number(b.variacion_abs ?? 0) - Number(a.variacion_abs ?? 0));
   }, [rows]);
 
   const consolidatedRows = useMemo(() => {
@@ -890,8 +893,8 @@ function ProductDetail({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: 18 }}>
         <MoversTable
-          title={`⚠ En riesgo (${caidas.length})`}
-          subtitle="críticas + fuertes · color por severidad"
+          title={`📉 Cayendo (${caidas.length})`}
+          subtitle="ordenados por volumen perdido · color por severidad"
           rows={caidas}
           variant="caida"
           csmByEmail={csmByEmail}
@@ -901,7 +904,7 @@ function ProductDetail({
         />
         <MoversTable
           title={`📈 Creciendo (${crecimientos.length})`}
-          subtitle="ordenados por impacto absoluto"
+          subtitle="ordenados por volumen ganado · color por severidad"
           rows={crecimientos}
           variant="crecimiento"
           csmByEmail={csmByEmail}
@@ -932,7 +935,7 @@ function GlobalSummary({
 
   return (
     <div style={{ marginBottom: 26 }}>
-      <SectionLabel label="Resumen global por severidad" />
+      <SectionLabel label="Resumen global por volumen" />
       <div style={{
         background: S.surfaceLo,
         border: `1px solid ${S.border}`,
@@ -941,8 +944,8 @@ function GlobalSummary({
       }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(480px, 1fr))", gap: 18 }}>
           <MoversTable
-            title={`⚠ En riesgo (${riesgo.length})`}
-            subtitle="todos los críticos + fuertes · color por severidad"
+            title={`📉 Cayendo (${riesgo.length})`}
+            subtitle="todos los que perdieron volumen · color por severidad"
             rows={riesgo}
             variant="caida"
             showProductCol
@@ -953,7 +956,7 @@ function GlobalSummary({
           />
           <MoversTable
             title={`📈 Creciendo (${crecimiento.length})`}
-            subtitle="todos los crecimientos por producto"
+            subtitle="todos los que ganaron volumen · color por severidad"
             rows={crecimiento}
             variant="crecimiento"
             showProductCol
@@ -998,7 +1001,7 @@ function MoversTable({
       </div>
       {rows.length === 0 ? (
         <div style={{ fontSize: 12, color: S.dim, padding: "10px 0" }}>
-          Sin {variant === "caida" ? "alertas en riesgo" : "crecimientos"} esta semana.
+          Sin {variant === "caida" ? "caídas en volumen" : "crecimientos"} esta semana.
         </div>
       ) : (
         <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
@@ -1119,6 +1122,22 @@ function TableSection({
   mesActualLabel: string;
   mesPrevLabel: string;
 }) {
+  const [search, setSearch] = useState("");
+
+  // Filtra por nombre del cliente o nombre del CSM. Reset del search cuando se
+  // colapsa la tabla para no acarrear estado oculto.
+  useEffect(() => { if (!open) setSearch(""); }, [open]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => {
+      const nombre = (r.nombre ?? "").toLowerCase();
+      const csmName = r.csm_email ? (csmByEmail[r.csm_email]?.nombre ?? r.csm_email).toLowerCase() : "";
+      return nombre.includes(q) || csmName.includes(q);
+    });
+  }, [rows, search, csmByEmail]);
+
   return (
     <div style={{ marginBottom: 40 }}>
       <button
@@ -1147,8 +1166,14 @@ function TableSection({
             transition={{ duration: 0.3, ease: "easeOut" }}
             style={{ overflow: "hidden" }}
           >
+            <TableSearchBar
+              value={search}
+              onChange={setSearch}
+              total={rows.length}
+              filtered={filteredRows.length}
+            />
             <ConsolidatedTable
-              rows={rows}
+              rows={filteredRows}
               csmByEmail={csmByEmail}
               onClickClient={onClickClient}
               onClickNotes={onClickNotes}
@@ -1159,6 +1184,60 @@ function TableSection({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function TableSearchBar({
+  value, onChange, total, filtered,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  total: number;
+  filtered: number;
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12,
+      marginBottom: 12,
+    }}>
+      <div style={{
+        flex: 1, position: "relative",
+        background: S.surface, border: `1px solid ${S.border}`,
+        borderRadius: 10, transition: "border-color 0.15s",
+      }}>
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Buscar cliente o CSM…"
+          style={{
+            width: "100%", padding: "10px 36px 10px 14px",
+            background: "transparent", border: "none", outline: "none",
+            color: S.text, fontSize: 13, fontFamily: "inherit",
+          }}
+          onFocus={(e) => (e.currentTarget.parentElement!.style.borderColor = S.borderHi)}
+          onBlur={(e) => (e.currentTarget.parentElement!.style.borderColor = S.border)}
+        />
+        {value && (
+          <button
+            onClick={() => onChange("")}
+            aria-label="Limpiar búsqueda"
+            style={{
+              position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
+              background: "transparent", border: "none", cursor: "pointer",
+              color: S.muted, padding: 4, display: "flex", alignItems: "center",
+            }}
+          >
+            <XIcon size={14} />
+          </button>
+        )}
+      </div>
+      {value && (
+        <div style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap" }}>
+          {filtered} de {total}
+        </div>
+      )}
     </div>
   );
 }

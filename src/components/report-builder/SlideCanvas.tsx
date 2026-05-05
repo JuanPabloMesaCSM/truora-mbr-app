@@ -72,10 +72,6 @@ function fmtMinAsHora(mins: number | null | undefined, signed = false): string {
   return sign + h + " h " + m + " min";
 }
 
-function todayLabel(): string {
-  return new Date().toLocaleDateString("es-CO", { day: "2-digit", month: "short", year: "numeric" });
-}
-
 function formatLabel(s: string): string {
   return s.replace(/_/g, " ");
 }
@@ -207,19 +203,12 @@ function SlideHeader({ title, subtitle, theme }: { title: string; subtitle: stri
 
 /* ─── Slide Footer ─── */
 
-function SlideFooter({ theme, pageNum, slideLabel }: { theme: Theme; pageNum: number; slideLabel?: string }) {
-  const t = tok(theme);
-  return (
-    <div style={{
-      position: "absolute", bottom: 0, left: 0, right: 0, height: 32,
-      display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: "0 40px", background: t.footerBg, borderTop: `1px solid ${t.footerBorder}`, boxSizing: "border-box",
-    }}>
-      <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 500 }}>Fuente: Snowflake · {todayLabel()}</span>
-      {slideLabel && <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 500 }}>{slideLabel}</span>}
-      <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 600 }}>{pageNum}</span>
-    </div>
-  );
+// SlideFooter retirado del diseño (2026-05-05) — el pie con fuente, label y
+// número de página dejó de aportar valor en presentaciones. Se mantiene la
+// función como no-op para no tocar las decenas de invocaciones existentes.
+// `bodyStyle.bottom` también pasó de 32 a 12 para reclamar el espacio.
+function SlideFooter(_props: { theme: Theme; pageNum: number; slideLabel?: string }) {
+  return null;
 }
 
 /* ─── Slide shell ─── */
@@ -241,7 +230,7 @@ function SlideShell({ id, theme, children }: { id: string; theme: Theme; childre
 const bodyStyle: React.CSSProperties = {
   position: "absolute", top: 72, left: 0,
   right: 'var(--slide-insight-right, 0px)' as React.CSSProperties['right'],
-  bottom: 32,
+  bottom: 12,
   display: "flex", gap: 16, padding: "14px 40px 14px 20px",
   boxSizing: "border-box", overflow: "hidden",
 };
@@ -1283,13 +1272,22 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
   const deltaScore    = b?.col_extra1;
   const deltaPassRate = b?.col_extra2;
 
+  // Cantidades absolutas derivadas de los porcentajes del donut.
+  // El donut de BGC-1 suma 100% (passRate + rejectionRate), así que podemos
+  // derivar las unidades de cada banda multiplicando por totalChecks.
+  const checksExitosos     = Math.round(totalChecks * passRate / 100);
+  const checksConAdvertencia = Math.max(totalChecks - checksExitosos, 0);
+
   useEffect(() => {
     if (!chartRef.current || totalChecks === 0) return;
     chartInstance.current?.destroy();
     chartInstance.current = new Chart(chartRef.current, {
       type: "doughnut",
       data: {
-        labels: [`Checks exitosos (${passRate.toFixed(1)}%)`, `Checks con advertencias (${rejectionRate.toFixed(1)}%)`],
+        labels: [
+          `Checks exitosos: ${checksExitosos.toLocaleString("es-CO")} (${passRate.toFixed(1)}%)`,
+          `Checks con advertencias: ${checksConAdvertencia.toLocaleString("es-CO")} (${rejectionRate.toFixed(1)}%)`,
+        ],
         datasets: [{ data: [passRate, rejectionRate],
           backgroundColor: [BGC.success, BGC.danger], borderWidth: 4, borderColor: t.cardBg }],
       },
@@ -1313,7 +1311,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
           <KpiCard label="Puntaje de confianza" value={`${scorePromedio.toFixed(1)}`}
             footnote={`/ 10 pts · Anterior: ${scorePrev.toFixed(1)}${deltaScore ? ` (Δ${deltaScore} pts)` : ""}`} theme={theme} />
           <KpiCard label="Checks exitosos" value={`${passRate.toFixed(1)}%`} valueColor={BGC.success}
-            footnote={`Anterior: ${passRatePrev.toFixed(1)}%${deltaPassRate ? ` · Δ ${deltaPassRate} pp` : ""}`} theme={theme} />
+            footnote={`${checksExitosos.toLocaleString("es-CO")} de ${totalChecks.toLocaleString("es-CO")} · Anterior ${passRatePrev.toFixed(1)}%${deltaPassRate ? ` · Δ ${deltaPassRate} pp` : ""}`} theme={theme} />
         </div>
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
           borderRadius: 14, display: "flex", flexDirection: "column",
@@ -1330,7 +1328,14 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
               </span>
             </div>
           </div>
-          <p style={{ margin: "6px 0 0", fontSize: 10, color: t.textMuted, textAlign: "center" }}>
+          <p style={{ margin: "6px 0 0", fontSize: 12, color: t.textPrimary, textAlign: "center", fontWeight: 600 }}>
+            <span style={{ color: BGC.success }}>{checksExitosos.toLocaleString("es-CO")}</span> exitosos
+            <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
+            <span style={{ color: BGC.danger }}>{checksConAdvertencia.toLocaleString("es-CO")}</span> con advertencias
+            <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
+            <span style={{ color: t.textMuted, fontWeight: 400 }}>{totalChecks.toLocaleString("es-CO")} totales</span>
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 10, color: t.textMuted, textAlign: "center" }}>
             Calculado con umbral puntaje &gt; 6 · Confirmar umbral con el cliente si es diferente
           </p>
         </div>
@@ -1876,12 +1881,15 @@ function Bgc6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
   }
   const types = allTypes.slice(0, 6);
 
-  // Per type dataset: values indexed by country
+  // Per type dataset: values indexed by country.
+  // Usamos col4 = checks_completados (no col3 = total_checks que incluye errores
+  // técnicos), para que el conteo cuadre con los reportes manuales del CSM,
+  // que solo cuentan checks completados exitosamente.
   const datasets = types.map((tp, i) => ({
     label: tp,
     data: countries.map(c => {
       const match = rows.find(r => r.col1 === c && r.col2 === tp);
-      return match ? parseInt(match.col3 || "0", 10) : 0;
+      return match ? parseInt(match.col4 || "0", 10) : 0;
     }),
     backgroundColor: BGC6_COLORS[i % BGC6_COLORS.length],
     stack: "stack",
@@ -1903,13 +1911,13 @@ function Bgc6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
     } as any,
   }));
 
-  // Table rows: sorted by country then checks DESC
+  // Table rows: sorted by country then checks_completados DESC
   const tableRows = [...rows]
     .filter(r => types.includes(r.col2 || ""))
     .sort((a, b) => {
       const cmp = (a.col1 || "").localeCompare(b.col1 || "");
       if (cmp !== 0) return cmp;
-      return parseInt(b.col3 || "0", 10) - parseInt(a.col3 || "0", 10);
+      return parseInt(b.col4 || "0", 10) - parseInt(a.col4 || "0", 10);
     });
 
   const depKey = JSON.stringify([countries, types, datasets.map(d => d.data)]);
@@ -1938,7 +1946,7 @@ function Bgc6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
   }, [depKey, t.legendColor, t.chartText]);
 
   const tColW = ["14%", "34%", "24%", "28%"];
-  const tCols = ["País", "Tipo", "Checks", "Pass Rate"];
+  const tCols = ["País", "Tipo", "Completados", "Pass Rate"];
 
   return (
     <SlideShell id="BGC-6" theme={theme}>
@@ -1970,7 +1978,7 @@ function Bgc6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
               </div>
               <div style={{ width: tColW[2], flexShrink: 0 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary }}>
-                  {parseInt(row.col3 || "0", 10).toLocaleString("es-CO")}
+                  {parseInt(row.col4 || "0", 10).toLocaleString("es-CO")}
                 </span>
               </div>
               <div style={{ width: tColW[3], flexShrink: 0 }}>
