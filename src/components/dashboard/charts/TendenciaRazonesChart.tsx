@@ -1,8 +1,10 @@
 import {
+  Bar,
   CartesianGrid,
+  ComposedChart,
+  LabelList,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -28,6 +30,9 @@ import {
   DarkTooltip,
   GRID_STYLE,
   colorAt,
+  dataLabelFormatter,
+  DATA_LABEL_STYLE,
+  buildActiveBarStyle,
 } from "./sharedChartUtils";
 
 /**
@@ -64,14 +69,20 @@ export default function TendenciaRazonesChart({
     );
   }
 
+  // Solo BGC tiene barras de total mensual (eje izquierdo) + líneas de %
+  // por país (eje derecho). DI y CE solo tienen líneas de volumen (eje único).
+  const isBgc = producto === "BGC";
+  const lineYAxisId = isBgc ? "right" : "left";
+  const barColor = "#A78BFA";
+
   return (
     <ChartCard
       title={titleFor(producto)}
       subtitle={subtitleFor(producto, tipoFallo, cfg.series.length, cfg.data.length)}
-      height={360}
+      height={isBgc ? 380 : 360}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={cfg.data} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>
+        <ComposedChart data={cfg.data} margin={{ top: 22, right: isBgc ? 16 : 16, left: 0, bottom: 8 }}>
           <CartesianGrid {...GRID_STYLE} vertical={false} />
           <XAxis
             dataKey="periodo"
@@ -80,20 +91,39 @@ export default function TendenciaRazonesChart({
             tickLine={false}
             axisLine={{ stroke: S.border }}
           />
+          {/* Eje izquierdo: en BGC = volumen total; en DI/CE = volumen razones */}
           <YAxis
+            yAxisId="left"
             tick={AXIS_STYLE}
             tickLine={false}
             axisLine={false}
-            tickFormatter={cfg.yFormatter}
+            tickFormatter={isBgc ? (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`) : cfg.yFormatter}
             width={48}
           />
+          {/* Eje derecho: solo en BGC, para el % por país */}
+          {isBgc && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={AXIS_STYLE}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={cfg.yFormatter}
+              width={48}
+            />
+          )}
           <Tooltip
-            cursor={{ stroke: S.borderHi, strokeWidth: 1 }}
+            cursor={isBgc ? { fill: "rgba(255,255,255,0.04)" } : { stroke: S.borderHi, strokeWidth: 1 }}
             content={(props) => (
               <DarkTooltip
                 {...props}
                 labelFormatter={fmtMonthShort}
                 valueFormatter={cfg.tooltipFormatter}
+                nameFormatter={(n) =>
+                  n === "_total_mes"
+                    ? "Total checks del mes"
+                    : cfg.legendFormatter(n)
+                }
               />
             )}
           />
@@ -102,12 +132,39 @@ export default function TendenciaRazonesChart({
             iconType="circle"
             iconSize={8}
             formatter={(value: string) => (
-              <span style={{ color: S.muted }}>{cfg.legendFormatter(value)}</span>
+              <span style={{ color: S.muted }}>
+                {value === "_total_mes" ? "Total checks del mes" : cfg.legendFormatter(value)}
+              </span>
             )}
           />
+          {/* Bar de total mensual — solo BGC */}
+          {isBgc && (
+            <Bar
+              yAxisId="left"
+              dataKey="_total_mes"
+              fill={barColor}
+              fillOpacity={0.45}
+              radius={[3, 3, 0, 0]}
+              maxBarSize={56}
+              name="_total_mes"
+              animationDuration={650}
+              animationEasing="ease-out"
+              isAnimationActive
+              activeBar={buildActiveBarStyle(barColor)}
+            >
+              <LabelList
+                dataKey="_total_mes"
+                position="top"
+                formatter={dataLabelFormatter}
+                style={DATA_LABEL_STYLE}
+              />
+            </Bar>
+          )}
+          {/* Líneas — % por país (BGC) o volumen razones (DI/CE) */}
           {cfg.series.map((s, i) => (
             <Line
               key={s}
+              yAxisId={lineYAxisId}
               type="monotone"
               dataKey={s}
               stroke={colorAt(i)}
@@ -120,7 +177,7 @@ export default function TendenciaRazonesChart({
               connectNulls
             />
           ))}
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>
   );

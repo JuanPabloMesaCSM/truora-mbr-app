@@ -353,9 +353,11 @@ export function parseBgcRejectionTendencia(bloques: BloqueMap | null): BgcReject
     .filter((x) => x.periodo);
 }
 
-/** Pivota BgcRejectionTendenciaRow para Recharts: 1 fila por mes, 1 columna por país (con % rejection). */
+/** Pivota BgcRejectionTendenciaRow para Recharts: 1 fila por mes, 1 columna por país
+ *  (con % rejection) + un campo `_total_mes` con la suma de checks completados
+ *  de todos los países en ese mes (para renderizar como barras de contexto). */
 export function pivotBgcRejectionTendencia(rows: BgcRejectionTendenciaRow[]): {
-  data: Array<{ periodo: string } & Record<string, number>>;
+  data: Array<{ periodo: string; _total_mes: number } & Record<string, number>>;
   series: string[];
 } {
   const seriesMap: Record<string, number> = {};
@@ -364,16 +366,21 @@ export function pivotBgcRejectionTendencia(rows: BgcRejectionTendenciaRow[]): {
   }
   const series = Object.keys(seriesMap).sort((a, b) => seriesMap[b] - seriesMap[a]);
 
-  const byPeriodo: Record<string, Record<string, number>> = {};
+  const byPeriodoPct: Record<string, Record<string, number>> = {};
+  const totalByPeriodo: Record<string, number> = {};
   for (const r of rows) {
-    if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
-    byPeriodo[r.periodo][r.pais] = r.pctRejection ?? 0;
+    if (!byPeriodoPct[r.periodo]) byPeriodoPct[r.periodo] = {};
+    byPeriodoPct[r.periodo][r.pais] = r.pctRejection ?? 0;
+    totalByPeriodo[r.periodo] = (totalByPeriodo[r.periodo] ?? 0) + r.totalCompletados;
   }
-  const data = Object.keys(byPeriodo)
+  const data = Object.keys(byPeriodoPct)
     .sort()
     .map((periodo) => {
-      const rec: { periodo: string } & Record<string, number> = { periodo };
-      for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
+      const rec: { periodo: string; _total_mes: number } & Record<string, number> = {
+        periodo,
+        _total_mes: totalByPeriodo[periodo] ?? 0,
+      };
+      for (const s of series) rec[s] = byPeriodoPct[periodo][s] ?? 0;
       return rec;
     });
   return { data, series };

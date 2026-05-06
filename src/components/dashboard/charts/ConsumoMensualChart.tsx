@@ -1,9 +1,9 @@
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   Legend,
+  LabelList,
   Line,
   ComposedChart,
   ResponsiveContainer,
@@ -27,6 +27,9 @@ import {
   GRID_STYLE,
   colorAt,
   labelSubProductoForChart,
+  dataLabelFormatter,
+  DATA_LABEL_STYLE,
+  buildActiveBarStyle,
 } from "./sharedChartUtils";
 
 /**
@@ -129,11 +132,17 @@ export default function ConsumoMensualChart({
               animationDuration={650}
               animationEasing="ease-out"
               isAnimationActive
+              activeBar={buildActiveBarStyle(colorAt(i))}
             >
-              {/* Animación staggered: el efecto de entrada de cada serie es secuencial */}
               {dataConTotal.map((_, idx) => (
                 <Cell key={idx} fill={colorAt(i)} />
               ))}
+              <LabelList
+                dataKey={s}
+                position="top"
+                formatter={dataLabelFormatter}
+                style={DATA_LABEL_STYLE}
+              />
             </Bar>
           ))}
           <Line

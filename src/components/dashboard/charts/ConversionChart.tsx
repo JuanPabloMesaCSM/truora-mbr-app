@@ -3,6 +3,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -23,6 +24,10 @@ import {
   ChartCard,
   DarkTooltip,
   GRID_STYLE,
+  dataLabelFormatter,
+  dataLabelPctFormatter,
+  DATA_LABEL_STYLE,
+  buildActiveBarStyle,
 } from "./sharedChartUtils";
 
 /**
@@ -117,10 +122,17 @@ export default function ConversionChart({
             animationEasing="ease-out"
             isAnimationActive
             name={cfg.barLabel}
+            activeBar={buildActiveBarStyle(cfg.barColor)}
           >
             {data.map((_, idx) => (
               <Cell key={idx} fill={cfg.barColor} fillOpacity={0.85} />
             ))}
+            <LabelList
+              dataKey="bar"
+              position="top"
+              formatter={dataLabelFormatter}
+              style={DATA_LABEL_STYLE}
+            />
           </Bar>
           <Line
             yAxisId="right"
@@ -135,7 +147,15 @@ export default function ConversionChart({
             animationEasing="ease-out"
             isAnimationActive
             connectNulls
-          />
+          >
+            <LabelList
+              dataKey="line"
+              position="top"
+              offset={10}
+              formatter={dataLabelPctFormatter}
+              style={{ ...DATA_LABEL_STYLE, fill: cfg.lineColor }}
+            />
+          </Line>
         </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>

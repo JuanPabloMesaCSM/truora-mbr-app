@@ -121,6 +121,49 @@ export const GRID_STYLE = {
   strokeDasharray: "3 3",
 };
 
+/* ─────────────────────────── Datalabel formatter ─────────────────────────── */
+
+/** Formatea un número para mostrar encima de la barra (LabelList).
+ *  - 0 / null / undefined → string vacío (oculta el label, no satura visualmente)
+ *  - >= 1000 → "1.5k" / "12k"  (compacto)
+ *  - < 1000  → entero literal
+ *  - %       → mantiene 1 decimal y sufijo (caller decide pasarlo via formatter dedicado) */
+export function dataLabelFormatter(v: number | string | null | undefined): string {
+  if (v == null) return "";
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!isFinite(n) || n === 0) return "";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  return Math.round(n).toString();
+}
+
+/** Formatter datalabel para porcentajes (1 decimal, oculta 0 y NaN). */
+export function dataLabelPctFormatter(v: number | string | null | undefined): string {
+  if (v == null) return "";
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!isFinite(n) || n === 0) return "";
+  return `${n.toFixed(1)}%`;
+}
+
+/** Estilo del label encima de barra. Color claro contra fondo dark. */
+export const DATA_LABEL_STYLE = {
+  fill: S.text,
+  fontSize: 10,
+  fontWeight: 600,
+  fontFamily: "Inter, system-ui, sans-serif",
+};
+
+/** Stroke / fill del activeBar para destacar visualmente al hover.
+ *  Recharts aplica este style solo a la barra que tiene cursor encima. */
+export function buildActiveBarStyle(barColor: string): React.CSSProperties {
+  return {
+    fill: barColor,
+    stroke: S.text,
+    strokeWidth: 1.5,
+    strokeOpacity: 0.9,
+  };
+}
+
 /* ─────────────────────────── Sub-producto labels human-readable ─────────────────────────── */
 
 /** Mapping de PRODUCT_IDENTIFIER técnico a label legible para charts.
