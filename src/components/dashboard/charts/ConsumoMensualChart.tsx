@@ -94,6 +94,11 @@ export default function ConsumoMensualChart({
         <ComposedChart
           data={dataConTotal}
           margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
+          // Espaciar barras del mismo grupo (barGap) y entre meses
+          // (barCategoryGap) — sin esto, con 5 sub-productos por mes los
+          // datalabels de barras adyacentes se chocan.
+          barGap={6}
+          barCategoryGap="18%"
         >
           <CartesianGrid {...GRID_STYLE} vertical={false} />
           <XAxis
@@ -135,7 +140,7 @@ export default function ConsumoMensualChart({
               dataKey={s}
               fill={colorAt(i)}
               radius={[3, 3, 0, 0]}
-              maxBarSize={42}
+              maxBarSize={30}
               animationDuration={650}
               animationEasing="ease-out"
               isAnimationActive
@@ -158,7 +163,10 @@ export default function ConsumoMensualChart({
                 dataKey={s}
                 position="top"
                 formatter={dataLabelFormatter}
-                style={DATA_LABEL_STYLE}
+                // Font 9px (DATA_LABEL_STYLE base es 10) — con 5 series por
+                // mes el ancho del datalabel pega contra el de la barra
+                // adyacente. 1px menos da el margen suficiente.
+                style={{ ...DATA_LABEL_STYLE, fontSize: 9 }}
               />
             </Bar>
           ))}
