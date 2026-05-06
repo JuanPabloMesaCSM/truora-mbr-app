@@ -17,6 +17,7 @@ import {
   pivotConsumoMensual,
   fmtMonthShort,
   type BloqueMap,
+  type Producto,
 } from "../types";
 import {
   AXIS_STYLE,
@@ -25,7 +26,7 @@ import {
   DarkTooltip,
   GRID_STYLE,
   colorAt,
-  labelSubProducto,
+  labelSubProductoForChart,
 } from "./sharedChartUtils";
 
 /**
@@ -40,18 +41,21 @@ import {
  */
 export default function ConsumoMensualChart({
   bloques,
-  productLabel,
+  producto,
 }: {
   bloques: BloqueMap | null;
-  /** "DI" / "BGC" / "CE" — solo para subtitle del card */
-  productLabel: string;
+  /** Producto del cliente — define idioma de los labels de series.
+   *  DI usa inglés (Document Validation, Passive Liveness, etc.) porque
+   *  los nombres técnicos de sub-validaciones se reconocen mejor en inglés.
+   *  BGC/CE usan lenguaje CSM (skill truora-domain). */
+  producto: Producto;
 }) {
   const rows = parseConsumoMensual(bloques);
   if (rows.length === 0) {
     return (
       <ChartCard
         title="Consumo mensual por producto"
-        subtitle={`${productLabel} · Sin data en el rango`}
+        subtitle={`${producto} · Sin data en el rango`}
         height={120}
       >
         <div style={{ color: S.dim, fontSize: 12, textAlign: "center", paddingTop: 40 }}>
@@ -73,7 +77,7 @@ export default function ConsumoMensualChart({
   return (
     <ChartCard
       title="Consumo mensual por producto"
-      subtitle={`${productLabel} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"}`}
+      subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"}`}
       height={340}
     >
       <ResponsiveContainer width="100%" height="100%">
@@ -103,6 +107,7 @@ export default function ConsumoMensualChart({
                 {...props}
                 labelFormatter={fmtMonthShort}
                 valueFormatter={(v) => v.toLocaleString("es-CO")}
+                nameFormatter={(n) => (n === "_total" ? "Total" : labelSubProductoForChart(n, producto))}
               />
             )}
           />
@@ -111,7 +116,7 @@ export default function ConsumoMensualChart({
             iconType="circle"
             iconSize={8}
             formatter={(value: string) => (
-              <span style={{ color: S.muted }}>{labelSubProducto(value)}</span>
+              <span style={{ color: S.muted }}>{labelSubProductoForChart(value, producto)}</span>
             )}
           />
           {series.map((s, i) => (

@@ -174,9 +174,9 @@ function buildData(bloques: BloqueMap | null, producto: Producto): ChartRow[] {
 }
 
 function titleFor(producto: Producto): string {
-  if (producto === "DI") return "Conversión y total de procesos";
-  if (producto === "BGC") return "Pass rate y total de checks";
-  return "Volumen y % inbound";
+  if (producto === "DI") return "Conversión y total de validaciones";
+  if (producto === "BGC") return "Checks exitosos y total de checks";
+  return "Volumen y % de conversaciones entrantes";
 }
 
 function configFor(producto: Producto): {
@@ -189,10 +189,10 @@ function configFor(producto: Producto): {
 } {
   if (producto === "DI") {
     return {
-      barLabel: "Procesos",
-      lineLabel: "Conversión %",
-      barColor: "#A78BFA", // light purple
-      lineColor: "#10B981", // green
+      barLabel: "Validaciones",
+      lineLabel: "% Conversión",
+      barColor: "#A78BFA",
+      lineColor: "#10B981",
       lineDomain: 100,
       lineFormatter: (v: number) => `${v}%`,
     };
@@ -200,18 +200,18 @@ function configFor(producto: Producto): {
   if (producto === "BGC") {
     return {
       barLabel: "Checks",
-      lineLabel: "Pass rate %",
+      lineLabel: "% Checks exitosos",
       barColor: "#A78BFA",
-      lineColor: "#6C3FC5", // violet
+      lineColor: "#6C3FC5",
       lineDomain: 100,
       lineFormatter: (v: number) => `${v}%`,
     };
   }
   return {
     barLabel: "Mensajes",
-    lineLabel: "% inbound",
+    lineLabel: "% Conversaciones entrantes",
     barColor: "#A78BFA",
-    lineColor: "#0891B2", // cyan
+    lineColor: "#0891B2",
     lineDomain: 100,
     lineFormatter: (v: number) => `${v}%`,
   };

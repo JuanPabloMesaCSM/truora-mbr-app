@@ -37,6 +37,8 @@ export interface CustomTooltipProps {
   valueFormatter?: (v: number) => string;
   /** Label override (ej: para mostrar mes legible en lugar de YYYY-MM-DD) */
   labelFormatter?: (l: string) => string;
+  /** Formatter para el nombre de la serie (ej: traducir slug a label CSM) */
+  nameFormatter?: (n: string) => string;
 }
 
 export function DarkTooltip({
@@ -45,6 +47,7 @@ export function DarkTooltip({
   label,
   valueFormatter = (v) => v.toLocaleString("es-CO"),
   labelFormatter,
+  nameFormatter,
 }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   return (
@@ -95,7 +98,7 @@ export function DarkTooltip({
                   whiteSpace: "nowrap",
                 }}
               >
-                {p.name}
+                {nameFormatter ? nameFormatter(p.name) : p.name}
               </span>
             </div>
             <span style={{ fontWeight: 700, color: S.text }}>{valueFormatter(p.value)}</span>
@@ -121,26 +124,40 @@ export const GRID_STYLE = {
 /* ─────────────────────────── Sub-producto labels human-readable ─────────────────────────── */
 
 /** Mapping de PRODUCT_IDENTIFIER técnico a label legible para charts.
- *  Cubre los identifiers conocidos de SHARED_COUNTERS_DYNAMO. */
-export const SUB_PRODUCTO_LABELS: Record<string, string> = {
-  // DI
-  document_validation: "Validación documento",
-  document_manual_review: "Revisión manual doc",
-  passive_liveness: "Vida pasiva",
-  face_search: "Reconocimiento facial",
-  face_manual_review: "Revisión manual rostro",
-  electronic_signature: "Firma electrónica",
-  phone_verification: "Verificación teléfono",
+ *  Por decisión 2026-05-06: en DI mantenemos los slugs en inglés
+ *  (title-case) porque los nombres técnicos de las sub-validaciones son
+ *  internacionalmente conocidos como tal y traducirlos perdía precisión.
+ *  En BGC/CE sí traducimos al lenguaje CSM (skill truora-domain). */
+export const SUB_PRODUCTO_LABELS_BGC_CE: Record<string, string> = {
   // BGC
-  checks: "Background checks",
+  checks: "Checks de antecedentes",
   // CE
-  inbound: "Inbound",
-  outbound: "Outbound",
+  inbound: "Conversaciones entrantes",
+  outbound: "Mensajes salientes",
   notification: "Notificaciones",
 };
 
+/** Title-case en inglés para slugs DI: `document_validation` → `Document Validation`. */
+export function titleCaseEn(slug: string): string {
+  return slug
+    .split("_")
+    .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(" ");
+}
+
+/** Label de sub-producto para charts. En DI usa inglés title-case;
+ *  en BGC/CE usa el mapping español. */
+export function labelSubProductoForChart(
+  slug: string,
+  producto: "DI" | "BGC" | "CE",
+): string {
+  if (producto === "DI") return titleCaseEn(slug);
+  return SUB_PRODUCTO_LABELS_BGC_CE[slug] ?? slug.replace(/_/g, " ");
+}
+
+/** Versión legacy sin contexto de producto. Solo deja para compat. */
 export function labelSubProducto(slug: string): string {
-  return SUB_PRODUCTO_LABELS[slug] ?? slug.replace(/_/g, " ");
+  return SUB_PRODUCTO_LABELS_BGC_CE[slug] ?? titleCaseEn(slug);
 }
 
 /* ─────────────────────────── Card wrapper común ─────────────────────────── */

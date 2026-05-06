@@ -218,8 +218,8 @@ function buildRows(bloques: BloqueMap | null, producto: Producto): TablaRow[] {
 
 function titleFor(producto: Producto): string {
   if (producto === "DI") return "Razones de rechazo (todas, agregadas)";
-  if (producto === "BGC") return "Rejection rate por país";
-  return "Categorías de fallo outbound";
+  if (producto === "BGC") return "Checks rechazados por país";
+  return "Categorías de fallo de mensajes salientes";
 }
 
 function labelHeaderFor(producto: Producto): string {
@@ -229,7 +229,7 @@ function labelHeaderFor(producto: Producto): string {
 }
 
 function denomLabelFor(producto: Producto): string {
-  if (producto === "DI") return "fallidos";
+  if (producto === "DI") return "rechazos";
   if (producto === "BGC") return "checks";
   return "fallos";
 }

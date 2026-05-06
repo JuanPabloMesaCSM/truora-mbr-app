@@ -121,9 +121,9 @@ export const PRESET_LABELS: Record<PeriodoPresetId, string> = {
 export type TipoFallo = "ambos" | "declinado" | "expirado";
 
 export const TIPO_FALLO_LABELS: Record<TipoFallo, string> = {
-  ambos: "Todos los fallos",
-  declinado: "Solo declinados",
-  expirado: "Solo expirados",
+  ambos: "Todos los fallos (rechazados + abandonados)",
+  declinado: "Solo rechazados por el sistema",
+  expirado: "Solo abandonados por el usuario",
 };
 
 /* ─────────────────────────── Parsers consumo mensual ─────────────────────────── */

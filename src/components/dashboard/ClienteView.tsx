@@ -82,15 +82,15 @@ export default function ClienteView({
         <KpiCard
           producto="DI"
           metricas={[
-            { label: "Procesos", valor: fmtNum(di.totalProcesos), prev: fmtNum(di.totalProcesosPrev), variacionPct: di.variacionProcesosPct },
-            { label: "Conversión", valor: di.conversionPct != null ? `${di.conversionPct.toFixed(1)}%` : "—", prev: di.conversionPctPrev != null ? `${di.conversionPctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(di.conversionPct, di.conversionPctPrev) },
-            { label: "Exitosos", valor: fmtNum(di.exitosos), prev: fmtNum(di.exitososPrev), variacionPct: deltaPct(di.exitosos, di.exitososPrev) },
+            { label: "Validaciones", valor: fmtNum(di.totalProcesos), prev: fmtNum(di.totalProcesosPrev), variacionPct: di.variacionProcesosPct },
+            { label: "% Conversión", valor: di.conversionPct != null ? `${di.conversionPct.toFixed(1)}%` : "—", prev: di.conversionPctPrev != null ? `${di.conversionPctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(di.conversionPct, di.conversionPctPrev) },
+            { label: "Exitosas", valor: fmtNum(di.exitosos), prev: fmtNum(di.exitososPrev), variacionPct: deltaPct(di.exitosos, di.exitososPrev) },
           ]}
           breakdown={[
-            { label: "Expirados", valor: fmtNum(di.expirados) },
-            { label: "Declinados", valor: fmtNum(di.declinados) },
-            { label: "Cancelados", valor: fmtNum(di.cancelados) },
-            { label: "Errores técn.", valor: fmtNum(di.erroresTecnicos) },
+            { label: "Abandonadas", valor: fmtNum(di.expirados) },
+            { label: "Rechazadas", valor: fmtNum(di.declinados) },
+            { label: "Canceladas", valor: fmtNum(di.cancelados) },
+            { label: "Errores técnicos", valor: fmtNum(di.erroresTecnicos) },
           ]}
         />
       )}
@@ -99,13 +99,13 @@ export default function ClienteView({
           producto="BGC"
           metricas={[
             { label: "Checks", valor: fmtNum(bgc.totalChecks), prev: fmtNum(bgc.totalChecksPrev), variacionPct: bgc.variacionChecksPct },
-            { label: "Pass rate", valor: bgc.passRatePct != null ? `${bgc.passRatePct.toFixed(1)}%` : "—", prev: bgc.passRatePctPrev != null ? `${bgc.passRatePctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(bgc.passRatePct, bgc.passRatePctPrev) },
-            { label: "Score promedio", valor: bgc.scorePromedio != null ? bgc.scorePromedio.toFixed(2) : "—", prev: bgc.scorePromedioPrev != null ? bgc.scorePromedioPrev.toFixed(2) : "—", variacionPct: null },
+            { label: "% Checks exitosos", valor: bgc.passRatePct != null ? `${bgc.passRatePct.toFixed(1)}%` : "—", prev: bgc.passRatePctPrev != null ? `${bgc.passRatePctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(bgc.passRatePct, bgc.passRatePctPrev) },
+            { label: "Puntaje promedio", valor: bgc.scorePromedio != null ? bgc.scorePromedio.toFixed(2) : "—", prev: bgc.scorePromedioPrev != null ? bgc.scorePromedioPrev.toFixed(2) : "—", variacionPct: null },
           ]}
           breakdown={[
             { label: "Completados", valor: fmtNum(bgc.completados) },
             { label: "Errores", valor: fmtNum(bgc.errores) },
-            { label: "Rechazo", valor: bgc.rejectionRatePct != null ? `${bgc.rejectionRatePct.toFixed(1)}%` : "—" },
+            { label: "% Rechazados", valor: bgc.rejectionRatePct != null ? `${bgc.rejectionRatePct.toFixed(1)}%` : "—" },
           ]}
         />
       )}
@@ -114,12 +114,12 @@ export default function ClienteView({
           producto="CE"
           metricas={[
             { label: "Total mensajes", valor: fmtNum(ce.total), prev: fmtNum(ce.totalPrev), variacionPct: ce.variacionTotalPct },
-            { label: "Inbound", valor: fmtNum(ce.inbound), prev: fmtNum(ce.inboundPrev), variacionPct: ce.variacionInboundPct },
-            { label: "Outbound", valor: fmtNum(ce.outbound), prev: fmtNum(ce.outboundPrev), variacionPct: ce.variacionOutboundPct },
+            { label: "Conversaciones entrantes", valor: fmtNum(ce.inbound), prev: fmtNum(ce.inboundPrev), variacionPct: ce.variacionInboundPct },
+            { label: "Mensajes salientes", valor: fmtNum(ce.outbound), prev: fmtNum(ce.outboundPrev), variacionPct: ce.variacionOutboundPct },
           ]}
           breakdown={[
             { label: "Notificaciones", valor: fmtNum(ce.notif) },
-            { label: "Outbound éxito", valor: ceFallos.pctExito != null ? `${ceFallos.pctExito.toFixed(0)}%` : "—" },
+            { label: "% éxito salientes", valor: ceFallos.pctExito != null ? `${ceFallos.pctExito.toFixed(0)}%` : "—" },
           ]}
         />
       )}
@@ -151,23 +151,24 @@ export default function ClienteView({
         />
       )}
 
-      {/* BGC: anomalías labels High (sigue como tabla aparte — es una alerta puntual) */}
+      {/* BGC: alertas de riesgo alto (anomalías) */}
       {ranEjecutados.BGC && bgcAnomalias.length > 0 && (
-        <Section title="BGC — anomalías labels High">
+        <Section title="BGC — alertas de riesgo alto">
           <div style={cardStyle()}>
             <div style={cardHeaderStyle("#F59E0B", <AlertTriangle size={12} />)}>
-              Score promedio &gt; 6 con label "High"
+              Casos con alerta de riesgo alto pero puntaje promedio &gt; 6
             </div>
             <div style={{ fontSize: 11, color: S.muted, marginBottom: 10, lineHeight: 1.5 }}>
-              Estos labels marcan riesgo "alto" pero el score promedio terminó arriba de 6 (umbral pass).
-              Puede indicar umbral mal calibrado en los modelos del cliente — vale la pena revisar.
+              Estos casos llegaron con alerta de riesgo alto pero el puntaje promedio
+              terminó por encima del umbral típico (6). Puede indicar un umbral mal
+              calibrado del modelo — vale la pena revisarlo con el cliente.
             </div>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr>
-                  <th style={thStyle()}>Label</th>
-                  <th style={thStyle("right")}>Score</th>
-                  <th style={thStyle("right")}>N</th>
+                  <th style={thStyle()}>Tipo de alerta</th>
+                  <th style={thStyle("right")}>Puntaje</th>
+                  <th style={thStyle("right")}>Casos</th>
                 </tr>
               </thead>
               <tbody>
@@ -186,7 +187,7 @@ export default function ClienteView({
         </Section>
       )}
 
-      {/* CE: % éxito outbound como dato suelto (no necesita chart propio) */}
+      {/* CE: % éxito de mensajes salientes como dato suelto */}
       {ranEjecutados.CE && ceFallos.items.length > 0 && ceFallos.pctExito != null && (
         <div
           style={{
@@ -202,7 +203,7 @@ export default function ClienteView({
           }}
         >
           <span style={{ color: S.muted }}>
-            Tasa de éxito outbound del rango
+            % de mensajes salientes entregados con éxito
           </span>
           <span style={{ fontWeight: 700, fontSize: 18, color: PROD_META.CE.color }}>
             {ceFallos.pctExito.toFixed(1)}%
@@ -262,7 +263,7 @@ function ProductCharts({
           gap: 16,
         }}
       >
-        <ConsumoMensualChart bloques={bloques} productLabel={producto} />
+        <ConsumoMensualChart bloques={bloques} producto={producto} />
         <ConversionChart bloques={bloques} producto={producto} />
         <TendenciaRazonesChart bloques={bloques} producto={producto} tipoFallo={tipoFallo} />
         <RazonesTablaHeatmap bloques={bloques} producto={producto} />

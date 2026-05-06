@@ -169,8 +169,8 @@ function buildPivot(bloques: BloqueMap | null, producto: Producto): PivotConfig 
 }
 
 function titleFor(producto: Producto): string {
-  if (producto === "DI") return "Tendencia mensual top 5 razones";
-  if (producto === "BGC") return "Tendencia mensual % rejection por país";
+  if (producto === "DI") return "Tendencia mensual top 5 razones de rechazo";
+  if (producto === "BGC") return "Tendencia mensual de % checks rechazados por país";
   return "Tendencia mensual top 5 categorías de fallo";
 }
 
@@ -183,9 +183,9 @@ function subtitleFor(
   const base = `${producto} · ${numSeries} ${numSeries === 1 ? "serie" : "series"} · ${numMeses} ${numMeses === 1 ? "mes" : "meses"}`;
   if (producto === "DI") {
     const filtroLabel =
-      tipoFallo === "ambos"     ? "incluye declinados + expirados"
-    : tipoFallo === "declinado" ? "solo declinados"
-    : /* expirado */              "solo expirados";
+      tipoFallo === "ambos"     ? "rechazados + abandonados"
+    : tipoFallo === "declinado" ? "solo rechazados por el sistema"
+    : /* expirado */              "solo abandonados por el usuario";
     return `${base} · ${filtroLabel}`;
   }
   return base;

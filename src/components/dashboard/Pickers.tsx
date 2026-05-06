@@ -450,9 +450,9 @@ export function TipoFalloPicker({
   onChange: (v: TipoFallo) => void;
 }) {
   const options: { id: TipoFallo; label: string; color: string }[] = [
-    { id: "ambos",     label: "Todos",      color: "#7DD3FC" },
-    { id: "declinado", label: "Declinados", color: "#F59E0B" },
-    { id: "expirado",  label: "Expirados",  color: "#A78BFA" },
+    { id: "ambos",     label: "Todos",       color: "#7DD3FC" },
+    { id: "declinado", label: "Rechazados",  color: "#F59E0B" },
+    { id: "expirado",  label: "Abandonados", color: "#A78BFA" },
   ];
   return (
     <div style={{ display: "flex", gap: 4 }} title={TIPO_FALLO_LABELS[value]}>
