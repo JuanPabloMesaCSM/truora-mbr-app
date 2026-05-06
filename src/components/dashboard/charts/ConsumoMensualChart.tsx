@@ -162,10 +162,13 @@ export default function ConsumoMensualChart({
               <LabelList
                 dataKey={s}
                 position="top"
+                // Rotamos -90° para que el ancho del número (ej "2.093")
+                // deje de competir con el de la barra adyacente. Vertical,
+                // leyendo de abajo hacia arriba. Offset alto para que la
+                // base del texto rotado quede sobre el tope de la barra.
+                angle={-90}
+                offset={18}
                 formatter={dataLabelFormatter}
-                // Font 9px (DATA_LABEL_STYLE base es 10) — con 5 series por
-                // mes el ancho del datalabel pega contra el de la barra
-                // adyacente. 1px menos da el margen suficiente.
                 style={{ ...DATA_LABEL_STYLE, fontSize: 9 }}
               />
             </Bar>
