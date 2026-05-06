@@ -255,18 +255,27 @@ function ProductCharts({
         </span>
       </div>
 
-      {/* Grid de 4 charts: 2 columnas en pantallas anchas, 1 en mobile */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
-          gap: 16,
-        }}
-      >
+      {/* Layout:
+            - ConsumoMensual full-width (5 sub-productos × N meses con datalabels
+              horizontales necesita ancho completo para que los números no se
+              choquen entre barras adyacentes).
+            - Conversion full-width también (justo abajo, mismo razonamiento
+              de respiración visual + ahora son los 2 charts "headline").
+            - Tendencia + Razones tabla siguen en grid 2 columnas (charts más
+              compactos, no necesitan tanto ancho). */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <ConsumoMensualChart bloques={bloques} producto={producto} />
         <ConversionChart bloques={bloques} producto={producto} />
-        <TendenciaRazonesChart bloques={bloques} producto={producto} tipoFallo={tipoFallo} />
-        <RazonesTablaHeatmap bloques={bloques} producto={producto} />
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+            gap: 16,
+          }}
+        >
+          <TendenciaRazonesChart bloques={bloques} producto={producto} tipoFallo={tipoFallo} />
+          <RazonesTablaHeatmap bloques={bloques} producto={producto} />
+        </div>
       </div>
     </div>
   );

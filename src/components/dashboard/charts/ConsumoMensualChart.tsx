@@ -87,7 +87,7 @@ export default function ConsumoMensualChart({
   return (
     <ChartCard
       title="Consumo mensual por producto"
-      subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"} · pasa el mouse por una barra para ver el desglose`}
+      subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"}`}
       height={420}
     >
       <ResponsiveContainer width="100%" height="100%">
@@ -156,10 +156,17 @@ export default function ConsumoMensualChart({
                   />
                 );
               })}
-              {/* Sin datalabels per-bar: con 5 sub-productos por mes los
-                  números de barras adyacentes se chocaban (probamos rotar 90°
-                  y quedó ilegible). El desglose se ve en el tooltip al hover.
-                  El total mensual se etiqueta sobre la línea del Total abajo. */}
+              {/* Datalabel per-bar horizontal. Posible ahora que el chart es
+                  full-width (~1260px) — cada barra tiene ~50-60px de ancho
+                  con barCategoryGap=14% y los números (max 4 dígitos = ~30px)
+                  caben sin solaparse con la barra adyacente. */}
+              <LabelList
+                dataKey={s}
+                position="top"
+                offset={6}
+                formatter={dataLabelFormatter}
+                style={{ ...DATA_LABEL_STYLE, fontSize: 10 }}
+              />
             </Bar>
           ))}
           <Line
