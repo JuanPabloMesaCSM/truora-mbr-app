@@ -135,7 +135,7 @@ export function ClientePicker({
       return (
         <form onSubmit={handleSubmit} style={{ display: "flex", gap: 6 }}>
           <input
-            placeholder="Pegá TCI + Enter"
+            placeholder="Pega el TCI + Enter"
             value={tciInput}
             onChange={(e) => { setTciInput(e.target.value); setError(null); }}
             style={{
@@ -187,10 +187,10 @@ export function ClientePicker({
           marginBottom: 8,
         }}
       >
-        Buscá un cliente
+        Buscar cliente
       </div>
       <div style={{ fontSize: 18, fontWeight: 700, color: S.text, marginBottom: 18 }}>
-        Pegá el CLIENT_ID y dale Enter
+        Ingresa el CLIENT_ID y presiona Enter
       </div>
       <div style={{ position: "relative" }}>
         <Search
@@ -250,7 +250,7 @@ export function ClientePicker({
         }}
       >
         El sistema busca el TCI contra DI, BGC y CE. Si lo encuentra, te muestra
-        el cliente y todas las métricas del rango que elijas abajo.
+        el cliente y todas las métricas del rango seleccionado abajo.
       </div>
     </form>
   );

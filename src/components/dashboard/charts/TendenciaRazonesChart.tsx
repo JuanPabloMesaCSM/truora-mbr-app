@@ -91,12 +91,15 @@ export default function TendenciaRazonesChart({
             tickLine={false}
             axisLine={{ stroke: S.border }}
           />
-          {/* Eje izquierdo: en BGC = volumen total; en DI/CE = volumen razones */}
+          {/* Eje izquierdo: en BGC = volumen total; en DI/CE = volumen razones.
+              Headroom 30% para que el datalabel sobre la barra no choque con
+              el datalabel de la línea (caso BGC: línea cerca del 100%, barras al tope). */}
           <YAxis
             yAxisId="left"
             tick={AXIS_STYLE}
             tickLine={false}
             axisLine={false}
+            domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
             tickFormatter={isBgc ? (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`) : cfg.yFormatter}
             width={48}
           />
@@ -118,7 +121,11 @@ export default function TendenciaRazonesChart({
               <DarkTooltip
                 {...props}
                 labelFormatter={fmtMonthShort}
-                valueFormatter={cfg.tooltipFormatter}
+                valueFormatter={(v, name) =>
+                  // _total_mes (BGC) es un conteo, no un %. Las demás series usan
+                  // el formatter del producto (BGC = "%", DI/CE = entero es-CO).
+                  name === "_total_mes" ? v.toLocaleString("es-CO") : cfg.tooltipFormatter(v)
+                }
                 nameFormatter={(n) =>
                   n === "_total_mes"
                     ? "Total checks del mes"

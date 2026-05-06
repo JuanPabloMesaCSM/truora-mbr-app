@@ -85,6 +85,7 @@ export default function ConversionChart({
             tick={AXIS_STYLE}
             tickLine={false}
             axisLine={false}
+            domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.3)]}
             tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`)}
             width={48}
           />

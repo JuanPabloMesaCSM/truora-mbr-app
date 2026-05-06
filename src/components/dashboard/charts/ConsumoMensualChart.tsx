@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -29,7 +30,6 @@ import {
   labelSubProductoForChart,
   dataLabelFormatter,
   DATA_LABEL_STYLE,
-  buildActiveBarStyle,
 } from "./sharedChartUtils";
 
 /**
@@ -53,6 +53,13 @@ export default function ConsumoMensualChart({
    *  BGC/CE usan lenguaje CSM (skill truora-domain). */
   producto: Producto;
 }) {
+  // Hover state per-celda: cuando el user pasa el mouse sobre una barra
+  // específica (un sub-producto en un mes específico), solo esa celda se
+  // resalta con stroke. El tooltip sigue shared (muestra todos los valores
+  // del periodo). Con activeBar de Recharts + shared tooltip se highlight
+  // todas las barras del grupo — no es lo que queremos.
+  const [activeCell, setActiveCell] = useState<{ key: string; idx: number } | null>(null);
+
   const rows = parseConsumoMensual(bloques);
   if (rows.length === 0) {
     return (
@@ -132,11 +139,21 @@ export default function ConsumoMensualChart({
               animationDuration={650}
               animationEasing="ease-out"
               isAnimationActive
-              activeBar={buildActiveBarStyle(colorAt(i))}
+              onMouseEnter={(_d: unknown, idx: number) => setActiveCell({ key: s, idx })}
+              onMouseLeave={() => setActiveCell(null)}
             >
-              {dataConTotal.map((_, idx) => (
-                <Cell key={idx} fill={colorAt(i)} />
-              ))}
+              {dataConTotal.map((_, idx) => {
+                const isActive = activeCell?.key === s && activeCell?.idx === idx;
+                return (
+                  <Cell
+                    key={idx}
+                    fill={colorAt(i)}
+                    stroke={isActive ? S.text : undefined}
+                    strokeWidth={isActive ? 1.5 : 0}
+                    strokeOpacity={isActive ? 0.9 : 0}
+                  />
+                );
+              })}
               <LabelList
                 dataKey={s}
                 position="top"

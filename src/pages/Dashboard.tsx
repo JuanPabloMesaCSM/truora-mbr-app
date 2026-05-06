@@ -12,7 +12,9 @@ import {
   TipoFalloPicker,
 } from "@/components/dashboard/Pickers";
 import ClienteView from "@/components/dashboard/ClienteView";
+import PortfolioTable from "@/components/dashboard/PortfolioTable";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { usePortfolioConsumption } from "@/hooks/usePortfolioConsumption";
 import {
   buildPreset,
   type ClienteRow,
@@ -22,18 +24,20 @@ import {
 } from "@/components/dashboard/types";
 
 /**
- * Página /dashboard — vista cliente individual con búsqueda por TCI.
+ * Página /dashboard — Dashboard de Cartera.
  *
  * Flujo:
- *   1. Sin cliente: panel central con search-by-TCI hero + periodo picker grande.
- *   2. Con cliente: pickers suben al top bar; main muestra ClienteView con
- *      4 charts por producto (Recharts).
+ *   1. Sin cliente: panel central muestra tabla portfolio (consumo de toda la
+ *      cartera dentro del rango). Click en fila → entra al cliente.
+ *      Header siempre tiene search-by-TCI + period picker centrado.
+ *   2. Con cliente: header agrega productos + tipo_fallo; main muestra
+ *      ClienteView con los 4 charts por producto.
  *
- * Filtro global tipo_fallo (declinado/expirado/ambos): persiste en top bar
- * cuando hay cliente. Afecta principalmente las visuales de razones DI.
+ * Datos:
+ *   - Tabla portfolio: lee public.portfolio_consumption (cron LMV 6 AM BOG).
+ *   - Drill-down: webhook n8n on-demand (~30-60s).
  *
- * RLS team-wide: cualquier CSM ve cualquier cliente (consistente con la
- * decisión 2026-04-29 de boti_alertas + clientes).
+ * RLS team-wide: cualquier CSM ve cualquier cliente (decisión 2026-04-29).
  */
 
 export default function Dashboard() {
@@ -96,7 +100,7 @@ export default function Dashboard() {
     });
   }, [selectedCliente, productosAvail]);
 
-  /* ── params para el webhook ───────────────────────────────────── */
+  /* ── params para el webhook (drill-down) ──────────────────────── */
   const dashboardParams = useMemo(() => {
     if (!selectedCliente || !userEmail || productosSel.size === 0) return null;
     return {
@@ -112,6 +116,9 @@ export default function Dashboard() {
   }, [selectedCliente, userEmail, productosSel, periodo, tipoFallo]);
 
   const { data, loading, error } = useDashboardData(dashboardParams);
+
+  /* ── portfolio (panel principal sin cliente) ──────────────────── */
+  const portfolio = usePortfolioConsumption(periodo);
 
   /* ── render ───────────────────────────────────────────────────── */
   if (!authChecked) return null;
@@ -141,16 +148,23 @@ export default function Dashboard() {
         />
 
         <main style={{ maxWidth: 1320, margin: "0 auto", padding: "92px 28px 60px" }}>
-          {/* Panel central (sin cliente seleccionado) */}
+          {/* Sin cliente: tabla portfolio */}
           {!hasSelection && (
-            <CentralPicker
-              loading={clientesLoading}
-              error={clientesError}
-              clientes={clientes}
-              onSelectCliente={setSelectedCliente}
-              periodo={periodo}
-              onPeriodoChange={setPeriodo}
-            />
+            clientesLoading ? (
+              <div style={emptyCardStyle}>Cargando clientes…</div>
+            ) : clientesError ? (
+              <div style={errorBoxStyle}>Error al cargar clientes: {clientesError}</div>
+            ) : (
+              <PortfolioTable
+                rows={portfolio.rows}
+                meta={portfolio.meta}
+                loading={portfolio.loading}
+                error={portfolio.error}
+                clientes={clientes}
+                periodo={periodo}
+                onClickCliente={setSelectedCliente}
+              />
+            )
           )}
 
           {/* Vista cliente */}
@@ -209,7 +223,9 @@ function TopBar({
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0,
-      display: "flex", alignItems: "center", justifyContent: "space-between",
+      display: "grid",
+      gridTemplateColumns: "1fr auto 1fr",
+      alignItems: "center",
       padding: "14px 24px", gap: 12,
       background: "rgba(8,12,31,0.7)",
       backdropFilter: "blur(12px)",
@@ -218,7 +234,7 @@ function TopBar({
       zIndex: 10,
     }}>
       {/* Izquierda: volver + título */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, justifySelf: "start" }}>
         <button
           onClick={onBack}
           style={{
@@ -240,122 +256,32 @@ function TopBar({
         </div>
       </div>
 
-      {/* Derecha: pickers solo cuando hay cliente seleccionado */}
-      {hasSelection && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <ClientePicker
-            clientes={clientes}
-            selected={selectedCliente}
-            onSelect={onSelectCliente}
-            variant="compact"
-          />
-          <PeriodoPicker value={periodo} onChange={onPeriodoChange} />
-          <ProductosPicker
-            selected={productosSel}
-            available={productosAvail}
-            onChange={onProductosChange}
-          />
-          <TipoFalloPicker value={tipoFallo} onChange={onTipoFalloChange} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ─────────────────────────── Central picker (sin cliente) ─────────────────────────── */
-
-function CentralPicker({
-  loading,
-  error,
-  clientes,
-  onSelectCliente,
-  periodo,
-  onPeriodoChange,
-}: {
-  loading: boolean;
-  error: string | null;
-  clientes: ClienteRow[];
-  onSelectCliente: (c: ClienteRow | null) => void;
-  periodo: PeriodoSeleccion;
-  onPeriodoChange: (p: PeriodoSeleccion) => void;
-}) {
-  if (loading) {
-    return (
-      <div style={emptyCardStyle}>Cargando clientes…</div>
-    );
-  }
-  if (error) {
-    return (
-      <div style={errorBoxStyle}>
-        Error al cargar clientes: {error}
-      </div>
-    );
-  }
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-      style={{
-        marginTop: 28,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 18,
-      }}
-    >
-      <ClientePicker
-        clientes={clientes}
-        selected={null}
-        onSelect={onSelectCliente}
-        variant="hero"
-      />
-
-      {/* Periodo picker grande con foco en "rango personalizado" */}
-      <div
-        style={{
-          background: S.surface,
-          border: `1px solid ${S.border}`,
-          borderRadius: 16,
-          padding: "20px 26px",
-          maxWidth: 620,
-          width: "100%",
-          boxSizing: "border-box",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#7DD3FC",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: 4,
-            }}
-          >
-            Periodo
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>
-            {labelPeriodo(periodo)}
-          </div>
-          <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
-            Tip: para rangos custom (ej. "todo el 2026"), usá <strong style={{ color: S.text }}>Rango personalizado</strong>.
-          </div>
-        </div>
+      {/* Centro: search TCI + periodo (siempre visible) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "center", flexWrap: "wrap" }}>
+        <ClientePicker
+          clientes={clientes}
+          selected={selectedCliente}
+          onSelect={onSelectCliente}
+          variant="compact"
+        />
         <PeriodoPicker value={periodo} onChange={onPeriodoChange} />
       </div>
-    </motion.div>
-  );
-}
 
-function labelPeriodo(p: PeriodoSeleccion): string {
-  if (p.preset === "custom") return `${p.inicio} → ${p.fin}`;
-  return `${p.inicio} → ${p.fin}`;
+      {/* Derecha: filtros que solo aplican al drill-down */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifySelf: "end", flexWrap: "wrap" }}>
+        {hasSelection && (
+          <>
+            <ProductosPicker
+              selected={productosSel}
+              available={productosAvail}
+              onChange={onProductosChange}
+            />
+            <TipoFalloPicker value={tipoFallo} onChange={onTipoFalloChange} />
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* ─────────────────────────── Estados ─────────────────────────── */

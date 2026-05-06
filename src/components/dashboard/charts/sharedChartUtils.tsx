@@ -33,8 +33,10 @@ export interface CustomTooltipProps {
     payload?: Record<string, unknown>;
   }>;
   label?: string;
-  /** Formatter para el valor (ej: número con miles, porcentaje) */
-  valueFormatter?: (v: number) => string;
+  /** Formatter para el valor (ej: número con miles, porcentaje).
+   *  Recibe también el `name` de la serie para poder formatear distinto
+   *  por dataKey (ej: BGC tendencia mezcla volumen + %). */
+  valueFormatter?: (v: number, name?: string) => string;
   /** Label override (ej: para mostrar mes legible en lugar de YYYY-MM-DD) */
   labelFormatter?: (l: string) => string;
   /** Formatter para el nombre de la serie (ej: traducir slug a label CSM) */
@@ -101,7 +103,7 @@ export function DarkTooltip({
                 {nameFormatter ? nameFormatter(p.name) : p.name}
               </span>
             </div>
-            <span style={{ fontWeight: 700, color: S.text }}>{valueFormatter(p.value)}</span>
+            <span style={{ fontWeight: 700, color: S.text }}>{valueFormatter(p.value, p.name)}</span>
           </div>
         ))}
       </div>
@@ -124,17 +126,13 @@ export const GRID_STYLE = {
 /* ─────────────────────────── Datalabel formatter ─────────────────────────── */
 
 /** Formatea un número para mostrar encima de la barra (LabelList).
- *  - 0 / null / undefined → string vacío (oculta el label, no satura visualmente)
- *  - >= 1000 → "1.5k" / "12k"  (compacto)
- *  - < 1000  → entero literal
- *  - %       → mantiene 1 decimal y sufijo (caller decide pasarlo via formatter dedicado) */
+ *  Muestra el número completo con separador de miles es-CO (ej: "3.600", "11.427").
+ *  0 / null / undefined → string vacío (oculta el label). */
 export function dataLabelFormatter(v: number | string | null | undefined): string {
   if (v == null) return "";
   const n = typeof v === "string" ? Number(v) : v;
   if (!isFinite(n) || n === 0) return "";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
-  return Math.round(n).toString();
+  return Math.round(n).toLocaleString("es-CO");
 }
 
 /** Formatter datalabel para porcentajes (1 decimal, oculta 0 y NaN). */
