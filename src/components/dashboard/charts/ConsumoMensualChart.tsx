@@ -87,18 +87,15 @@ export default function ConsumoMensualChart({
   return (
     <ChartCard
       title="Consumo mensual por producto"
-      subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"}`}
-      height={340}
+      subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"} · pasa el mouse por una barra para ver el desglose`}
+      height={420}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={dataConTotal}
-          margin={{ top: 16, right: 16, left: 0, bottom: 8 }}
-          // Espaciar barras del mismo grupo (barGap) y entre meses
-          // (barCategoryGap) — sin esto, con 5 sub-productos por mes los
-          // datalabels de barras adyacentes se chocan.
-          barGap={6}
-          barCategoryGap="18%"
+          margin={{ top: 32, right: 16, left: 0, bottom: 8 }}
+          barGap={3}
+          barCategoryGap="14%"
         >
           <CartesianGrid {...GRID_STYLE} vertical={false} />
           <XAxis
@@ -140,7 +137,7 @@ export default function ConsumoMensualChart({
               dataKey={s}
               fill={colorAt(i)}
               radius={[3, 3, 0, 0]}
-              maxBarSize={30}
+              maxBarSize={38}
               animationDuration={650}
               animationEasing="ease-out"
               isAnimationActive
@@ -159,18 +156,10 @@ export default function ConsumoMensualChart({
                   />
                 );
               })}
-              <LabelList
-                dataKey={s}
-                position="top"
-                // Rotamos -90° para que el ancho del número (ej "2.093")
-                // deje de competir con el de la barra adyacente. Vertical,
-                // leyendo de abajo hacia arriba. Offset alto para que la
-                // base del texto rotado quede sobre el tope de la barra.
-                angle={-90}
-                offset={18}
-                formatter={dataLabelFormatter}
-                style={{ ...DATA_LABEL_STYLE, fontSize: 9 }}
-              />
+              {/* Sin datalabels per-bar: con 5 sub-productos por mes los
+                  números de barras adyacentes se chocaban (probamos rotar 90°
+                  y quedó ilegible). El desglose se ve en el tooltip al hover.
+                  El total mensual se etiqueta sobre la línea del Total abajo. */}
             </Bar>
           ))}
           <Line
@@ -185,7 +174,23 @@ export default function ConsumoMensualChart({
             animationEasing="ease-out"
             strokeDasharray="0"
             isAnimationActive
-          />
+          >
+            {/* Headline mensual: 1 número por mes, total agregado de los
+                sub-productos. Visible siempre, evita el clutter de tener
+                un label encima de cada barra del grupo. */}
+            <LabelList
+              dataKey="_total"
+              position="top"
+              offset={10}
+              formatter={dataLabelFormatter}
+              style={{
+                ...DATA_LABEL_STYLE,
+                fontSize: 12,
+                fontWeight: 700,
+                fill: CHART_PALETTE[0],
+              }}
+            />
+          </Line>
         </ComposedChart>
       </ResponsiveContainer>
     </ChartCard>
