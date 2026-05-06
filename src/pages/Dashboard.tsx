@@ -49,6 +49,10 @@ export default function Dashboard() {
   const [clientesLoading, setClientesLoading] = useState(true);
   const [clientesError, setClientesError] = useState<string | null>(null);
 
+  // Mapeo email → nombre legible de la tabla csm. Para mostrar "Daniela
+  // Tibaquirá" en vez de "dtibaquira@truora.com" en la tabla portfolio.
+  const [csmNombres, setCsmNombres] = useState<Map<string, string>>(new Map());
+
   /* ── selección activa del CSM ─────────────────────────────────── */
   const [selectedCliente, setSelectedCliente] = useState<ClienteRow | null>(null);
   const [periodo, setPeriodo] = useState<PeriodoSeleccion>(() => buildPreset("ult_3_meses"));
@@ -66,16 +70,26 @@ export default function Dashboard() {
       setUserEmail(session.user.email);
       setAuthChecked(true);
 
-      const { data, error } = await supabase
-        .from("clientes")
-        .select("id, nombre, csm_email, client_id_di, client_id_bgc, client_id_ce, activo")
-        .eq("activo", true);
+      const [clientesRes, csmRes] = await Promise.all([
+        supabase
+          .from("clientes")
+          .select("id, nombre, csm_email, client_id_di, client_id_bgc, client_id_ce, activo")
+          .eq("activo", true),
+        supabase.from("csm").select("email, nombre"),
+      ]);
 
-      if (error) {
-        setClientesError(error.message);
+      if (clientesRes.error) {
+        setClientesError(clientesRes.error.message);
       } else {
-        setClientes((data ?? []) as ClienteRow[]);
+        setClientes((clientesRes.data ?? []) as ClienteRow[]);
       }
+
+      const m = new Map<string, string>();
+      for (const c of (csmRes.data ?? []) as { email: string; nombre: string | null }[]) {
+        if (c.email && c.nombre) m.set(c.email, c.nombre);
+      }
+      setCsmNombres(m);
+
       setClientesLoading(false);
     })();
   }, [navigate]);
@@ -161,6 +175,7 @@ export default function Dashboard() {
                 loading={portfolio.loading}
                 error={portfolio.error}
                 clientes={clientes}
+                csmNombres={csmNombres}
                 periodo={periodo}
                 onClickCliente={setSelectedCliente}
               />

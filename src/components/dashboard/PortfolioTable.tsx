@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
-import { S, fmtNum } from "@/components/botialertas/types";
+import { S, fmtNum, ADMIN_EMAILS } from "@/components/botialertas/types";
 import type { ClienteRow, PeriodoSeleccion } from "./types";
 import type { PortfolioRow, PortfolioMeta } from "@/hooks/usePortfolioConsumption";
 
@@ -29,6 +29,7 @@ export default function PortfolioTable({
   loading,
   error,
   clientes,
+  csmNombres,
   periodo,
   onClickCliente,
 }: {
@@ -37,6 +38,9 @@ export default function PortfolioTable({
   loading: boolean;
   error: string | null;
   clientes: ClienteRow[];
+  /** Mapeo email → nombre legible (ej: "dtibaquira@truora.com" → "Daniela Tibaquirá").
+   *  Cargado desde la tabla `csm` de Supabase en Dashboard.tsx. */
+  csmNombres: Map<string, string>;
   periodo: PeriodoSeleccion;
   onClickCliente: (c: ClienteRow) => void;
 }) {
@@ -45,9 +49,14 @@ export default function PortfolioTable({
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   // TCI → ClienteRow para resolver clickability + datos de display.
+  // Filtramos admins (Ana Marquez, JD) ANTES del map: tienen los mismos TCIs
+  // que el CSM real (RLS pattern, no son CSMs reales). Sin filtro, el .set()
+  // sobreescribiría al CSM real con el admin y la columna mostraría "jdiaz" en
+  // vez de "Daniela Tibaquirá". Ver memoria feedback_admin_duplicate_pattern.md.
   const tciToCliente = useMemo(() => {
     const m = new Map<string, ClienteRow>();
-    for (const c of clientes) {
+    const realCsms = clientes.filter((c) => !ADMIN_EMAILS.has(c.csm_email ?? ""));
+    for (const c of realCsms) {
       if (c.client_id_di)  m.set(c.client_id_di,  c);
       if (c.client_id_bgc) m.set(c.client_id_bgc, c);
       if (c.client_id_ce)  m.set(c.client_id_ce,  c);
@@ -290,12 +299,18 @@ export default function PortfolioTable({
                     </Td>
                     <Td>
                       <span style={{ color: S.muted }}>
-                        {/* Preferir csm_owner de SF (nombre legible "Valeria Lopez"
-                            como en Metabase). Si SF lo tiene null, fallback al
-                            csm_email de Supabase. Si tampoco hay → guion. */}
-                        {r.csm_owner
-                          ? r.csm_owner
-                          : (cliente?.csm_email ?? <em style={{ color: S.dim }}>—</em>)}
+                        {/* Preferimos: nombre legible del csm (lookup email→nombre
+                            en tabla `csm`), sino fallback al email, sino al
+                            csm_owner de SF (que ya viene NULL post-2026-05-06,
+                            queda solo por defensa), sino guion. */}
+                        {(() => {
+                          const email = cliente?.csm_email ?? null;
+                          const nombre = email ? csmNombres.get(email) : null;
+                          if (nombre) return nombre;
+                          if (email)  return email;
+                          if (r.csm_owner) return r.csm_owner;
+                          return <em style={{ color: S.dim }}>—</em>;
+                        })()}
                       </span>
                     </Td>
                     <Td>
