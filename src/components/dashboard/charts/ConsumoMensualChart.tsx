@@ -182,21 +182,25 @@ export default function ConsumoMensualChart({
             strokeDasharray="0"
             isAnimationActive
           >
-            {/* Headline mensual: 1 número por mes, total agregado de los
-                sub-productos. Visible siempre, evita el clutter de tener
-                un label encima de cada barra del grupo. */}
-            <LabelList
-              dataKey="_total"
-              position="top"
-              offset={10}
-              formatter={dataLabelFormatter}
-              style={{
-                ...DATA_LABEL_STYLE,
-                fontSize: 12,
-                fontWeight: 700,
-                fill: CHART_PALETTE[0],
-              }}
-            />
+            {/* Headline mensual: 1 número violet por mes con el total.
+                Solo cuando hay 2+ sub-productos: si hay 1 solo (caso BGC
+                con `checks` único), la barra ES el total y duplicar el
+                label encima genera solapamiento. Offset 16 para separar
+                bien del datalabel de la barra más alta cuando coexisten. */}
+            {series.length > 1 && (
+              <LabelList
+                dataKey="_total"
+                position="top"
+                offset={16}
+                formatter={dataLabelFormatter}
+                style={{
+                  ...DATA_LABEL_STYLE,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fill: CHART_PALETTE[0],
+                }}
+              />
+            )}
           </Line>
         </ComposedChart>
       </ResponsiveContainer>
