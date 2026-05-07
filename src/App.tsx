@@ -29,6 +29,7 @@ const App = () => (
           <Route path="/mbr-confiamos-abril" element={<MockConfiamosAbril />} />
           <Route path="/mbr-cueros-biometric" element={<MockCuerosBiometric />} />
           <Route path="/mbr-cueros-completo" element={<MockCuerosCompleto />} />
+          <Route path="/SBR/cueros-velez" element={<MockCuerosCompleto />} />
           <Route path="/" element={<Index />} />
           <Route path="/oncall" element={<Index source="oncall" />} />
           <Route path="/botialertas" element={<BotiAlertas />} />
