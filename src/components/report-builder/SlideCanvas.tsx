@@ -874,7 +874,7 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              Cuenta validaciones de documento — un proceso puede aportar varias
+              Procesos declinados con motivo de documento
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
@@ -934,7 +934,7 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              Cuenta validaciones de rostro — un proceso puede aportar varias
+              Procesos declinados con motivo de rostro
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>

@@ -2,6 +2,18 @@
 // los slides DI (DI-7 documento, DI-8 rostro, DI-9 análisis de fallos,
 // DI-10b declinados, DI-12 fricción). Cualquier motivo nuevo que aparezca
 // en producción debe agregarse acá, no en diccionarios locales por slide.
+//
+// ⚠️ SINCRONIZACIÓN OBLIGATORIA con el SQL del workflow `Report Builder DI`
+// en n8n (CTEs `razones_doc_agg` y `razones_rostro_agg`). Esas CTEs filtran
+// procesos por `IDENTITY_PROCESSES.DECLINED_REASON IN (lista)` para clasificar
+// los motivos como doc o rostro. Si Truora suma un motivo nuevo:
+//   1. Agregalo acá con su descripción humana en español.
+//   2. Agregalo en la lista correspondiente del SQL (ver
+//      `.claude/skills/snowflake-queries.md` sección "Listas de motivos
+//      doc / rostro").
+// Si solo se actualiza este archivo, el motivo se traduce pero nunca aparece
+// porque el SQL lo filtra fuera de DI-7/DI-8. Si solo se actualiza el SQL,
+// aparece en el slide pero sin traducción (cae al fallback snake_case).
 export const RAZONES_DI: Record<string, { descripcion: string; esAlerta: boolean }> = {
   // ── Rechazos de documento ────────────────────────────────────────
   'blurry_image':                    { descripcion: 'La foto del documento estaba borrosa o con mala iluminación', esAlerta: false },
