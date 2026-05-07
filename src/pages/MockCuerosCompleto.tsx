@@ -9,6 +9,7 @@ import ConversionChart from "@/components/dashboard/charts/ConversionChart";
 import TendenciaRazonesChart from "@/components/dashboard/charts/TendenciaRazonesChart";
 import RazonesTablaHeatmap from "@/components/dashboard/charts/RazonesTablaHeatmap";
 import BiometricCaptureSlide from "@/components/mbr-cueros/BiometricCaptureSlide";
+import FormsAsistidoSlide from "@/components/mbr-cueros/FormsAsistidoSlide";
 import { exportDashboardPDF } from "@/utils/exportDashboardPDF";
 import { exportDashboardPPTX } from "@/utils/exportDashboardPPTX";
 import cuerosDashboardJson from "@/data/cueros_dashboard.json";
@@ -181,6 +182,9 @@ export default function MockCuerosCompleto() {
 
           {/* Captura biométrica */}
           <BiometricCaptureSlide clientName={CLIENT} periodLabel={PERIOD_LABEL} />
+
+          {/* Forms asistido vs Sin asistir */}
+          <FormsAsistidoSlide clientName={CLIENT} periodLabel={PERIOD_LABEL} />
         </motion.div>
       </div>
     </div>
