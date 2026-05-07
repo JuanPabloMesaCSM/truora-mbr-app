@@ -11,6 +11,7 @@ import BotiAlertas from "./pages/BotiAlertas.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import MockCanvas from "./pages/MockCanvas.tsx";
 import MockConfiamosAbril from "./pages/MockConfiamosAbril.tsx";
+import MockCuerosBiometric from "./pages/MockCuerosBiometric.tsx";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/admin" element={<AdminPage />} />
           {import.meta.env.DEV && <Route path="/mock" element={<MockCanvas />} />}
           <Route path="/mbr-confiamos-abril" element={<MockConfiamosAbril />} />
+          <Route path="/mbr-cueros-biometric" element={<MockCuerosBiometric />} />
           <Route path="/" element={<Index />} />
           <Route path="/oncall" element={<Index source="oncall" />} />
           <Route path="/botialertas" element={<BotiAlertas />} />
