@@ -45,6 +45,7 @@ import {
 export default function ConsumoMensualChart({
   bloques,
   producto,
+  chartHeight,
 }: {
   bloques: BloqueMap | null;
   /** Producto del cliente — define idioma de los labels de series.
@@ -52,6 +53,9 @@ export default function ConsumoMensualChart({
    *  los nombres técnicos de sub-validaciones se reconocen mejor en inglés.
    *  BGC/CE usan lenguaje CSM (skill truora-domain). */
   producto: Producto;
+  /** Override del alto de la zona de chart (default 420). Útil para mocks
+   *  que necesitan que la card tenga proporción ≈16:9 para export PPTX. */
+  chartHeight?: number;
 }) {
   // Hover state per-celda: cuando el user pasa el mouse sobre una barra
   // específica (un sub-producto en un mes específico), solo esa celda se
@@ -88,7 +92,7 @@ export default function ConsumoMensualChart({
     <ChartCard
       title="Consumo mensual por producto"
       subtitle={`${producto} · ${series.length} sub-${series.length === 1 ? "producto" : "productos"} · ${data.length} ${data.length === 1 ? "mes" : "meses"}`}
-      height={420}
+      height={chartHeight ?? 420}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart

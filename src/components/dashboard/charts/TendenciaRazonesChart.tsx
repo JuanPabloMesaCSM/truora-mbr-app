@@ -49,10 +49,13 @@ export default function TendenciaRazonesChart({
   bloques,
   producto,
   tipoFallo,
+  chartHeight,
 }: {
   bloques: BloqueMap | null;
   producto: Producto;
   tipoFallo: TipoFallo;
+  /** Override del alto de la zona de chart (default 360 / 380 para BGC). */
+  chartHeight?: number;
 }) {
   const cfg = buildPivot(bloques, producto);
   if (!cfg || cfg.data.length === 0 || cfg.series.length === 0) {
@@ -79,7 +82,7 @@ export default function TendenciaRazonesChart({
     <ChartCard
       title={titleFor(producto)}
       subtitle={subtitleFor(producto, tipoFallo, cfg.series.length, cfg.data.length)}
-      height={isBgc ? 380 : 360}
+      height={chartHeight ?? (isBgc ? 380 : 360)}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={cfg.data} margin={{ top: 22, right: isBgc ? 16 : 16, left: 0, bottom: 8 }}>

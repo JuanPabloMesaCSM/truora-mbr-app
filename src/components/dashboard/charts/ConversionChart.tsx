@@ -43,9 +43,12 @@ import {
 export default function ConversionChart({
   bloques,
   producto,
+  chartHeight,
 }: {
   bloques: BloqueMap | null;
   producto: Producto;
+  /** Override del alto de la zona de chart (default 320). */
+  chartHeight?: number;
 }) {
   const data = buildData(bloques, producto);
   if (data.length === 0) {
@@ -68,7 +71,7 @@ export default function ConversionChart({
     <ChartCard
       title={titleFor(producto)}
       subtitle={`${producto} · ${data.length} ${data.length === 1 ? "mes" : "meses"} · barras: ${cfg.barLabel} · línea: ${cfg.lineLabel}`}
-      height={320}
+      height={chartHeight ?? 320}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 16, right: 16, left: 0, bottom: 8 }}>

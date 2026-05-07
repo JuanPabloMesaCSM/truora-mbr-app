@@ -25,9 +25,12 @@ import { ChartCard } from "./sharedChartUtils";
 export default function RazonesTablaHeatmap({
   bloques,
   producto,
+  chartHeight,
 }: {
   bloques: BloqueMap | null;
   producto: Producto;
+  /** Override del alto de la zona del chart (default 360). */
+  chartHeight?: number;
 }) {
   const rows = buildRows(bloques, producto);
   const [sortBy, setSortBy] = useState<"volumen" | "pct" | "label">("volumen");
@@ -69,7 +72,7 @@ export default function RazonesTablaHeatmap({
     <ChartCard
       title={titleFor(producto)}
       subtitle={`${producto} · ${rows.length} ${rows.length === 1 ? "razón" : "razones"} · total ${fmtNum(rows[0].totalDenominador)} ${denomLabelFor(producto)}`}
-      height={360}
+      height={chartHeight ?? 360}
     >
       <div
         style={{
