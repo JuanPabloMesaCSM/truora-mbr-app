@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { RAZONES_DI, getLabelBGC, FALLOS_CE } from "@/utils/razonesDict";
+import { RAZONES_DI, describeRazonDI, getLabelBGC, FALLOS_CE } from "@/utils/razonesDict";
 import { useWabaNamesMap } from "./WabaNamesProvider";
 import {
   Chart,
@@ -740,12 +740,23 @@ function HBarChart({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
   const chartInst = useRef<Chart | null>(null);
   const t = tok(theme);
 
-  const labels = rows.map(r => {
-    const lbl = formatLabel(r.col1 || "");
-    return r.col1 && r.col1.includes("risky_face") ? lbl + " ⚠️" : lbl;
+  // Sort DESC por valor para que el embudo visual vaya de mayor (arriba) a
+  // menor (abajo). El orden de SQL no es confiable acá: algunos bloques
+  // devuelven por TYPE/COUNTRY antes que por count.
+  const sorted = [...rows].sort((a, b) =>
+    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
+  );
+
+  // Traducción al español usando el diccionario central. Si llega un código
+  // sin traducción registrada, describeRazonDI hace fallback a snake_case
+  // → espacios para que al menos quede legible (pero en un solo idioma).
+  const labels = sorted.map(r => {
+    const codigo = r.col1 || "";
+    const info = describeRazonDI(codigo);
+    return info.esAlerta ? info.descripcion + " ⚠️" : info.descripcion;
   });
-  const values = rows.map(r => parseInt(r.col2 || "0", 10));
-  const colors = rows.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length]);
+  const values = sorted.map(r => parseInt(r.col2 || "0", 10));
+  const colors = sorted.map((_, i) => BAR_PALETTE[i % BAR_PALETTE.length]);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -781,11 +792,16 @@ function HBarChart({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
 /* helper compartido para la lista de razones de rechazo */
 function RejectionList({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
   const t = tok(theme);
+  // Sort DESC por count para que la columna izquierda siempre traiga los
+  // motivos de mayor impacto. SQL puede devolver desordenado.
+  const sorted = [...rows].sort((a, b) =>
+    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
+  );
   return (
     <div style={{ display: "flex", gap: 24, flex: 1 }}>
       {/* Columna izquierda */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0 }}>
-        {rows.slice(0, Math.ceil(rows.length / 2)).map(r => {
+        {sorted.slice(0, Math.ceil(sorted.length / 2)).map(r => {
           const codigo = r.col1 || "";
           const count  = parseInt(r.col2 || "0", 10);
           const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
@@ -804,7 +820,7 @@ function RejectionList({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
       </div>
       {/* Columna derecha */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0 }}>
-        {rows.slice(Math.ceil(rows.length / 2)).map(r => {
+        {sorted.slice(Math.ceil(sorted.length / 2)).map(r => {
           const codigo = r.col1 || "";
           const count  = parseInt(r.col2 || "0", 10);
           const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
@@ -832,6 +848,10 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["7_razones_doc"] || [];
+  // Sort DESC por count + traducción central. SQL puede devolver desordenado.
+  const sorted = [...rows].sort((a, b) =>
+    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
+  );
   return (
     <SlideShell id="DI-7" theme={theme}>
       <SlideHeader title={`Documento — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
@@ -850,13 +870,18 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
           boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
           display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+              textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+            <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
+              Cuenta validaciones de documento — un proceso puede aportar varias
+            </p>
+          </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
-            {rows.map(r => {
+            {sorted.map(r => {
               const codigo = r.col1 || "";
               const count  = parseInt(r.col2 || "0", 10);
-              const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+              const info   = describeRazonDI(codigo);
               return (
                 <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <div style={{ flex: 1 }}>
@@ -884,6 +909,9 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["8_razones_rostro"] || [];
+  const sorted = [...rows].sort((a, b) =>
+    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
+  );
   return (
     <SlideShell id="DI-8" theme={theme}>
       <SlideHeader title={`Rostro — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
@@ -902,13 +930,18 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
           boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
           display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+              textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
+            <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
+              Cuenta validaciones de rostro — un proceso puede aportar varias
+            </p>
+          </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
-            {rows.map(r => {
+            {sorted.map(r => {
               const codigo = r.col1 || "";
               const count  = parseInt(r.col2 || "0", 10);
-              const info   = RAZONES_DI[codigo] || { descripcion: formatLabel(codigo), esAlerta: false };
+              const info   = describeRazonDI(codigo);
               return (
                 <div key={codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <div style={{ flex: 1 }}>
@@ -966,23 +999,12 @@ function Di9Slide({ data, theme, clientName, periodLabel, pageNum = 9 }: {
     .sort((a, b) => b.cantidad - a.cantidad)
     .slice(0, 6);
 
-  // Diccionario truora-domain — nombre técnico → explicación humana.
-  // Para abandono/expiración los motivos comunes son user_stopped_responding,
-  // agent_stopped_responding, etc. Si no hay match, se cae al snake_case.
-  const motivoLabel = (m: string) => {
-    const map: Record<string, string> = {
-      user_stopped_responding:  "Usuario dejó de responder",
-      agent_stopped_responding: "Agente dejó de responder",
-      no_face_detected:         "No se detectó rostro",
-      blurry_image:             "Imagen borrosa",
-      data_authorization_not_provided: "No autorizó permisos",
-      face_validation_not_started: "No completó la selfie",
-      abandoned_without_using_retries: "Abandonó sin reintentar",
-    };
-    return map[m] || m.replace(/_/g, " ");
-  };
-
-  const motivoLabels = abandonoRows.map(r => motivoLabel(r.motivo));
+  // Traducción centralizada — ahora delegada a describeRazonDI para que
+  // todos los slides DI lean del mismo diccionario y no haya mezcla
+  // inglés/español por motivos sin traducir (caso Enlace CSC abril 2026:
+  // input_file_not_uploaded / geolocation_not_provided /
+  // document_validation_not_started salían en inglés).
+  const motivoLabels = abandonoRows.map(r => describeRazonDI(r.motivo).descripcion);
   const motivoData   = abandonoRows.map(r => r.cantidad);
   const depKey = JSON.stringify(motivoData);
 
@@ -1165,8 +1187,13 @@ function DiDeclinadosSlide({ data, theme, clientName, periodLabel, pageNum = 10 
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
           boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 28px",
           display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <p style={{ margin: "0 0 16px", fontSize: 11, fontWeight: 700, color: t.textMuted,
-            textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos de declinación</p>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+              textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos de declinación</p>
+            <p style={{ margin: 0, fontSize: 9.5, color: t.textMuted, fontStyle: "italic" }}>
+              Cuenta procesos declinados — uno por proceso, motivo final
+            </p>
+          </div>
           <HBarChart rows={rows} theme={theme} />
         </div>
       </div>
@@ -1187,16 +1214,17 @@ function Di10Slide({ data, theme, clientName, periodLabel, pageNum = 10 }: {
   const chartInstance = useRef<Chart | null>(null);
   const t = tok(theme);
 
-  const rows   = data["11_friccion_usuario"] || [];
-  const labels = rows.map(r => {
-    const codigo = r.col1 || "";
-    const info = RAZONES_DI[codigo];
-    return info ? info.descripcion : formatLabel(codigo);
-  });
-  const values = rows.map(r => parseInt(r.col2 || "0", 10));
-  const colors = rows.map(r => {
-    const info = RAZONES_DI[r.col1 || ""];
-    return info && info.esAlerta ? "#EF4444" : BAR_PALETTE[0];
+  const rows = data["11_friccion_usuario"] || [];
+  // Filtramos motivos vacíos (el SQL puede devolver una fila con col1=''
+  // que se renderizaba como barra fantasma sin label) y luego sort DESC.
+  const sorted = [...rows]
+    .filter(r => r.col1 && r.col1.trim() !== "")
+    .sort((a, b) => parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10));
+  const labels = sorted.map(r => describeRazonDI(r.col1 || "").descripcion);
+  const values = sorted.map(r => parseInt(r.col2 || "0", 10));
+  const colors = sorted.map(r => {
+    const info = describeRazonDI(r.col1 || "");
+    return info.esAlerta ? "#EF4444" : BAR_PALETTE[0];
   });
 
   useEffect(() => {
@@ -1569,7 +1597,12 @@ function Bgc4Slide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
   const chartInstance = useRef<Chart | null>(null);
   const t = tok(theme);
 
-  const labelsRows = data["5_labels"]            || [];
+  const labelsRowsRaw = data["5_labels"]         || [];
+  // Sort DESC para que la label más impactante quede arriba (mismo embudo
+  // visual que aplicamos a DI-7/8/10/10b).
+  const labelsRows = [...labelsRowsRaw].sort((a, b) =>
+    parseInt(b.col3 || "0", 10) - parseInt(a.col3 || "0", 10)
+  );
   const highRows   = data["6_labels_high_score"] || [];
   const anomalies  = highRows.filter(r => r.col5 === "1");
   const anomalyN   = anomalies.reduce((s, r) => s + parseInt(r.col4 || "0", 10), 0);
