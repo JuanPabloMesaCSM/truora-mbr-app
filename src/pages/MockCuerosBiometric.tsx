@@ -54,29 +54,29 @@ const PCT_DOC = (DOC_CAPT / TOTAL) * 100;          // 71.5%
 const PCT_FACE = (FACE_CAPT / TOTAL) * 100;        // 48.5%
 const PCT_EXITOSOS = (EXITOSOS / TOTAL) * 100;     // 38.8%
 
-// Cohorte exitosos: ~100% capturaron doc, ~96% capturaron face (138 con BGC en lugar de face)
+// Procesos exitosos: ~100% capturaron doc, ~96% capturaron face (138 con BGC como alternativa al rostro)
 const EXITOSOS_DOC = 3503;
 const EXITOSOS_FACE = 3365;
-const EXITOSOS_BGC_FALLBACK = 138;
+const EXITOSOS_BGC_ALT = 138;
 
-// Cohorte no exitosos: 53% doc, 18% face (estimación basada en cruces SF)
+// Procesos no exitosos: 53% doc, 18% face (estimación basada en cruces SF)
 const NOEX_DOC = 2954;
 const NOEX_FACE = 1020;
 const NOEX_NINGUNA = 5530 - NOEX_DOC; // los que ni documento subieron
 
 // Para cross-tab y bar chart
-const cohortData = [
+const grupoData = [
   {
-    cohorte: "Exitosos",
-    cohorteSub: `${EXITOSOS.toLocaleString("es-CO")} procesos`,
+    resultado: "Exitosos",
+    resultadoSub: `${EXITOSOS.toLocaleString("es-CO")} procesos`,
     docPct: Math.round((EXITOSOS_DOC / EXITOSOS) * 1000) / 10,
     facePct: Math.round((EXITOSOS_FACE / EXITOSOS) * 1000) / 10,
     docNum: EXITOSOS_DOC,
     faceNum: EXITOSOS_FACE,
   },
   {
-    cohorte: "Fallidos + cancelados",
-    cohorteSub: `${NO_EXITOSOS.toLocaleString("es-CO")} procesos`,
+    resultado: "Fallidos + cancelados",
+    resultadoSub: `${NO_EXITOSOS.toLocaleString("es-CO")} procesos`,
     docPct: Math.round((NOEX_DOC / NO_EXITOSOS) * 1000) / 10,
     facePct: Math.round((NOEX_FACE / NO_EXITOSOS) * 1000) / 10,
     docNum: NOEX_DOC,
@@ -213,7 +213,7 @@ export default function MockCuerosBiometric() {
                   marginBottom: 8,
                 }}
               >
-                Análisis biométrico · {CLIENT}
+                {CLIENT}
               </div>
               <div
                 style={{
@@ -224,7 +224,7 @@ export default function MockCuerosBiometric() {
                   letterSpacing: "-0.01em",
                 }}
               >
-                ¿Hasta dónde llegan los usuarios antes de fallar?
+                ¿Hasta dónde llegan los usuarios?
               </div>
               <div
                 style={{
@@ -286,7 +286,7 @@ export default function MockCuerosBiometric() {
               label="Procesos exitosos"
               value={EXITOSOS.toLocaleString("es-CO")}
               pct={PCT_EXITOSOS}
-              hint={`${EXITOSOS_BGC_FALLBACK} usaron BGC como fallback de rostro`}
+              hint={`${EXITOSOS_BGC_ALT} validaron con BGC como alternativa al rostro`}
             />
           </div>
 
@@ -301,20 +301,20 @@ export default function MockCuerosBiometric() {
           >
             {/* Chart */}
             <SubCard
-              title="Captura por cohorte"
-              subtitle="Porcentaje de procesos en cada cohorte que llegó a documento y a rostro"
+              title="Captura según resultado del proceso"
+              subtitle="Porcentaje de procesos en cada grupo que llegó a documento y a rostro"
             >
               <div style={{ width: "100%", height: 320 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
-                    data={cohortData}
+                    data={grupoData}
                     margin={{ top: 24, right: 18, left: 4, bottom: 12 }}
                     barCategoryGap="28%"
                     barGap={6}
                   >
                     <CartesianGrid {...GRID_STYLE} vertical={false} />
                     <XAxis
-                      dataKey="cohorte"
+                      dataKey="resultado"
                       tick={AXIS_STYLE}
                       tickLine={false}
                       axisLine={{ stroke: S.border }}
@@ -334,8 +334,8 @@ export default function MockCuerosBiometric() {
                           {...props}
                           valueFormatter={(v, name) => {
                             if (typeof v !== "number") return String(v);
-                            const row = cohortData.find(
-                              (r) => r.cohorte === props.label,
+                            const row = grupoData.find(
+                              (r) => r.resultado === props.label,
                             );
                             const abs =
                               name === "Documento"
@@ -365,7 +365,7 @@ export default function MockCuerosBiometric() {
                       activeBar={buildActiveBarStyle(COLOR_DOC)}
                       animationDuration={650}
                     >
-                      {cohortData.map((_, i) => (
+                      {grupoData.map((_, i) => (
                         <Cell key={i} fill={COLOR_DOC} fillOpacity={0.9} />
                       ))}
                       <LabelList
@@ -384,7 +384,7 @@ export default function MockCuerosBiometric() {
                       activeBar={buildActiveBarStyle(COLOR_FACE)}
                       animationDuration={750}
                     >
-                      {cohortData.map((_, i) => (
+                      {grupoData.map((_, i) => (
                         <Cell key={i} fill={COLOR_FACE} fillOpacity={0.9} />
                       ))}
                       <LabelList
@@ -401,8 +401,8 @@ export default function MockCuerosBiometric() {
 
             {/* Cross-tab */}
             <SubCard
-              title="Cruce status × captura"
-              subtitle="Procesos por estado y por etapa biométrica completada"
+              title="Resultado × etapa biométrica"
+              subtitle="Procesos por resultado y por etapa biométrica completada"
             >
               <CrossTab />
             </SubCard>
@@ -424,45 +424,27 @@ export default function MockCuerosBiometric() {
                 <>
                   Más del <Strong>50%</Strong> de los procesos que terminan
                   fallidos o cancelados <Strong>nunca llegan a la etapa de rostro</Strong>.
-                  Solo el <Strong>{cohortData[1].facePct.toFixed(0)}%</Strong> de
-                  esa cohorte completa la biometría facial — vs <Strong>96%</Strong> en los exitosos.
+                  Solo el <Strong>{grupoData[1].facePct.toFixed(0)}%</Strong> de
+                  ese grupo completa la biometría facial — vs <Strong>96%</Strong> en los exitosos.
                 </>
               }
             />
             <InsightCard
               tone="ok"
               icon={<FileCheck2 size={16} />}
-              title="Hallazgo en cohorte exitosa"
+              title="Hallazgo en procesos exitosos"
               body={
                 <>
                   De los <Strong>{EXITOSOS.toLocaleString("es-CO")}</Strong> procesos
-                  exitosos, <Strong>{EXITOSOS_BGC_FALLBACK}</Strong> validaron identidad usando
-                  <Strong> BGC como reemplazo de rostro</Strong>. Es un fallback real para
-                  usuarios donde la cámara no funciona — vale la pena medirlo y proponerlo en bordes.
+                  exitosos, <Strong>{EXITOSOS_BGC_ALT}</Strong> validaron identidad usando
+                  <Strong> BGC como alternativa al rostro</Strong>. Es una alternativa real
+                  para usuarios donde la cámara no funciona — tenemos también oportunidad
+                  de mejora en la configuración de nuestros flujos de trabajo.
                 </>
               }
             />
           </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: 10,
-              color: S.dim,
-              paddingTop: 14,
-              borderTop: `1px solid ${S.border}`,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              fontWeight: 600,
-            }}
-          >
-            <span>Truora · CSM Center</span>
-            <span>Fuente: IDENTITY_PROCESSES + DOCUMENT_VALIDATION_HISTORY</span>
-            <span>{CLIENT} · {PERIOD}</span>
-          </div>
         </motion.div>
       </div>
     </div>
@@ -625,7 +607,7 @@ function CrossTab() {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={{ ...headStyle, textAlign: "left" }}>Cohorte</th>
+            <th style={{ ...headStyle, textAlign: "left" }}>Resultado</th>
             <th style={{ ...headStyle, textAlign: "right" }}>Total</th>
             <th style={{ ...headStyle, textAlign: "right" }}>Doc</th>
             <th style={{ ...headStyle, textAlign: "right" }}>Rostro</th>
@@ -692,8 +674,8 @@ function CrossTab() {
       >
         <span style={{ color: "#67E8F9", fontWeight: 600 }}>Lectura:</span>{" "}
         de los {NO_EXITOSOS.toLocaleString("es-CO")} procesos no exitosos,{" "}
-        {NOEX_NINGUNA.toLocaleString("es-CO")} ni siquiera completaron la
-        captura de documento — ahí hay margen de mejora antes del biométrico.
+        {NOEX_NINGUNA.toLocaleString("es-CO")} no completaron la captura de
+        documento, tenemos oportunidad de mejora en gestión del flujo.
       </div>
     </div>
   );
