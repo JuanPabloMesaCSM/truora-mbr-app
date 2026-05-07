@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Activity, Loader2 } from "lucide-react";
+import { ArrowLeft, Activity, Loader2, Download } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import { S } from "@/components/botialertas/types";
@@ -15,6 +15,7 @@ import ClienteView from "@/components/dashboard/ClienteView";
 import PortfolioTable from "@/components/dashboard/PortfolioTable";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePortfolioConsumption } from "@/hooks/usePortfolioConsumption";
+import { exportDashboardPDF } from "@/utils/exportDashboardPDF";
 import {
   buildPreset,
   type ClienteRow,
@@ -134,10 +135,30 @@ export default function Dashboard() {
   /* ── portfolio (panel principal sin cliente) ──────────────────── */
   const portfolio = usePortfolioConsumption(periodo);
 
+  /* ── export PDF ───────────────────────────────────────────────── */
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExportPDF() {
+    if (!selectedCliente) return;
+    const root = document.getElementById("dashboard-export-root");
+    if (!root) return;
+    const safeName = selectedCliente.nombre.replace(/[^\w\-]+/g, "_");
+    const filename = `Dashboard_${safeName}_${periodo.inicio}_${periodo.fin}.pdf`;
+    setExporting(true);
+    try {
+      await exportDashboardPDF({ rootElement: root, filename });
+    } catch (err) {
+      console.error("[Dashboard] export PDF error:", err);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   /* ── render ───────────────────────────────────────────────────── */
   if (!authChecked) return null;
 
   const hasSelection = !!selectedCliente;
+  const canExport = hasSelection && !!data && !loading && !error;
 
   return (
     <>
@@ -159,6 +180,9 @@ export default function Dashboard() {
           onProductosChange={setProductosSel}
           tipoFallo={tipoFallo}
           onTipoFalloChange={setTipoFallo}
+          canExport={canExport}
+          exporting={exporting}
+          onExport={handleExportPDF}
         />
 
         <main style={{ maxWidth: 1320, margin: "0 auto", padding: "92px 28px 60px" }}>
@@ -221,6 +245,9 @@ function TopBar({
   onProductosChange,
   tipoFallo,
   onTipoFalloChange,
+  canExport,
+  exporting,
+  onExport,
 }: {
   onBack: () => void;
   hasSelection: boolean;
@@ -234,6 +261,9 @@ function TopBar({
   onProductosChange: (s: Set<Producto>) => void;
   tipoFallo: TipoFallo;
   onTipoFalloChange: (t: TipoFallo) => void;
+  canExport: boolean;
+  exporting: boolean;
+  onExport: () => void;
 }) {
   return (
     <div style={{
@@ -292,6 +322,40 @@ function TopBar({
               onChange={onProductosChange}
             />
             <TipoFalloPicker value={tipoFallo} onChange={onTipoFalloChange} />
+            <button
+              onClick={onExport}
+              disabled={!canExport || exporting}
+              title={canExport ? "Exportar a PDF" : "Esperá a que carguen las métricas"}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 12px", borderRadius: 999,
+                fontSize: 12, fontWeight: 600,
+                color: canExport && !exporting ? "#FFFFFF" : S.muted,
+                background: canExport && !exporting
+                  ? "linear-gradient(135deg, #7C4DFF, #4B6FFF)"
+                  : S.surface,
+                border: canExport && !exporting
+                  ? "1px solid rgba(124,77,255,0.5)"
+                  : `1px solid ${S.border}`,
+                cursor: canExport && !exporting ? "pointer" : "not-allowed",
+                opacity: canExport ? 1 : 0.55,
+                boxShadow: canExport && !exporting
+                  ? "0 2px 10px rgba(124,77,255,0.25)"
+                  : "none",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                if (canExport && !exporting) e.currentTarget.style.opacity = "0.88";
+              }}
+              onMouseLeave={(e) => {
+                if (canExport && !exporting) e.currentTarget.style.opacity = "1";
+              }}
+            >
+              {exporting
+                ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                : <Download size={13} />}
+              <span>{exporting ? "Generando…" : "Exportar PDF"}</span>
+            </button>
           </>
         )}
       </div>
