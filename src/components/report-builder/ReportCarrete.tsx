@@ -565,12 +565,24 @@ export function ReportCarrete({
   useEffect(() => {
     const newKeys = slideEntries.map(e => e.key);
     setSlideOrder(prev => {
-      // Keep existing order for slides that still exist, append new ones at the end
       const kept = prev.filter(k => newKeys.includes(k));
       const added = newKeys.filter(k => !kept.includes(k));
-      // If nothing changed structurally, keep current order
       if (kept.length === newKeys.length && added.length === 0) return prev;
-      return [...kept, ...added];
+
+      // Insertar cada slide nuevo en su posición natural (la que tiene en slideEntries),
+      // no al final. Si lo apendamos siempre al final, el slide de Cierre (que en
+      // slideEntries siempre va último) queda antes que los nuevos módulos.
+      const naturalIdx = (k: string) => newKeys.indexOf(k);
+      const result = [...kept];
+      for (const k of added) {
+        const idx = naturalIdx(k);
+        let insertAt = result.length;
+        for (let i = 0; i < result.length; i++) {
+          if (naturalIdx(result[i]) > idx) { insertAt = i; break; }
+        }
+        result.splice(insertAt, 0, k);
+      }
+      return result;
     });
   }, [slideEntries]);
 

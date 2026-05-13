@@ -1304,7 +1304,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
   // El donut de BGC-1 suma 100% (passRate + rejectionRate), así que podemos
   // derivar las unidades de cada banda multiplicando por totalChecks.
   const checksExitosos     = Math.round(totalChecks * passRate / 100);
-  const checksConAdvertencia = Math.max(totalChecks - checksExitosos, 0);
+  const checksConError = Math.max(totalChecks - checksExitosos, 0);
 
   useEffect(() => {
     if (!chartRef.current || totalChecks === 0) return;
@@ -1314,7 +1314,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
       data: {
         labels: [
           `Checks exitosos: ${checksExitosos.toLocaleString("es-CO")} (${passRate.toFixed(1)}%)`,
-          `Checks con advertencias: ${checksConAdvertencia.toLocaleString("es-CO")} (${rejectionRate.toFixed(1)}%)`,
+          `Checks con errores: ${checksConError.toLocaleString("es-CO")} (${rejectionRate.toFixed(1)}%)`,
         ],
         datasets: [{ data: [passRate, rejectionRate],
           backgroundColor: [BGC.success, BGC.danger], borderWidth: 4, borderColor: t.cardBg }],
@@ -1359,7 +1359,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
           <p style={{ margin: "6px 0 0", fontSize: 12, color: t.textPrimary, textAlign: "center", fontWeight: 600 }}>
             <span style={{ color: BGC.success }}>{checksExitosos.toLocaleString("es-CO")}</span> exitosos
             <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
-            <span style={{ color: BGC.danger }}>{checksConAdvertencia.toLocaleString("es-CO")}</span> con advertencias
+            <span style={{ color: BGC.danger }}>{checksConError.toLocaleString("es-CO")}</span> con errores
             <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
             <span style={{ color: t.textMuted, fontWeight: 400 }}>{totalChecks.toLocaleString("es-CO")} totales</span>
           </p>

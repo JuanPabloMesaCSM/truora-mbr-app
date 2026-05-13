@@ -126,6 +126,51 @@ export const TIPO_FALLO_LABELS: Record<TipoFallo, string> = {
   expirado: "Solo abandonados por el usuario",
 };
 
+/* ─────────────────────────── Parser Totales facturables (CH) ─────────────────────────── */
+
+/** Total facturable del rango por producto, agregado por el stitch n8n desde
+ *  el endpoint CH "Dashboard Detail Consumo Mensual".
+ *
+ *  Es la fuente de verdad para el header del drill-down: matchea exacto lo
+ *  que el cliente ve en su front Truora y lo que se le cobra. Reemplaza al
+ *  conteo de procesos/checks/mensajes de SF que mide eventos del rango y
+ *  no counter facturable.
+ *
+ *  Shape:
+ *    {
+ *      total: 1571,
+ *      by_subproduct: {
+ *        document_validation: 911,
+ *        passive_liveness: 337,
+ *        face_search: 323
+ *      }
+ *    }
+ */
+export interface TotalesBillable {
+  total: number;
+  by_subproduct: Record<string, number>;
+}
+
+export function parseTotalesBillable(bloques: BloqueMap | null): TotalesBillable | null {
+  if (!bloques) return null;
+  // n8n stitch inyecta totales_billable como objeto directamente en blocks
+  // (no como bloque-keyed array de filas). Cast localizado.
+  const raw = (bloques as unknown as Record<string, unknown>).totales_billable;
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as { total?: unknown; by_subproduct?: unknown };
+  const total = Number(obj.total);
+  if (!isFinite(total)) return null;
+  const bySub: Record<string, number> = {};
+  if (obj.by_subproduct && typeof obj.by_subproduct === "object") {
+    const src = obj.by_subproduct as Record<string, unknown>;
+    for (const k of Object.keys(src)) {
+      const v = Number(src[k]);
+      if (isFinite(v)) bySub[k] = v;
+    }
+  }
+  return { total, by_subproduct: bySub };
+}
+
 /* ─────────────────────────── Parsers consumo mensual ─────────────────────────── */
 
 /** Una fila por (mes, sub-producto) con USAGE.
