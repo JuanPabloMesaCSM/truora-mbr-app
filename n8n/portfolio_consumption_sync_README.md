@@ -1,10 +1,21 @@
-# Portfolio Consumption Sync — guia para armar el flujo n8n desde 0
+# Portfolio Consumption Sync — guia n8n (migrado a ClickHouse 2026-05-11)
 
 Flujo independiente del cron BotiAlertas. Corre Lunes / Miercoles / Viernes a las
 06:00 hora Bogota y refresca la tabla `public.portfolio_consumption` que alimenta
 el panel principal del Dashboard de Cartera (`/dashboard` en CSM Center).
 
-NO toca `boti_alertas`, NO manda Telegram. Es solo: SF -> Code -> Supabase.
+NO toca `boti_alertas`, NO manda Telegram. Es solo: CH -> Code -> Supabase.
+
+> **Fuente migrada de Snowflake a ClickHouse el 2026-05-11.** Motivo: CH es la
+> fuente oficial de cobro desde diciembre 2025 (revertimos la decision 2026-04-14
+> que ponia a SF como fuente). CH no tiene el lag del pipeline DynamoDB -> SF que
+> afectaba al mes corriente y al ultimo mes cerrado. Ver skill
+> `clickhouse-counters-metabase.md` para detalles del cambio.
+>
+> **Archivos legacy SF** se conservan con sufijo `_sf_legacy` como fallback:
+> - `portfolio_consumption_whitelist_sf_legacy.js`
+> - `portfolio_consumption_sync_sf_legacy.js`
+> - `supabase/snowflake/portfolio_consumption_sync_sf_legacy.sql`
 
 ## Topologia (6 nodos)
 
@@ -15,104 +26,131 @@ NO toca `boti_alertas`, NO manda Telegram. Es solo: SF -> Code -> Supabase.
 [Supabase: Get Clientes Whitelist]   -- cartera CSM Truora activa
    |
    v
-[Code: Build Whitelist]              -- arma string "'tci1','tci2',..."
+[Code: Build Whitelist]              -- arma array de TCIs + string SQL legacy
    |
    v
-[Snowflake: Portfolio Query]         -- SF filtrado por whitelist
+[HTTP Request: CH Portfolio Endpoint] -- Query API Endpoint en CH Cloud
    |
    v
-[Code: Prepare Upsert]
+[Code: Prepare Upsert]               -- parsea JSONEachRow CH -> rows
    |
    v
 [HTTP Request: Upsert portfolio_consumption]
 ```
 
-> Sin la whitelist, SF devuelve TODA la base de SHARED_COUNTERS_DYNAMO
-> (clientes huerfanos, equipos internos Truora, demo accounts) y la tabla
-> portfolio_consumption se infla con ruido. La whitelist filtra a los TCIs
-> de Supabase.clientes activos, que es la cartera real CSM Center.
-
 ## Configuracion paso a paso
 
 ### 1. Schedule Trigger
+
+Sin cambios vs version SF.
+
 - Mode: Custom (Cron Expression)
 - Cron expression: `0 0 6 * * 1,3,5`
-  - n8n usa formato de 6 campos: `[Second] [Minute] [Hour] [DayOfMonth] [Month] [DayOfWeek]`.
-  - Equivale a Lunes / Miercoles / Viernes a las 6:00:00 AM.
 - Timezone: `America/Bogota`
 
-> Alternativa sin cron expression: cambiar Trigger Interval a "Days" / "Weekday"
-> y marcar Mon, Wed, Fri + hora 6:00. Mismo resultado, menos margen de error.
-
 ### 2. Supabase: Get Clientes Whitelist
-- Resource: `Row`
-- Operation: `Get many rows` (las versiones recientes del nodo Supabase ya no
-  tienen "Execute Query" — Get many rows hace lo equivalente).
-- Table Name: `clientes`
-- Return All: ON (sin esto el nodo limita a 50 filas)
-- Filters: `activo equals true`
-- Credentials: Supabase service_role (mismo que usa BotiAlertas v2)
-- Output: ~100 items, uno por cliente activo, con todas las columnas de
-  `clientes` (incluidas `client_id_di`, `client_id_bgc`, `client_id_ce`).
 
-> Si Get many rows no funciona en tu plan / version, fallback con HTTP Request
-> a PostgREST: `GET https://<PROJECT>.supabase.co/rest/v1/clientes?activo=eq.true&select=client_id_di,client_id_bgc,client_id_ce,nombre,csm_email`
-> con auth Supabase API y header `Prefer: count=exact`.
+Sin cambios vs version SF.
+
+- Resource: `Row` / Operation: `Get many rows`
+- Table Name: `clientes`
+- Return All: ON
+- Filters: `activo equals true`
+- Credentials: Supabase service_role.
 
 ### 3. Code: Build Whitelist
+
 - Mode: Run Once for All Items
 - Language: JavaScript
 - Codigo: pegar `n8n/portfolio_consumption_whitelist.js`
-- Output: 1 item con `json.tci_list = "'tci1','tci2',..."` y `json.count`.
+- Output: 1 item con
+  - `json.tci_list_array`: `["TCI...", "TCI...", ...]` (formato CH)
+  - `json.tci_list`: `"'tci1','tci2',..."` (formato SF legacy, mantenido por compat)
+  - `json.count`: numero de TCIs unicos
 
-### 4. Snowflake: Portfolio Query
-- Operation: Execute Query
-- Credentials: la misma SF de BotiAlertas v2 (database/schema ya configurados)
-- SQL: pegar `supabase/snowflake/portfolio_consumption_sync.sql`
-  - El query inyecta el placeholder `{{ $('Build Whitelist').first().json.tci_list }}`
-    en `WHERE scd.CLIENT_ID IN (...)`. Asegurate de NO pre-resolverlo: dejarlo tal
-    cual en el editor para que n8n lo evalue al ejecutar.
-- Output expected: ~900 items (uppercase keys: PERIODO_MES, CLIENT_ID, CLIENT_NAME,
-  CSM_OWNER, PRODUCT, USAGE) — limitado a la cartera CSM Truora.
+### 4. HTTP Request: CH Portfolio Endpoint (NUEVO — reemplaza Snowflake)
+
+- **Method**: POST
+- **URL**: `https://console-api.clickhouse.cloud/.api/query-endpoints/<UUID>/run`
+  - Reemplazar `<UUID>` por el UUID del endpoint "Portfolio Consumption Sync"
+    creado en CH Cloud (Save Query -> Share -> API Endpoint).
+- **Authentication**: Generic Credential Type -> Basic Auth
+  - User: keyId de la API key `Automatización Oppy permanente`
+  - Password: keySecret de esa misma key
+  - O reusar credential `ClickHouse Cloud Basic` si existe.
+- **Send Headers** (additional):
+  - `Content-Type`: `application/json`
+  - `x-clickhouse-endpoint-version`: `2`
+- **Send Body**: ON
+- **Body Content Type**: JSON
+- **Specify Body**: Using JSON
+- **JSON**:
+  ```
+  ={{ { queryVariables: { tci_list: $('Build Whitelist').first().json.tci_list_array }, format: 'JSONEachRow' } }}
+  ```
+- **Response**: Format = JSON
+
+> Si el editor n8n agrega un `=` adelante del valor en modo Expression
+> (memoria `feedback_n8n_expression_mode.md`), revisar que el body no quede
+> con `==` doble. Verificar haciendo "Execute node" en aislamiento.
+
+> Latencia esperada: <10s con la whitelist completa (~95 TCIs, ~70M filas en CH
+> con buen filtro de date_counted + client_id). Si supera 30s, considerar
+> fragmentar en 2-3 batches.
+
+#### Output esperado
+
+JSONEachRow devuelve un objeto JSON por linea. n8n parsea cada linea como
+un item separado o como un .data/.rows wrapped. El Code "Prepare Upsert"
+maneja ambos casos.
+
+Shape de cada fila:
+```json
+{
+  "periodo_mes": "2026-04-01",
+  "client_id":   "TCI6987...",
+  "product":     "validations",
+  "usage":       "37011"
+}
+```
+
+> CH devuelve `usage` como string (UInt64). El Code lo castea a Number.
 
 ### 5. Code: Prepare Upsert
+
 - Mode: Run Once for All Items
 - Language: JavaScript
 - Codigo: pegar `n8n/portfolio_consumption_sync.js`
-- Output: 1 item con `json.rows = [...]` listo para upsert batch.
+- Output: 1 item con `json.rows = [...]`.
+- `client_name` y `csm_owner` quedan **NULL** en cada row (CH no expone esos
+  campos; frontend ya resuelve por lookup).
 
 ### 6. HTTP Request: Upsert portfolio_consumption
+
+Sin cambios vs version SF.
+
 - Method: POST
 - URL: `https://<PROJECT_REF>.supabase.co/rest/v1/portfolio_consumption`
-- Authentication: Predefined Credential Type -> Supabase API
-  - Reusar la misma credencial Supabase service_role que usa BotiAlertas v2 HTTP upsert.
-- Send Headers (additional):
+- Authentication: Predefined Credential Type -> Supabase API (service_role)
+- Headers:
   - `Prefer`: `resolution=merge-duplicates,return=minimal`
   - `Content-Type`: `application/json`
-- Body Content Type: JSON
-- Specify Body: Using JSON
-- JSON: `={{ $json.rows }}`
+- Body: `={{ $json.rows }}`
 
-> El nodo Supabase nativo no se usa por la misma razon que en BotiAlertas v2:
-> v1 mete todo en un INSERT batch y un solo conflict aborta. PostgREST con
-> `Prefer: resolution=merge-duplicates` hace upsert real fila por fila.
+## Reglas billable aplicadas (referencia)
 
-## Tabla destino — esquema
+El SQL del endpoint CH replica las reglas oficiales del motor de facturacion
+Truora (doc "Reglas de Calculo de Contadores de Cobro", 2026-05-08). Detalle
+completo en skill `.claude/skills/clickhouse-counters-metabase.md`. Resumen:
 
-`public.portfolio_consumption`:
+| Bucket | Filtros |
+|---|---|
+| `validations` | `product LIKE 'validations_%' AND status IN ('success','failure') AND is_validation_retry = false AND validation_failure_status != 'system_error' AND validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized')` + counter adicional para filas con `manual_review_status='performed'` |
+| `checks` | `product LIKE 'checks_%' AND status='completed' AND check_type NOT IN ('document-validation','validation')` |
+| `truconnect` | `(product IN ('truconnect_outbound','truconnect_notification') AND status IN ('success','delivered','read')) OR (product='digital_identity_process' AND channel_type='inbound')` + exclusion linea demo `+17547045206` |
 
-| Columna            | Tipo         | Notas                              |
-|--------------------|--------------|-------------------------------------|
-| periodo_mes        | date         | Primer dia del mes BOG (PK)         |
-| client_id          | text         | TCI directo de SF (PK)              |
-| client_name        | text         | de SHARED_COUNTERS_DYNAMO           |
-| csm_owner          | text         | de CSM_CLIENTS.OWNER (email truora) |
-| product            | text         | validations / checks / outbound...  |
-| usage              | bigint       | SUM(USAGE) del mes                  |
-| fecha_actualizado  | timestamptz  | now() del cron                      |
-
-PK compuesta: `(periodo_mes, client_id, product)`. El upsert usa esa PK como
-conflict target (PostgREST lo detecta automaticamente con `merge-duplicates`).
+`FINAL` aplicado a `client_usage_records` para deduplicar version=1+version=2
+del mismo `record_id`.
 
 ## Verificacion post-corrida
 
@@ -129,42 +167,38 @@ FROM public.portfolio_consumption;
 Esperado: ~900 rows, ~100 clientes (cartera Truora), ultima_corrida = ahora.
 
 ```sql
--- Confirmar que solo hay clientes de la cartera Truora
-SELECT pc.client_id, pc.client_name, pc.csm_owner
-FROM public.portfolio_consumption pc
-LEFT JOIN public.clientes c
-  ON c.client_id_di  = pc.client_id
-  OR c.client_id_bgc = pc.client_id
-  OR c.client_id_ce  = pc.client_id
-WHERE c.id IS NULL          -- huerfanos: NO deberian existir
-LIMIT 20;
+-- Comparar con corrida anterior por bucket (sanidad)
+SELECT periodo_mes, product, SUM(usage) AS total
+FROM public.portfolio_consumption
+WHERE periodo_mes >= DATE_TRUNC('month', NOW() - INTERVAL '4 months')
+GROUP BY periodo_mes, product
+ORDER BY periodo_mes DESC, product;
 ```
 
-Si la 2da query devuelve 0 filas, la whitelist funciono correctamente.
+Esperado vs SF previo: el mes corriente y el ultimo mes pueden tener
+**mas usage en CH** que en SF (porque SF tiene lag; CH no). Meses cerrados
+deberian matchear ±2%.
 
-> El nodo HTTP upsert devuelve `[{}]` por el header `Prefer: return=minimal`
-> — eso es OK, no significa que escribio cero. Para confirmar, correr la
-> query de arriba contra Supabase. Si querés ver las filas inline en el
-> output del nodo HTTP, cambiar el header a `return=representation`
-> temporalmente.
+## Rollback
+
+Si el cron CH falla y hay que volver a SF:
+1. En n8n, deshabilitar el nodo `HTTP Request: CH Portfolio Endpoint`.
+2. Crear de nuevo el nodo `Snowflake: Portfolio Query` con el SQL de
+   `portfolio_consumption_sync_sf_legacy.sql`.
+3. En el Code "Prepare Upsert", reemplazar el codigo por el de
+   `portfolio_consumption_sync_sf_legacy.js`.
+4. El Code "Build Whitelist" actual emite ambos formatos, no hay que tocarlo.
+
+Tiempo estimado de rollback: ~10 minutos.
 
 ## Troubleshooting
 
-| Sintoma                                 | Causa probable / fix                                                |
-|-----------------------------------------|---------------------------------------------------------------------|
-| Code node devuelve 0 rows               | SF nodo devolvio keys lowercase. El Code ya es defensivo, revisar SF.|
-| HTTP 401 en upsert                      | Credencial Supabase no es service_role. Confirmar.                  |
-| HTTP 409 conflict / duplicate key       | Falta el Prefer header. Verificar que PostgREST lo lee.             |
-| Faltan clientes en la tabla             | El cliente no existe en SHARED_COUNTERS_DYNAMO ese mes (sin consumo).|
-| csm_owner NULL para varios clientes     | El cliente no esta en CSM_CLIENTS. Coordinar con data team.         |
-
-## Frecuencia y costo
-
-3 corridas/semana, ~900 rows cada una -> ~12k upserts/mes. Despreciable contra
-los limites de Supabase Free. Costo SF: 1 query agregada de ~5-10s por corrida,
-trivial dentro del warehouse compartido.
-
-Si despues queremos sensacion "live", subir a diario (`0 6 * * *`) sigue siendo
-seguro. Mas frecuente que diario empieza a ser ruido — el dato base en
-SHARED_COUNTERS_DYNAMO se actualiza por el pipeline DynamoDB->SF, que tiene su
-propia frecuencia (verificar con `MAX(LAST_ALTERED)` en `INFORMATION_SCHEMA.TABLES`).
+| Sintoma | Causa probable / fix |
+|---|---|
+| HTTP 401 contra CH | API key vencida o sin permisos. Revisar en CH Cloud Console -> API Keys. |
+| HTTP 400 "Array does not start with '['" | Body JSON mal formado. El array `tci_list_array` se esta serializando como string. Verificar el JSON template del nodo HTTP. |
+| Latencia > 30s | Whitelist muy grande o cobertura particion CH degradada. Fragmentar o reportar a plataforma. |
+| Code Prepare devuelve 0 rows | El nodo HTTP devolvio el body en formato distinto. El Code detecta `.data`/`.rows`/item-por-fila; si ninguno matchea, revisar Response Format en el nodo HTTP. |
+| `usage` queda string en la fila final | El Code ya hace `Number(usageRaw)`. Si pasa, revisar que CH no este devolviendo notacion cientifica para volumenes grandes. |
+| Numeros menores que SF para abril/mayo | NO es bug — SF tenia lag. CH tiene el numero real. Confirmar con cliente o equipo facturacion. |
+| Numeros del ultimo mes ajustan dia 1-4 | Truora reconcilia CH internamente entre 1-4 de cada mes. Esperar al dia 4 para reportes definitivos. |

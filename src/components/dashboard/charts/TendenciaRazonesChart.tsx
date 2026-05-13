@@ -224,14 +224,21 @@ function buildPivot(bloques: BloqueMap | null, producto: Producto): PivotConfig 
       legendFormatter: (s: string) => s, // país queda igual (CO, MX, etc.)
     };
   }
-  // CE
+  // CE — series codificadas como `${categoria}__${canal}` para evitar colisión
+  // cuando una misma categoría aparece en outbound y en notif. Decodificamos
+  // en legend/tooltip via seriesMeta + badge canal.
   const piv = pivotCeFallosTendencia(parseCeFallosTendencia(bloques));
   return {
     data: piv.data,
     series: piv.series,
     yFormatter: (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`),
     tooltipFormatter: (v: number) => v.toLocaleString("es-CO"),
-    legendFormatter: (s: string) => s, // categorías ya vienen normalizadas legibles
+    legendFormatter: (s: string) => {
+      const meta = piv.seriesMeta[s];
+      if (!meta) return s;
+      const badge = meta.canal === "notification" ? "Notif" : "Out";
+      return `${meta.categoria} · ${badge}`;
+    },
   };
 }
 

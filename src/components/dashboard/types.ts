@@ -433,11 +433,12 @@ export function pivotBgcRejectionTendencia(rows: BgcRejectionTendenciaRow[]): {
 
 /* ─────────────────────────── Parsers CE nuevos (bloque 4) ─────────────────────────── */
 
-/** Bloque 4 CE: tendencia mensual top 5 categorías de fallo outbound.
- *  Una fila por (mes, categoría). */
+/** Bloque 4 CE: tendencia mensual top 5 (canal, categoría) cross-canal.
+ *  Una fila por (mes, canal, categoría). */
 export interface CeFalloTendenciaRow {
   periodo: string;
   categoria: string;
+  canal: CeCanal;   // col_extra1
   volumen: number;
   totalFallosMes: number;
   pctMes: number | null;
@@ -448,9 +449,10 @@ export function parseCeFallosTendencia(bloques: BloqueMap | null): CeFalloTenden
   if (!bloques) return [];
   const rows = bloques["4_fallos_tendencia_mensual"] ?? [];
   return rows
-    .map((r) => ({
+    .map<CeFalloTendenciaRow>((r) => ({
       periodo: r.periodo ?? "",
       categoria: r.col1 ?? "—",
+      canal: (r.col_extra1 === "notification" ? "notification" : "outbound") as CeCanal,
       volumen: numOrZero(r.col2),
       totalFallosMes: numOrZero(r.col3),
       pctMes: numOrNull(r.col4),
@@ -459,18 +461,32 @@ export function parseCeFallosTendencia(bloques: BloqueMap | null): CeFalloTenden
     .filter((x) => x.periodo);
 }
 
+/** Pivota DataFallosTendencia cross-canal para Recharts.
+ *  Cada serie es la combinación `${categoria}__${canal}` para evitar
+ *  colisión cuando una misma categoría aparece en outbound y notif
+ *  (caso real: "Healthy ecosystem engagement" sale en ambos canales).
+ *  El frontend deriva el label visible y el badge desde `seriesMeta`. */
 export function pivotCeFallosTendencia(rows: CeFalloTendenciaRow[]): {
   data: Array<{ periodo: string } & Record<string, number>>;
   series: string[];
+  seriesMeta: Record<string, { categoria: string; canal: CeCanal; totalRango: number }>;
 } {
-  const seriesMap: Record<string, number> = {};
-  for (const r of rows) seriesMap[r.categoria] = r.totalRangoCategoria;
-  const series = Object.keys(seriesMap).sort((a, b) => seriesMap[b] - seriesMap[a]);
+  const seriesMeta: Record<string, { categoria: string; canal: CeCanal; totalRango: number }> = {};
+  for (const r of rows) {
+    const key = `${r.categoria}__${r.canal}`;
+    if (!seriesMeta[key]) {
+      seriesMeta[key] = { categoria: r.categoria, canal: r.canal, totalRango: r.totalRangoCategoria };
+    }
+  }
+  const series = Object.keys(seriesMeta).sort(
+    (a, b) => seriesMeta[b].totalRango - seriesMeta[a].totalRango
+  );
 
   const byPeriodo: Record<string, Record<string, number>> = {};
   for (const r of rows) {
+    const key = `${r.categoria}__${r.canal}`;
     if (!byPeriodo[r.periodo]) byPeriodo[r.periodo] = {};
-    byPeriodo[r.periodo][r.categoria] = r.volumen;
+    byPeriodo[r.periodo][key] = r.volumen;
   }
   const data = Object.keys(byPeriodo)
     .sort()
@@ -479,7 +495,7 @@ export function pivotCeFallosTendencia(rows: CeFalloTendenciaRow[]): {
       for (const s of series) rec[s] = byPeriodo[periodo][s] ?? 0;
       return rec;
     });
-  return { data, series };
+  return { data, series, seriesMeta };
 }
 
 /* ─────────────────────────── Heatmap helper ─────────────────────────── */
@@ -660,20 +676,24 @@ export function parseCeConsumo(bloques: BloqueMap | null): CeConsumoTotal | null
   };
 }
 
+export type CeCanal = "outbound" | "notification";
+
 export interface CeFalloItem {
   categoria: string;
   totalFallos: number;
   pctDentroFallos: number | null;
+  canal: CeCanal;  // col_extra1 — desde 2026-05-13 los fallos vienen separados por canal
 }
 
 export function parseCeFallos(bloques: BloqueMap | null): { items: CeFalloItem[]; pctExito: number | null; totalOutbound: number } {
   if (!bloques) return { items: [], pctExito: null, totalOutbound: 0 };
   const rows = bloques["3_fallos_outbound"] ?? [];
   if (rows.length === 0) return { items: [], pctExito: null, totalOutbound: 0 };
-  const items = rows.map((r) => ({
+  const items: CeFalloItem[] = rows.map((r) => ({
     categoria: r.col1 ?? "—",
     totalFallos: numOrZero(r.col2),
     pctDentroFallos: numOrNull(r.col3),
+    canal: (r.col_extra1 === "notification" ? "notification" : "outbound") as CeCanal,
   })).sort((a, b) => b.totalFallos - a.totalFallos);
   // col4 (totalOutbound), col7 (pctExito) son repetidos en cada fila — tomamos del primero
   const first = rows[0];

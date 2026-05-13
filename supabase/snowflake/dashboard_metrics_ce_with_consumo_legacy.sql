@@ -82,7 +82,7 @@ outbound_success_prev AS (
     AND (s.truora_flow_id != 'empty'
          OR LOWER(CAST(s.outbound_is_notification AS VARCHAR)) = 'true')
 ),
--- Outbound TODOS (success + failure) — solo NO-notif, alimenta % exito del breakdown
+-- Outbound TODOS (success + failure) para Bloque 3 (categorias de fallo)
 outbound_all_actual AS (
   SELECT
     s.message_id,
@@ -95,36 +95,6 @@ outbound_all_actual AS (
         BETWEEN pe.fecha_inicio AND pe.fecha_fin
     AND LOWER(CAST(s.outbound_is_notification AS VARCHAR)) = 'false'
     AND s.truora_flow_id != 'empty'
-),
-
--- Mensajes salientes TODOS (outbound + notification) con columna canal — alimenta
--- bloque 3 y 4 (categorias de fallo). Diagnostico 2026-05-13 mostro que para
--- clientes pesados en notif (caso Monte de Piedad abril: 1.045 fallos notif vs
--- 881 fallos outbound) el chart pre-cambio invisibilizaba la mayor parte de los
--- fallos. Ahora se cuentan ambos canales etiquetados, top 5 cross-canal por
--- volumen absoluto.
---
--- IMPORTANTE: NO filtramos por truora_flow_id aca. Decision tomada 2026-05-13
--- (Opcion A): el filtro `truora_flow_id != 'empty'` excluia outbound sin flow
--- asignado, incluyendo 607 fallos "it was not possible to confirm success or
--- failure in the message sending" en Monte de Piedad abril (69% de sus fallos
--- outbound). Esos son problemas de la integracion Truora↔Meta que el CSM debe
--- ver. El filtro flow_id sigue aplicandose en outbound_all_actual (que alimenta
--- el "% exito salientes" del breakdown KPI) y en outbound_success_actual (que
--- alimenta el counter del bloque 1), manteniendo consistencia con la facturacion.
-mensajes_all_actual AS (
-  SELECT
-    s.message_id,
-    s.status,
-    s.failure_reason,
-    CASE WHEN LOWER(CAST(s.outbound_is_notification AS VARCHAR)) = 'true'
-         THEN 'notification' ELSE 'outbound' END AS canal,
-    DATE_TRUNC('month', CONVERT_TIMEZONE('UTC','America/Bogota', s.creation_date))::DATE AS mes_local
-  FROM TRUORA.TRUORA_SCHEMA.SENT_OUTBOUND_MESSAGES s
-  CROSS JOIN periodos pe
-  WHERE s.client_id = pe.client_id
-    AND CONVERT_TIMEZONE('UTC','America/Bogota', s.creation_date)::DATE
-        BETWEEN pe.fecha_inicio AND pe.fecha_fin
 ),
 
 -- Inbounds desde CONVERSATIONS_STEPS (no de la vista de agente)
@@ -204,18 +174,10 @@ bloque1 AS (
   FROM periodos pe
 ),
 
--- Bloque 3: top 5 categorias de fallo cross-canal (outbound + notification).
--- Las categorias nuevas (Envio sin confirmacion / Template formato invalido /
--- Envio template fallido) se sumaron 2026-05-13 tras diagnosticar que 86% de
--- los fallos outbound de Monte de Piedad caian en 'Other'. Ahora <5% deberia
--- caer en 'Other' para clientes con tail conocido.
+-- Bloque 3: top 5 categorias de fallo outbound
 fallos AS (
   SELECT
-    canal,
     CASE
-      WHEN failure_reason ILIKE '%not possible to confirm%'  THEN 'Envio sin confirmacion de Meta'
-      WHEN failure_reason ILIKE '%param text cannot have%'   THEN 'Template con formato invalido'
-      WHEN failure_reason ILIKE '%send template%failed%'     THEN 'Envio template fallido'
       WHEN failure_reason ILIKE '%undeliverable%'            THEN 'Message Undeliverable'
       WHEN failure_reason ILIKE '%healthy ecosystem%'        THEN 'Healthy ecosystem engagement'
       WHEN failure_reason ILIKE '%experiment%'               THEN 'User is part of an experiment'
@@ -228,14 +190,12 @@ fallos AS (
       ELSE 'Other'
     END                                                AS categoria_fallo,
     COUNT(*) AS total_fallos
-  FROM mensajes_all_actual
+  FROM outbound_all_actual
   WHERE status = 'failure'
-  GROUP BY canal, categoria_fallo
+  GROUP BY categoria_fallo
   QUALIFY ROW_NUMBER() OVER (ORDER BY total_fallos DESC) <= 5
 ),
--- Totales para porcentajes del bloque 3 — siguen siendo solo outbound NO-notif
--- porque el "% exito salientes" del breakdown se interpreta como tasa del
--- canal saliente puro (marketing/transaccional), no de notif.
+-- Totales para porcentajes del bloque 3
 totales_outbound AS (
   SELECT
     COUNT(*)                                                 AS total_outbound,
@@ -243,29 +203,23 @@ totales_outbound AS (
     COUNT(CASE WHEN status='success' THEN 1 END)             AS total_exitosos
   FROM outbound_all_actual
 ),
--- Total fallidos cross-canal (para el % dentro de fallos en col3)
-total_fallidos_canal AS (
-  SELECT COUNT(*) AS total FROM mensajes_all_actual WHERE status = 'failure'
-),
 bloque3 AS (
   SELECT
     '3_fallos_outbound'                                                  AS bloque,
     pe.fecha_inicio                                                      AS periodo,
     f.categoria_fallo::VARCHAR                                           AS col1,
     f.total_fallos::VARCHAR                                              AS col2,
-    ROUND(f.total_fallos::FLOAT / NULLIF(tfc.total, 0) * 100, 1)::VARCHAR AS col3, -- pct_dentro_de_fallos (cross-canal)
+    ROUND(f.total_fallos::FLOAT / NULLIF(t.total_fallidos, 0) * 100, 1)::VARCHAR AS col3, -- pct_dentro_de_fallos
     t.total_outbound::VARCHAR                                            AS col4,
     t.total_exitosos::VARCHAR                                            AS col5,
     t.total_fallidos::VARCHAR                                            AS col6,
-    ROUND(t.total_exitosos::FLOAT / NULLIF(t.total_outbound, 0) * 100, 1)::VARCHAR AS col7, -- pct_exito (solo outbound NO-notif)
+    ROUND(t.total_exitosos::FLOAT / NULLIF(t.total_outbound, 0) * 100, 1)::VARCHAR AS col7, -- pct_exito
     NULL::VARCHAR AS col8, NULL::VARCHAR AS col9, NULL::VARCHAR AS col10,
     NULL::VARCHAR AS col11,
-    f.canal::VARCHAR  AS col_extra1,   -- 'outbound' | 'notification'
-    NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
     NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
   FROM fallos f
   CROSS JOIN totales_outbound t
-  CROSS JOIN total_fallidos_canal tfc
   CROSS JOIN periodos pe
 ),
 
@@ -319,48 +273,46 @@ bloque5c AS (
 ),
 
 -- ═══════════════════════════════════════════════════════════════════
--- Bloque 4: tendencia mensual top 5 (canal, categoria) cross-canal
+-- Bloque 4: tendencia mensual top 5 categorias de fallo outbound
 -- ═══════════════════════════════════════════════════════════════════
--- Mismo universo que bloque 3 (outbound + notif). Top 5 por (canal, categoria)
--- en el rango total + 1 fila por (mes, canal, categoria) con volumen y %
--- sobre fallidos del mes (denominador cross-canal).
+-- Top 5 del rango total + 1 fila por (mes, categoria) con volumen y %
+-- sobre fallidos del mes.
 fallos_clasif AS (
   SELECT
-    mes_local,
-    message_id,
-    canal,
+    DATE_TRUNC('month', CONVERT_TIMEZONE('UTC','America/Bogota', s.creation_date))::DATE AS mes_local,
+    s.message_id,
     CASE
-      WHEN failure_reason ILIKE '%not possible to confirm%'  THEN 'Envio sin confirmacion de Meta'
-      WHEN failure_reason ILIKE '%param text cannot have%'   THEN 'Template con formato invalido'
-      WHEN failure_reason ILIKE '%send template%failed%'     THEN 'Envio template fallido'
-      WHEN failure_reason ILIKE '%undeliverable%'            THEN 'Message Undeliverable'
-      WHEN failure_reason ILIKE '%healthy ecosystem%'        THEN 'Healthy ecosystem engagement'
-      WHEN failure_reason ILIKE '%experiment%'               THEN 'User is part of an experiment'
-      WHEN failure_reason ILIKE '%stop receiving marketing%' THEN 'Usuario bloqueo marketing'
-      WHEN failure_reason ILIKE '%spam%'                     THEN 'Limite spam'
-      WHEN failure_reason ILIKE '%locked%'                   THEN 'Cuenta bloqueada'
-      WHEN failure_reason ILIKE '%does not exist%'           THEN 'Template/objeto invalido'
-      WHEN failure_reason ILIKE '%invalid%'                  THEN 'Numero invalido'
-      WHEN failure_reason IS NULL                            THEN 'Sin razon registrada'
+      WHEN s.failure_reason ILIKE '%undeliverable%'            THEN 'Message Undeliverable'
+      WHEN s.failure_reason ILIKE '%healthy ecosystem%'        THEN 'Healthy ecosystem engagement'
+      WHEN s.failure_reason ILIKE '%experiment%'               THEN 'User is part of an experiment'
+      WHEN s.failure_reason ILIKE '%stop receiving marketing%' THEN 'Usuario bloqueo marketing'
+      WHEN s.failure_reason ILIKE '%spam%'                     THEN 'Limite spam'
+      WHEN s.failure_reason ILIKE '%locked%'                   THEN 'Cuenta bloqueada'
+      WHEN s.failure_reason ILIKE '%does not exist%'           THEN 'Template/objeto invalido'
+      WHEN s.failure_reason ILIKE '%invalid%'                  THEN 'Numero invalido'
+      WHEN s.failure_reason IS NULL                            THEN 'Sin razon registrada'
       ELSE 'Other'
     END AS categoria_fallo
-  FROM mensajes_all_actual
-  WHERE status = 'failure'
+  FROM TRUORA.TRUORA_SCHEMA.SENT_OUTBOUND_MESSAGES s
+  CROSS JOIN periodos pe
+  WHERE s.client_id = pe.client_id
+    AND CONVERT_TIMEZONE('UTC','America/Bogota', s.creation_date)::DATE
+        BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(CAST(s.outbound_is_notification AS VARCHAR)) = 'false'
+    AND s.truora_flow_id != 'empty'
+    AND s.status = 'failure'
 ),
 
 top5_categorias AS (
-  -- Top 5 (canal, categoria) por volumen absoluto cross-canal
   SELECT
-    canal,
     categoria_fallo,
     COUNT(*) AS total_rango
   FROM fallos_clasif
-  GROUP BY canal, categoria_fallo
+  GROUP BY categoria_fallo
   QUALIFY ROW_NUMBER() OVER (ORDER BY total_rango DESC) <= 5
 ),
 
 fallos_por_mes_total AS (
-  -- Denominador cross-canal del mes
   SELECT mes_local, COUNT(*) AS total_fallos_mes
   FROM fallos_clasif
   GROUP BY mes_local
@@ -371,23 +323,21 @@ meses_unicos_ce AS (
 ),
 
 mes_x_cat AS (
-  SELECT m.mes_local, t.canal, t.categoria_fallo, t.total_rango
+  SELECT m.mes_local, t.categoria_fallo, t.total_rango
   FROM meses_unicos_ce m CROSS JOIN top5_categorias t
 ),
 
 categoria_por_mes AS (
   SELECT
     mxc.mes_local,
-    mxc.canal,
     mxc.categoria_fallo,
     mxc.total_rango,
     COALESCE(COUNT(fc.message_id), 0) AS volumen_mes
   FROM mes_x_cat mxc
   LEFT JOIN fallos_clasif fc
-    ON fc.mes_local       = mxc.mes_local
-   AND fc.canal           = mxc.canal
+    ON fc.mes_local = mxc.mes_local
    AND fc.categoria_fallo = mxc.categoria_fallo
-  GROUP BY mxc.mes_local, mxc.canal, mxc.categoria_fallo, mxc.total_rango
+  GROUP BY mxc.mes_local, mxc.categoria_fallo, mxc.total_rango
 ),
 
 bloque4 AS (
@@ -396,27 +346,48 @@ bloque4 AS (
     cpm.mes_local                                               AS periodo,
     cpm.categoria_fallo::VARCHAR                                AS col1,  -- categoria
     cpm.volumen_mes::VARCHAR                                    AS col2,  -- volumen del mes
-    fpm.total_fallos_mes::VARCHAR                               AS col3,  -- total fallos del mes (cross-canal)
+    fpm.total_fallos_mes::VARCHAR                               AS col3,  -- total fallos del mes
     ROUND(cpm.volumen_mes::FLOAT / NULLIF(fpm.total_fallos_mes, 0) * 100, 2)::VARCHAR AS col4, -- pct dentro del mes
-    cpm.total_rango::VARCHAR                                    AS col5,  -- total de la categoria (orden top5)
+    cpm.total_rango::VARCHAR                                    AS col5,  -- total de la categoria en el rango (orden top5)
     NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
     NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
-    cpm.canal::VARCHAR  AS col_extra1,   -- 'outbound' | 'notification'
-    NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
     NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
   FROM categoria_por_mes cpm
   LEFT JOIN fallos_por_mes_total fpm ON fpm.mes_local = cpm.mes_local
 ),
 
--- =============================================================================
--- NOTA: el bloque `consumo_mensual` se removio el 2026-05-11.
--- Ahora vive en el endpoint CH "Dashboard Detail Consumo Mensual".
--- Ver dashboard_metrics_di.sql para detalle del cambio. Backup completo:
---   dashboard_metrics_ce_with_consumo_legacy.sql
--- =============================================================================
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque consumo_mensual: SHARED_COUNTERS_DYNAMO (PRODUCT='truconnect')
+-- ═══════════════════════════════════════════════════════════════════
+consumo_dynamo_ce AS (
+  SELECT
+    s.PERIOD,
+    s.PRODUCT_IDENTIFIER,
+    s.USAGE
+  FROM TRUORA.TRUORA_SCHEMA.SHARED_COUNTERS_DYNAMO s
+  CROSS JOIN periodos pe
+  WHERE s.CLIENT_ID = pe.client_id
+    AND s.PERIOD BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(s.PRODUCT) = 'truconnect'
+),
+bloque_consumo AS (
+  SELECT
+    'consumo_mensual'                                           AS bloque,
+    PERIOD                                                      AS periodo,
+    PRODUCT_IDENTIFIER::VARCHAR                                 AS col1,
+    USAGE::VARCHAR                                              AS col2,
+    NULL::VARCHAR AS col3, NULL::VARCHAR AS col4, NULL::VARCHAR AS col5,
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM consumo_dynamo_ce
+)
 
 SELECT * FROM bloque1
 UNION ALL SELECT * FROM bloque3
 UNION ALL SELECT * FROM bloque4
 UNION ALL SELECT * FROM bloque5c
+UNION ALL SELECT * FROM bloque_consumo
 ORDER BY bloque, periodo;

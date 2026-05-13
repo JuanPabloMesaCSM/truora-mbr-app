@@ -4,6 +4,11 @@ README paso a paso para armar el workflow `Dashboard Metrics Detail` en la UI de
 
 Este workflow lo dispara el frontend de la página `/dashboard` cuando el CSM elige (cliente, periodo, productos) y necesita **counters + tendencia mensual + razones de rechazo** del rango. Latencia objetivo: **30–60 s síncrono**.
 
+> **Cambio 2026-05-11 — migración parcial a ClickHouse.** El bloque `consumo_mensual` que vivía dentro de cada SQL SF (DI/BGC/CE) se movió a un nuevo endpoint CH `Dashboard Detail Consumo Mensual` (4ta rama del workflow). Motivo: SF tenía lag del pipeline DynamoDB→SF que distorsionaba el chart "Consumo Mensual por Producto" en el último mes (caso Enlace CSC abril 2026: SF mostraba 12k cuando lo real eran 24k). Los demás bloques (razones DI, score BGC, fallos CE, atendidas) **siguen en SF** porque dependen de columnas/tablas que CH no expone. Ver:
+>   - `truora-mbr-app/clickhouse/dashboard_detail_consumo_mensual.sql` (SQL del endpoint)
+>   - `truora-mbr-app/clickhouse/dashboard_detail_consumo_mensual_validation.md` (queries validación SF vs CH)
+>   - Backups `*_with_consumo_legacy.sql` con el bloque original.
+
 ---
 
 ## Resumen funcional
@@ -13,10 +18,11 @@ Frontend POST /webhook/dashboard-metrics-detail
    │   body: { client_id_di, client_id_bgc, client_id_ce,
    │           fecha_inicio, fecha_fin, productos[], email }
    ↓
-n8n: Webhook → Set Params (Code) → 3 IFs por producto en paralelo
-                                      ├── Snowflake DI
-                                      ├── Snowflake BGC
-                                      └── Snowflake CE
+n8n: Webhook → Set Params (Code) → 4 ramas en paralelo
+                                      ├── [IF DI]  → Snowflake DI    (sin consumo_mensual)
+                                      ├── [IF BGC] → Snowflake BGC   (sin consumo_mensual)
+                                      ├── [IF CE]  → Snowflake CE    (sin consumo_mensual)
+                                      └── HTTP CH: Consumo Mensual    ← NUEVO
                                               │
                                        Merge (append)
                                               │
@@ -28,7 +34,7 @@ n8n: Webhook → Set Params (Code) → 3 IFs por producto en paralelo
 Frontend recibe { ok, data: { DI:{bloque:[...]}, BGC:{...}, CE:{...} } }
 ```
 
-Total: **9 nodos** + 3 IFs = **12 visibles**.
+Total: **10 nodos** + 3 IFs = **13 visibles** (suma 1 vs version pre-migracion CH).
 
 ---
 
@@ -180,6 +186,48 @@ Conectá: `IF Run CE (true)` → `Snowflake CE`.
 
 ---
 
+## Paso 7.5 — HTTP Request: CH Consumo Mensual (NUEVO, post 2026-05-11)
+
+Add node → **HTTP Request**. Va paralelo a los 3 Snowflake (no usa IF, siempre se ejecuta cuando hay al menos 1 client_id presente).
+
+| Campo | Valor |
+|---|---|
+| Method | `POST` |
+| URL | `https://console-api.clickhouse.cloud/.api/query-endpoints/<UUID_DETAIL>/run` |
+| Authentication | Generic Credential Type → Basic Auth (`Automatización Oppy permanente`) |
+| Headers | `Content-Type: application/json`, `x-clickhouse-endpoint-version: 2` |
+| Body Content Type | JSON |
+| Specify Body | Using JSON |
+
+**JSON body:**
+```
+={{ {
+  queryVariables: {
+    client_id_di:  $('Set Params').first().json.client_id_di  || '',
+    client_id_bgc: $('Set Params').first().json.client_id_bgc || '',
+    client_id_ce:  $('Set Params').first().json.client_id_ce  || '',
+    fecha_inicio:  $('Set Params').first().json.fecha_inicio,
+    fecha_fin:     $('Set Params').first().json.fecha_fin
+  },
+  format: 'JSONEachRow'
+} }}
+```
+
+> **`<UUID_DETAIL>`** es el UUID del 2do endpoint CH que se crea con el SQL `truora-mbr-app/clickhouse/dashboard_detail_consumo_mensual.sql`. **No confundir** con el UUID del endpoint de Portfolio Sync (son endpoints distintos).
+
+> **Si el cliente no tiene un producto** (ej. solo DI), el frontend manda `null` en `client_id_bgc` / `client_id_ce`. El `|| ''` lo convierte a string vacío para que CH no tire `cannot parse NULL as String`. El SQL filtra por `client_id = '<vacio>'` → 0 filas. Correcto.
+
+**Nombre del nodo:** `CH Consumo Mensual` exactamente (el Stitch lo lee por nombre: `$('CH Consumo Mensual').all()`).
+
+**Test:** ejecutar el workflow con body real, verificar que este nodo devuelve filas con shape:
+```json
+{"periodo_mes":"2026-04-01","client_id":"TCI...","producto_root":"validations","product_identifier":"document_validation","usage":"24061"}
+```
+
+Conectá: `Set Params` → `CH Consumo Mensual` (sin IF — siempre corre).
+
+---
+
 ## Paso 8 — Merge
 
 Add node → **Merge**.
@@ -187,12 +235,13 @@ Add node → **Merge**.
 | Campo | Valor |
 |---|---|
 | Mode | `Append` |
-| Number of inputs | `3` |
+| Number of inputs | `4` |
 
 Conectá:
-- `Snowflake DI`  → Merge input 1
-- `Snowflake BGC` → Merge input 2
-- `Snowflake CE`  → Merge input 3
+- `Snowflake DI`        → Merge input 1
+- `Snowflake BGC`       → Merge input 2
+- `Snowflake CE`        → Merge input 3
+- `CH Consumo Mensual`  → Merge input 4
 
 > El Merge en `Append` simplemente concatena las filas que llegan. Si una rama no corrió (porque su IF gating fue false), esa entrada queda vacía y el Merge no falla. **No usar mode `Combine` aquí** — perdería filas si no hay match.
 

@@ -284,16 +284,38 @@ bloque8 AS (
   FROM checks_pais_mes cpm
 ),
 
--- =============================================================================
--- NOTA: el bloque `consumo_mensual` se removio el 2026-05-11.
--- Ahora vive en el endpoint CH "Dashboard Detail Consumo Mensual".
--- Ver dashboard_metrics_di.sql para detalle del cambio. Backup completo:
---   dashboard_metrics_bgc_with_consumo_legacy.sql
--- =============================================================================
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque consumo_mensual: SHARED_COUNTERS_DYNAMO (PRODUCT='checks')
+-- ═══════════════════════════════════════════════════════════════════
+consumo_dynamo_bgc AS (
+  SELECT
+    s.PERIOD,
+    s.PRODUCT_IDENTIFIER,
+    s.USAGE
+  FROM TRUORA.TRUORA_SCHEMA.SHARED_COUNTERS_DYNAMO s
+  CROSS JOIN periodos pe
+  WHERE s.CLIENT_ID = pe.client_id
+    AND s.PERIOD BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(s.PRODUCT) = 'checks'
+),
+bloque_consumo AS (
+  SELECT
+    'consumo_mensual'                                           AS bloque,
+    PERIOD                                                      AS periodo,
+    PRODUCT_IDENTIFIER::VARCHAR                                 AS col1,
+    USAGE::VARCHAR                                              AS col2,
+    NULL::VARCHAR AS col3, NULL::VARCHAR AS col4, NULL::VARCHAR AS col5,
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM consumo_dynamo_bgc
+)
 
 SELECT * FROM bloque1
 UNION ALL SELECT * FROM bloque2
 UNION ALL SELECT * FROM bloque6
 UNION ALL SELECT * FROM bloque7
 UNION ALL SELECT * FROM bloque8
+UNION ALL SELECT * FROM bloque_consumo
 ORDER BY bloque, periodo;

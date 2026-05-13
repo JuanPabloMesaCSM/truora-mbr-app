@@ -7,6 +7,7 @@ import {
   heatmapColor,
   labelRazon,
   type BloqueMap,
+  type CeCanal,
   type Producto,
 } from "../types";
 import { ChartCard } from "./sharedChartUtils";
@@ -103,13 +104,14 @@ export default function RazonesTablaHeatmap({
               const bgColor = heatmapColor(intensity * 100, 0.22);
               return (
                 <tr
-                  key={r.label}
+                  key={`${r.label}__${r.canal ?? "_"}`}
                   style={{ borderBottom: `1px solid ${S.border}` }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >
                   <td style={{ padding: "8px 6px", color: S.text }}>
                     {r.labelDisplay}
+                    {r.canal && <CanalBadge canal={r.canal} />}
                   </td>
                   <td style={{ padding: "8px 6px", textAlign: "right", color: S.muted, fontFeatureSettings: '"tnum"' }}>
                     {fmtNum(r.volumen)}
@@ -179,11 +181,12 @@ function Th({
 /* ─────────────────────────── Helpers ─────────────────────────── */
 
 interface TablaRow {
-  label: string;        // raw key (slug o pais)
+  label: string;        // raw key (slug o pais o categoria)
   labelDisplay: string; // label legible para mostrar
   volumen: number;
   pct: number | null;   // % sobre el total del producto
   totalDenominador: number; // para subtitle
+  canal?: CeCanal;      // solo CE: 'outbound' | 'notification' para badge visual
 }
 
 function buildRows(bloques: BloqueMap | null, producto: Producto): TablaRow[] {
@@ -208,21 +211,49 @@ function buildRows(bloques: BloqueMap | null, producto: Producto): TablaRow[] {
       totalDenominador: totalChecks,
     }));
   }
-  // CE
+  // CE — cross-canal: outbound + notification con badge para diferenciar.
   const ce = parseCeFallos(bloques);
+  const totalCe = ce.items.reduce((s, x) => s + x.totalFallos, 0);
   return ce.items.map((it) => ({
     label: it.categoria,
     labelDisplay: it.categoria,
     volumen: it.totalFallos,
     pct: it.pctDentroFallos,
-    totalDenominador: ce.items.reduce((s, x) => s + x.totalFallos, 0),
+    totalDenominador: totalCe,
+    canal: it.canal,
   }));
 }
 
 function titleFor(producto: Producto): string {
   if (producto === "DI") return "Razones de rechazo (todas, agregadas)";
   if (producto === "BGC") return "Checks rechazados por país";
-  return "Categorías de fallo de mensajes salientes";
+  return "Categorías de fallo (salientes + notificaciones)";
+}
+
+/** Badge chiquito al lado de la categoría para diferenciar canal CE.
+ *  Outbound = cyan (color CE), Notification = gris violáceo (canal distinto). */
+function CanalBadge({ canal }: { canal: CeCanal }) {
+  const isNotif = canal === "notification";
+  const color = isNotif ? "#94A3B8" : "#0891B2";
+  const label = isNotif ? "Notif" : "Out";
+  return (
+    <span
+      style={{
+        marginLeft: 8,
+        fontSize: 9,
+        fontWeight: 700,
+        color,
+        background: `${color}1F`,
+        padding: "2px 6px",
+        borderRadius: 4,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        verticalAlign: "middle",
+      }}
+    >
+      {label}
+    </span>
+  );
 }
 
 function labelHeaderFor(producto: Producto): string {

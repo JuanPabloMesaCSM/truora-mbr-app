@@ -1,15 +1,12 @@
 // Code node "Build Whitelist" del flujo "Portfolio Consumption Sync".
 //
 // Toma los rows del nodo Supabase "Get Clientes Whitelist" (cartera activa
-// con sus 3 TCIs por producto) y devuelve la lista combinada de TCIs
-// (DI U BGC U CE) en dos formatos:
+// con sus 3 TCIs por producto) y arma UN string SQL-ready con la lista
+// combinada de TCIs (DI ∪ BGC ∪ CE), listo para inyectar en el WHERE IN
+// del nodo Snowflake siguiente.
 //
-//   tci_list_array: ["TCI...", "TCI...", ...]    <- para body JSON CH endpoint
-//   tci_list:       "'tci1','tci2',..."          <- para SQL legacy (fallback SF)
-//
-// Migrado a CH 2026-05-11. El array es lo que consume el nodo HTTP Request
-// del Query Endpoint CH. El string SQL se mantiene por compatibilidad con
-// el query SF de fallback (`portfolio_consumption_sync_sf_legacy.sql`).
+// Output: 1 item con
+//   { tci_list: "'tci1','tci2',...", count: <int> }
 //
 // Reglas n8n: nada de optional chaining, nada de fetch.
 
@@ -35,23 +32,21 @@ for (let i = 0; i < items.length; i++) {
   if (ce)  tciSet.add(ce);
 }
 
-const tciArray = Array.from(tciSet);
-
-// Para el SQL legacy SF: escapamos comillas simples (defensivo) y armamos
-// el formato "'tci1','tci2',...". Si la cartera viene vacia, devolvemos "''"
-// (string SQL valido que no matchea nada) para que el nodo SF no falle con
-// "WHERE IN ()".
+// Escapamos comillas simples (defensivo — los TCIs no deberian tener, pero
+// nunca asumir).
 const escaped = [];
-for (const t of tciArray) {
+for (const t of tciSet) {
   escaped.push("'" + String(t).replace(/'/g, "''") + "'");
 }
-const tciListSql = escaped.length > 0 ? escaped.join(',') : "''";
+
+// Fallback si la cartera viene vacia: SQL valido que no matchea nada,
+// para que el nodo SF no falle con sintaxis "WHERE IN ()".
+const tciList = escaped.length > 0 ? escaped.join(',') : "''";
 
 return [{
   json: {
-    tci_list_array: tciArray,        // formato CH: Array(String)
-    tci_list:       tciListSql,      // formato SF legacy: string SQL-ready
-    count:          tciSet.size,
+    tci_list: tciList,
+    count: tciSet.size,
     clientes_input: items.length
   }
 }];

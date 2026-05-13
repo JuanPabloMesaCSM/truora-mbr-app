@@ -12,7 +12,6 @@ import {
   type ClienteRow,
   type Producto,
   type TipoFallo,
-  type TotalesBillable,
 } from "./types";
 import ConsumoMensualChart from "./charts/ConsumoMensualChart";
 import ConversionChart from "./charts/ConversionChart";
@@ -90,9 +89,9 @@ export default function ClienteView({
         <KpiCard
           producto="DI"
           metricas={[
-            { label: "Consumo facturable", valor: diBillable ? fmtNum(diBillable.total) : "—", prev: "", variacionPct: null, subLabel: buildSubLabel(diBillable) },
+            { label: "Consumo total por producto", valor: diBillable ? fmtNum(diBillable.total) : "—", prev: "", variacionPct: null },
+            { label: "Procesos únicos iniciados", valor: fmtNum(di.totalProcesos), prev: fmtNum(di.totalProcesosPrev), variacionPct: di.variacionProcesosPct },
             { label: "% Conversión", valor: di.conversionPct != null ? `${di.conversionPct.toFixed(1)}%` : "—", prev: di.conversionPctPrev != null ? `${di.conversionPctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(di.conversionPct, di.conversionPctPrev) },
-            { label: "Procesos iniciados", valor: fmtNum(di.totalProcesos), prev: fmtNum(di.totalProcesosPrev), variacionPct: di.variacionProcesosPct },
           ]}
           breakdown={[
             { label: "Exitosas", valor: fmtNum(di.exitosos) },
@@ -107,7 +106,7 @@ export default function ClienteView({
         <KpiCard
           producto="BGC"
           metricas={[
-            { label: "Consumo facturable", valor: bgcBillable ? fmtNum(bgcBillable.total) : "—", prev: "", variacionPct: null, subLabel: buildSubLabel(bgcBillable) },
+            { label: "Consumo total por producto", valor: bgcBillable ? fmtNum(bgcBillable.total) : "—", prev: "", variacionPct: null },
             { label: "% Checks exitosos", valor: bgc.passRatePct != null ? `${bgc.passRatePct.toFixed(1)}%` : "—", prev: bgc.passRatePctPrev != null ? `${bgc.passRatePctPrev.toFixed(1)}%` : "—", variacionPct: deltaPp(bgc.passRatePct, bgc.passRatePctPrev) },
             { label: "Puntaje promedio", valor: bgc.scorePromedio != null ? bgc.scorePromedio.toFixed(2) : "—", prev: bgc.scorePromedioPrev != null ? bgc.scorePromedioPrev.toFixed(2) : "—", variacionPct: null },
           ]}
@@ -123,7 +122,7 @@ export default function ClienteView({
         <KpiCard
           producto="CE"
           metricas={[
-            { label: "Consumo facturable", valor: ceBillable ? fmtNum(ceBillable.total) : "—", prev: "", variacionPct: null, subLabel: buildSubLabel(ceBillable) },
+            { label: "Consumo total por producto", valor: ceBillable ? fmtNum(ceBillable.total) : "—", prev: "", variacionPct: null },
             { label: "Conversaciones entrantes", valor: fmtNum(ce.inbound), prev: fmtNum(ce.inboundPrev), variacionPct: ce.variacionInboundPct },
             { label: "Mensajes salientes", valor: fmtNum(ce.outbound), prev: fmtNum(ce.outboundPrev), variacionPct: ce.variacionOutboundPct },
           ]}
@@ -299,7 +298,7 @@ function KpiCard({
   breakdown,
 }: {
   producto: Producto;
-  metricas: { label: string; valor: string; prev: string; variacionPct: number | null; subLabel?: string }[];
+  metricas: { label: string; valor: string; prev: string; variacionPct: number | null }[];
   breakdown: { label: string; valor: string }[];
 }) {
   const meta = PROD_META[producto];
@@ -332,16 +331,12 @@ function KpiCard({
             <div style={{ fontSize: 26, fontWeight: 700, color: S.text, lineHeight: 1.1 }}>
               {m.valor}
             </div>
-            {m.subLabel ? (
-              <div style={{ marginTop: 4, fontSize: 10, color: S.dim, lineHeight: 1.4 }}>
-                {m.subLabel}
-              </div>
-            ) : m.prev || m.variacionPct != null ? (
+            {(m.prev || m.variacionPct != null) && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, fontSize: 11 }}>
                 {m.prev && <span style={{ color: S.dim }}>vs {m.prev}</span>}
                 {m.variacionPct != null && <DeltaBadge value={m.variacionPct} />}
               </div>
-            ) : null}
+            )}
           </div>
         ))}
       </div>
@@ -521,40 +516,6 @@ function deltaPct(curr: number, prev: number): number | null {
   return ((curr - prev) / prev) * 100;
 }
 
-/** Genera la sub-línea del slot "Consumo facturable" con el desglose por
- *  sub-producto, ordenado por volumen DESC. Ej DI: "doc 911 · face passiva 337 · face search 323". */
-const SUB_PRODUCT_LABELS: Record<string, string> = {
-  // DI
-  document_validation: "doc",
-  passive_liveness: "rostro pasiva",
-  face_search: "rostro búsqueda",
-  face_recognition: "rostro",
-  facematch_or_active_liveness: "rostro activa",
-  government_validation: "validación gobierno",
-  speech_match: "voz",
-  electronic_signature: "firma electrónica",
-  phone_verification: "teléfono",
-  email_verification: "email",
-  document_manual_review: "doc revisión manual",
-  face_manual_review: "rostro revisión manual",
-  // BGC
-  checks: "checks",
-  // CE
-  outbound: "salientes",
-  inbound: "entrantes",
-  notification: "notificaciones",
-};
-
-function buildSubLabel(billable: TotalesBillable | null): string | undefined {
-  if (!billable) return undefined;
-  const entries = Object.entries(billable.by_subproduct)
-    .filter(([, v]) => v > 0)
-    .sort(([, a], [, b]) => b - a);
-  if (entries.length === 0) return undefined;
-  return entries
-    .map(([k, v]) => `${SUB_PRODUCT_LABELS[k] ?? k} ${fmtNum(v)}`)
-    .join(" · ");
-}
 
 function deltaPp(curr: number | null, prev: number | null): number | null {
   if (curr == null || prev == null) return null;

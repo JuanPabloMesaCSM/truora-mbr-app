@@ -493,16 +493,39 @@ bloque13 AS (
   CROSS JOIN periodos pe
 ),
 
--- =============================================================================
--- NOTA: el bloque `consumo_mensual` se removio el 2026-05-11.
--- Ahora vive en el endpoint CH "Dashboard Detail Consumo Mensual" (CH es fuente
--- oficial de cobro desde diciembre 2025; SF tenia lag pipeline DynamoDB->SF).
--- Ver:
---   truora-mbr-app/clickhouse/dashboard_detail_consumo_mensual.sql
---   truora-mbr-app/n8n/dashboard_metrics_stitch.js  (procesa la 4ta rama CH)
--- Backup completo del SQL pre-migracion:
---   dashboard_metrics_di_with_consumo_legacy.sql
--- =============================================================================
+-- ═══════════════════════════════════════════════════════════════════
+-- Bloque consumo_mensual: SHARED_COUNTERS_DYNAMO (consumo facturable)
+-- ═══════════════════════════════════════════════════════════════════
+-- Una fila por (mes, PRODUCT_IDENTIFIER) con USAGE.
+-- Para DI filtramos PRODUCT='validations' que cubre:
+--   document_validation, passive_liveness, face_search,
+--   face_manual_review, document_manual_review.
+-- USAGE cuenta cada sub-validacion (no es lo mismo que procesos unicos
+-- de IDENTITY_PROCESSES — son metricas complementarias).
+consumo_dynamo AS (
+  SELECT
+    s.PERIOD,
+    s.PRODUCT_IDENTIFIER,
+    s.USAGE
+  FROM TRUORA.TRUORA_SCHEMA.SHARED_COUNTERS_DYNAMO s
+  CROSS JOIN periodos pe
+  WHERE s.CLIENT_ID = pe.client_id
+    AND s.PERIOD BETWEEN pe.fecha_inicio AND pe.fecha_fin
+    AND LOWER(s.PRODUCT) = 'validations'
+),
+bloque_consumo AS (
+  SELECT
+    'consumo_mensual'                                           AS bloque,
+    PERIOD                                                      AS periodo,
+    PRODUCT_IDENTIFIER::VARCHAR                                 AS col1,  -- sub-validacion
+    USAGE::VARCHAR                                              AS col2,  -- volumen
+    NULL::VARCHAR AS col3, NULL::VARCHAR AS col4, NULL::VARCHAR AS col5,
+    NULL::VARCHAR AS col6, NULL::VARCHAR AS col7, NULL::VARCHAR AS col8,
+    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
+    NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
+  FROM consumo_dynamo
+)
 
 SELECT * FROM bloque1
 UNION ALL SELECT * FROM bloque4
@@ -512,4 +535,5 @@ UNION ALL SELECT * FROM bloque9
 UNION ALL SELECT * FROM bloque10
 UNION ALL SELECT * FROM bloque12
 UNION ALL SELECT * FROM bloque13
+UNION ALL SELECT * FROM bloque_consumo
 ORDER BY bloque, periodo;
