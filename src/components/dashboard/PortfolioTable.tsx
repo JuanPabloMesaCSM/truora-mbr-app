@@ -55,7 +55,7 @@ export default function PortfolioTable({
   // vez de "Daniela Tibaquirá". Ver memoria feedback_admin_duplicate_pattern.md.
   const tciToCliente = useMemo(() => {
     const m = new Map<string, ClienteRow>();
-    const realCsms = clientes.filter((c) => !ADMIN_EMAILS.has(c.csm_email ?? ""));
+    const realCsms = clientes.filter((c) => !ADMIN_EMAILS.has((c.csm_email ?? "").toLowerCase()));
     for (const c of realCsms) {
       if (c.client_id_di)  m.set(c.client_id_di,  c);
       if (c.client_id_bgc) m.set(c.client_id_bgc, c);
@@ -67,13 +67,26 @@ export default function PortfolioTable({
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter((r) =>
-      r.client_id.toLowerCase().includes(q) ||
-      (r.client_name ?? "").toLowerCase().includes(q) ||
-      (r.csm_owner ?? "").toLowerCase().includes(q) ||
-      r.product.toLowerCase().includes(q)
-    );
-  }, [rows, filter]);
+    return rows.filter((r) => {
+      // El filtro busca contra LO QUE EL USUARIO VE: nombre canonical de
+      // Supabase (cliente.nombre) y nombre legible del CSM (csmNombres),
+      // no solo lo que viene de SF crudo. Caso real: SF guarda "Adelantos"
+      // pero Supabase tiene "PayJoy Colombia" — buscar "PayJoy" no encontraba
+      // nada con el filtro antiguo aunque la columna mostraba "PayJoy Colombia".
+      const cliente = tciToCliente.get(r.client_id);
+      const nombreVisible = cliente?.nombre ?? r.client_name ?? "";
+      const csmEmail = cliente?.csm_email ?? "";
+      const csmNombreVisible = csmEmail ? (csmNombres.get(csmEmail) ?? csmEmail) : (r.csm_owner ?? "");
+      return (
+        r.client_id.toLowerCase().includes(q) ||
+        nombreVisible.toLowerCase().includes(q) ||
+        (r.client_name ?? "").toLowerCase().includes(q) ||  // fallback al SF crudo
+        csmNombreVisible.toLowerCase().includes(q) ||
+        csmEmail.toLowerCase().includes(q) ||
+        r.product.toLowerCase().includes(q)
+      );
+    });
+  }, [rows, filter, tciToCliente, csmNombres]);
 
   const sorted = useMemo(() => {
     const arr = filtered.slice();

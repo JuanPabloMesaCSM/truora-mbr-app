@@ -91,7 +91,7 @@ export function resolveTci(clientes: ClienteRow[], tci: string): ClienteRow | nu
   );
   if (matches.length === 0) return null;
   // Preferir cliente real sobre admin-duplicate
-  const noAdmin = matches.filter((c) => !ADMIN_EMAILS_DASH.has(c.csm_email));
+  const noAdmin = matches.filter((c) => !ADMIN_EMAILS_DASH.has((c.csm_email ?? "").toLowerCase()));
   return noAdmin[0] ?? matches[0];
 }
 

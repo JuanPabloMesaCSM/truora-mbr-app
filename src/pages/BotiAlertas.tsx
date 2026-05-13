@@ -26,7 +26,7 @@ type ClienteRow = {
 function enrichAlertas(raw: Alerta[], clientes: ClienteRow[]): Alerta[] {
   const tciToCanonical: Record<string, { id: string; nombre: string; csm_email: string; isAdmin: boolean }> = {};
   for (const c of clientes) {
-    const isAdmin = ADMIN_EMAILS.has(c.csm_email);
+    const isAdmin = ADMIN_EMAILS.has((c.csm_email ?? "").toLowerCase());
     for (const tci of [c.client_id_di, c.client_id_bgc, c.client_id_ce]) {
       if (!tci) continue;
       const existing = tciToCanonical[tci];
@@ -149,10 +149,15 @@ export default function BotiAlertas() {
   }, [navigate]);
 
   /* ── derived ──────────────────────────────────────────────────── */
+  // Email normalizado a lowercase para los chequeos admin. Supabase Auth
+  // puede devolver el email con mayúsculas si así fue creado el usuario
+  // (caso JD: "JDiaz@truora.com" en la sesión no matcheaba ADMIN_VIEW_EMAILS
+  // que estaba en lowercase). Bug descubierto 2026-05-13.
+  const userEmailLc = userEmail ? userEmail.toLowerCase() : null;
   // Admin VIEW: ve el dropdown "Ver cartera de" (Ana, JD, JP Mesa para debug)
-  const isAdminView = !!userEmail && ADMIN_VIEW_EMAILS.has(userEmail);
+  const isAdminView = !!userEmailLc && ADMIN_VIEW_EMAILS.has(userEmailLc);
   // Admin puro: NO tiene cartera real (Ana, JD). JP NO entra acá.
-  const isPureAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
+  const isPureAdmin = !!userEmailLc && ADMIN_EMAILS.has(userEmailLc);
 
   const csmByEmail = useMemo(() => {
     const m: Record<string, { nombre: string }> = {};
@@ -165,8 +170,8 @@ export default function BotiAlertas() {
   // verse a sí mismo en la lista cuando entra como admin view.
   const realCsmList = useMemo(() => {
     return csmRows
-      .filter((c) => !ADMIN_EMAILS.has(c.email))
-      .filter((c) => c.email !== "soporte@truora.com")  // soporte no tiene cartera
+      .filter((c) => !ADMIN_EMAILS.has((c.email ?? "").toLowerCase()))
+      .filter((c) => (c.email ?? "").toLowerCase() !== "soporte@truora.com")  // soporte no tiene cartera
       .slice()
       .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   }, [csmRows]);

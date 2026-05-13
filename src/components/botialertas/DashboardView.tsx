@@ -1470,8 +1470,8 @@ function ClientModal({
   const csm = data.csm_email ? csmByEmail[data.csm_email]?.nombre || data.csm_email : "Sin CSM asignado";
   const tci = Object.values(data.cells).find(Boolean)?.client_id_externo ?? "";
 
-  const isAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail);
-  const isOwner = !!userEmail && data.csm_email === userEmail;
+  const isAdmin = !!userEmail && ADMIN_EMAILS.has(userEmail.toLowerCase());
+  const isOwner = !!userEmail && (data.csm_email ?? "").toLowerCase() === userEmail.toLowerCase();
 
   return (
     <motion.div
