@@ -159,7 +159,14 @@ bloque2 AS (
     ROUND(pasados::FLOAT / NULLIF(completados, 0) * 100, 1)::VARCHAR     AS col6, -- pass_rate
     ROUND(rechazados::FLOAT / NULLIF(completados, 0) * 100, 1)::VARCHAR  AS col7, -- rejection_rate
     ROUND(total_checks::FLOAT / NULLIF((SELECT COUNT(*) FROM checks_actual), 0) * 100, 1)::VARCHAR AS col8, -- pct_sobre_total
-    NULL::VARCHAR AS col9, NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
+    -- col9 exposes the absolute count of rejected checks (score<=6 sobre
+    -- completados). Antes era NULL — el SQL ya calculaba `rechazados` para
+    -- derivar el rejection_rate pero no lo emitía. Lo necesita el frontend
+    -- (RazonesTablaHeatmap) para mostrar el volumen real de rechazados por
+    -- país en lugar del total_checks (que confundía al CSM — caso PEXTO CO
+    -- 14-may: tabla mostraba 1.292.272 'rechazados' cuando los reales eran ~23k).
+    rechazados::VARCHAR                                         AS col9, -- volumen rechazados absoluto
+    NULL::VARCHAR AS col10, NULL::VARCHAR AS col11,
     NULL::VARCHAR AS col_extra1, NULL::VARCHAR AS col_extra2,
     NULL::VARCHAR AS col_extra3, NULL::VARCHAR AS col_extra4
   FROM agg_pais CROSS JOIN periodos pe

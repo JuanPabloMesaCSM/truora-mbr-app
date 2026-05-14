@@ -70,7 +70,7 @@ export default function ConversionChart({
   return (
     <ChartCard
       title={titleFor(producto)}
-      subtitle={`${producto} · ${data.length} ${data.length === 1 ? "mes" : "meses"} · barras: ${cfg.barLabel} · línea: ${cfg.lineLabel}`}
+      subtitle={subtitleFor(producto, data.length, cfg.barLabel, cfg.lineLabel)}
       height={chartHeight ?? 320}
     >
       <ResponsiveContainer width="100%" height="100%">
@@ -199,8 +199,21 @@ function buildData(bloques: BloqueMap | null, producto: Producto): ChartRow[] {
 
 function titleFor(producto: Producto): string {
   if (producto === "DI") return "Conversión y total de validaciones";
-  if (producto === "BGC") return "Checks exitosos y total de checks";
+  if (producto === "BGC") return "Checks ejecutados y % completados";
   return "Volumen y % de conversaciones entrantes";
+}
+
+/** Subtítulo del chart con nota aclaratoria para BGC (que el chart NO es
+ *  consumo facturable sino checks ejecutados SF: incluye errores y otros
+ *  status que CH counter excluye del cobro). Caso emblemático: PEXTO Mar
+ *  muestra 388.049 acá pero 385.717 en el chart de "Consumo mensual"
+ *  arriba — los 2.332 de diff son errores SF, no son facturables. */
+function subtitleFor(producto: Producto, dataLen: number, barLabel: string, lineLabel: string): string {
+  const base = `${producto} · ${dataLen} ${dataLen === 1 ? "mes" : "meses"} · barras: ${barLabel} · línea: ${lineLabel}`;
+  if (producto === "BGC") {
+    return `${base} · incluye errores SF; para consumo facturable ver "Consumo mensual" arriba`;
+  }
+  return base;
 }
 
 function configFor(producto: Producto): {
@@ -223,8 +236,8 @@ function configFor(producto: Producto): {
   }
   if (producto === "BGC") {
     return {
-      barLabel: "Checks",
-      lineLabel: "% Checks exitosos",
+      barLabel: "Checks ejecutados",
+      lineLabel: "% Completados",
       barColor: "#A78BFA",
       lineColor: "#6C3FC5",
       lineDomain: 100,

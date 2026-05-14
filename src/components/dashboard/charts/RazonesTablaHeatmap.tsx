@@ -72,7 +72,7 @@ export default function RazonesTablaHeatmap({
   return (
     <ChartCard
       title={titleFor(producto)}
-      subtitle={`${producto} · ${rows.length} ${rows.length === 1 ? "razón" : "razones"} · total ${fmtNum(rows[0].totalDenominador)} ${denomLabelFor(producto)}`}
+      subtitle={`${producto} · ${rows.length} ${entityLabelFor(producto, rows.length)} · total ${fmtNum(rows[0].totalDenominador)} ${denomLabelFor(producto)}`}
       height={chartHeight ?? 360}
     >
       <div
@@ -93,7 +93,7 @@ export default function RazonesTablaHeatmap({
                 Volumen
               </Th>
               <Th onClick={() => toggleSort("pct")} active={sortBy === "pct"} desc={sortDesc} align="right">
-                % sobre {denomLabelFor(producto)}
+                {pctHeaderFor(producto)}
               </Th>
             </tr>
           </thead>
@@ -202,13 +202,18 @@ function buildRows(bloques: BloqueMap | null, producto: Producto): TablaRow[] {
   if (producto === "BGC") {
     const paises = parseBgcPorPais(bloques);
     if (paises.length === 0) return [];
-    const totalChecks = paises.reduce((s, p) => s + p.totalChecks, 0);
+    // El "volumen" del row ahora es el conteo de rechazados (score≤6 sobre
+    // completados) en lugar de total_checks. Antes el título decía
+    // "rechazados" pero la columna mostraba TODOS los checks del país —
+    // confuso para PEXTO CO que mostraba 1.292.272 "rechazados" cuando en
+    // realidad eran ~23k. col9 trae el conteo exacto del SQL desde 2026-05-14.
+    const totalRechazados = paises.reduce((s, p) => s + p.rechazados, 0);
     return paises.map((p) => ({
       label: p.pais,
       labelDisplay: p.pais,
-      volumen: p.totalChecks,
+      volumen: p.rechazados,
       pct: p.rejectionRatePct,
-      totalDenominador: totalChecks,
+      totalDenominador: totalRechazados,
     }));
   }
   // CE — cross-canal: outbound + notification con badge para diferenciar.
@@ -226,7 +231,7 @@ function buildRows(bloques: BloqueMap | null, producto: Producto): TablaRow[] {
 
 function titleFor(producto: Producto): string {
   if (producto === "DI") return "Razones de rechazo (todas, agregadas)";
-  if (producto === "BGC") return "Checks rechazados por país";
+  if (producto === "BGC") return "Tasa de rechazo por país";
   return "Categorías de fallo (salientes + notificaciones)";
 }
 
@@ -264,6 +269,22 @@ function labelHeaderFor(producto: Producto): string {
 
 function denomLabelFor(producto: Producto): string {
   if (producto === "DI") return "rechazos";
-  if (producto === "BGC") return "checks";
+  if (producto === "BGC") return "rechazados";
   return "fallos";
+}
+
+/** Header de la columna de % en la tabla. Para BGC pasa a "% Rechazo"
+ *  explícito en vez de "% sobre checks" que era ambiguo (¿de qué checks?
+ *  el rate es rechazados ÷ completados, no sobre el total ejecutado). */
+function pctHeaderFor(producto: Producto): string {
+  if (producto === "BGC") return "% Rechazo";
+  return `% sobre ${denomLabelFor(producto)}`;
+}
+
+/** Lo que cada fila de la tabla representa. DI = razón, BGC = país,
+ *  CE = categoría. Singular/plural por count. */
+function entityLabelFor(producto: Producto, count: number): string {
+  if (producto === "BGC") return count === 1 ? "país" : "países";
+  if (producto === "CE")  return count === 1 ? "categoría" : "categorías";
+  return count === 1 ? "razón" : "razones";
 }

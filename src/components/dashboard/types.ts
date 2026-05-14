@@ -579,6 +579,11 @@ export interface BgcPaisRow {
   passRatePct: number | null;
   rejectionRatePct: number | null;
   pctSobreTotal: number | null;
+  /** Volumen absoluto de checks rechazados (score≤6 sobre completados).
+   *  Expuesto en col9 desde 2026-05-14. Antes el frontend calculaba
+   *  `completados × rejection_rate / 100` que perdía precisión por el
+   *  redondeo del rate. Ahora viene del COUNT exacto en SF. */
+  rechazados: number;
 }
 
 export function parseBgcPorPais(bloques: BloqueMap | null): BgcPaisRow[] {
@@ -593,6 +598,7 @@ export function parseBgcPorPais(bloques: BloqueMap | null): BgcPaisRow[] {
     passRatePct: numOrNull(r.col6),
     rejectionRatePct: numOrNull(r.col7),
     pctSobreTotal: numOrNull(r.col8),
+    rechazados: numOrZero(r.col9),
   })).sort((a, b) => b.totalChecks - a.totalChecks);
 }
 

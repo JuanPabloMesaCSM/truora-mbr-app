@@ -131,7 +131,7 @@ export default function TendenciaRazonesChart({
                 }
                 nameFormatter={(n) =>
                   n === "_total_mes"
-                    ? "Total checks del mes"
+                    ? "Total checks completados del mes"
                     : cfg.legendFormatter(n)
                 }
               />
@@ -143,7 +143,7 @@ export default function TendenciaRazonesChart({
             iconSize={8}
             formatter={(value: string) => (
               <span style={{ color: S.muted }}>
-                {value === "_total_mes" ? "Total checks del mes" : cfg.legendFormatter(value)}
+                {value === "_total_mes" ? "Total checks completados del mes" : cfg.legendFormatter(value)}
               </span>
             )}
           />
@@ -244,7 +244,7 @@ function buildPivot(bloques: BloqueMap | null, producto: Producto): PivotConfig 
 
 function titleFor(producto: Producto): string {
   if (producto === "DI") return "Tendencia mensual top 5 razones de rechazo";
-  if (producto === "BGC") return "Tendencia mensual de % checks rechazados por país";
+  if (producto === "BGC") return "Tendencia mensual de checks completados y % rechazo por país";
   return "Tendencia mensual top 5 categorías de fallo";
 }
 
@@ -261,6 +261,12 @@ function subtitleFor(
     : tipoFallo === "declinado" ? "solo rechazados por el sistema"
     : /* expirado */              "solo abandonados por el usuario";
     return `${base} · ${filtroLabel}`;
+  }
+  if (producto === "BGC") {
+    // Aclaración honesta: las barras NO son checks facturables (CH counter),
+    // son checks status='completed' SF — pueden diferir del "Consumo mensual"
+    // por errores y por reglas billable CH (FINAL dedup, exclusión sub-pasos).
+    return `${base} · base: checks completados (status=completed) SF`;
   }
   return base;
 }
