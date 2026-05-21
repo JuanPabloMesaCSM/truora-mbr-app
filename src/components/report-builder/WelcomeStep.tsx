@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell, Activity } from "lucide-react";
+import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell, Activity, BookText } from "lucide-react";
 import { type Product, type CsmRow, PRODUCT_COLORS } from "./moduleDefinitions";
 import { FeedbackModal } from "./FeedbackModal";
 
@@ -167,6 +167,32 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
           >
             <Activity size={13} />
             <span>Dashboard</span>
+          </button>
+
+          {/* Query Repository — biblioteca de queries productivas */}
+          <button
+            onClick={() => navigate('/queries')}
+            title="Biblioteca de queries usadas en producción + Agente IA (próximamente)"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 600,
+              color: '#A78BFA',
+              background: 'rgba(167,139,250,0.10)',
+              border: '1px solid rgba(167,139,250,0.30)',
+              cursor: 'pointer', padding: '6px 12px',
+              borderRadius: 999, transition: 'all 0.15s',
+            }}
+          >
+            <BookText size={13} />
+            <span>Queries</span>
+            <span style={{
+              fontSize: 9, fontWeight: 700,
+              color: '#FBBF24',
+              background: 'rgba(251,191,36,0.15)',
+              border: '1px solid rgba(251,191,36,0.35)',
+              borderRadius: 999, padding: '0 6px',
+              marginLeft: 2, letterSpacing: '0.04em',
+            }}>BETA</span>
           </button>
 
           {/* Feedback */}

@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
 import BotiAlertas from "./pages/BotiAlertas.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
+import QueriesPage from "./pages/QueriesPage.tsx";
 import MockCanvas from "./pages/MockCanvas.tsx";
 import MockConfiamosAbril from "./pages/MockConfiamosAbril.tsx";
 import MockCuerosBiometric from "./pages/MockCuerosBiometric.tsx";
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/oncall" element={<Index source="oncall" />} />
           <Route path="/botialertas" element={<BotiAlertas />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/queries" element={<QueriesPage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -152,7 +152,6 @@ export const TOP_MOVERS_MIN_VOL = 500;
  * no csm_email). Se excluyen del dropdown "Ver cartera de" porque
  * no tendría sentido seleccionarlos. */
 export const ADMIN_EMAILS = new Set<string>([
-  "amarquez@truora.com",
   "jdiaz@truora.com",
 ]);
 
@@ -160,7 +159,6 @@ export const ADMIN_EMAILS = new Set<string>([
  * Incluye los admins puros + JP Mesa para debug/visibilidad cross-equipo.
  * JP además mantiene su toggle "Solo mi cartera" porque sí tiene cartera. */
 export const ADMIN_VIEW_EMAILS = new Set<string>([
-  "amarquez@truora.com",
   "jdiaz@truora.com",
   "jpmesa@truora.com",
 ]);
