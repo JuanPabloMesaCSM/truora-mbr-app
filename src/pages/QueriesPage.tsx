@@ -10,11 +10,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, BookText, Sparkles, AlertTriangle } from "lucide-react";
+import { ArrowLeft, BookText, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import QueryLibraryTable from "@/components/queries/QueryLibraryTable";
 import QueryDetailDrawer from "@/components/queries/QueryDetailDrawer";
+import { OppyButton } from "@/components/oppy/OppyButton";
 import { S, ADMIN_VIEW_EMAILS } from "@/components/queries/types";
 import type { QueryRow } from "@/components/queries/types";
 import { useQueriesRepository } from "@/hooks/useQueriesRepository";
@@ -130,25 +131,12 @@ export default function QueriesPage() {
               BotiAlertas y Report Builder.
             </p>
 
-            {/* Aviso "agente próximamente" */}
-            <div
-              style={{
-                marginTop: 16,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                background: "rgba(124,77,255,0.08)",
-                border: "1px solid rgba(124,77,255,0.30)",
-                borderRadius: 999,
-                padding: "6px 14px",
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: "#A78BFA",
-                letterSpacing: "0.02em",
-              }}
-            >
-              <Sparkles size={12} />
-              Próximamente — Agente IA para pedir queries personalizadas
+            {/* CTA al agente Oppy */}
+            <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
+              {userEmail && <OppyButton userEmail={userEmail} currentRoute="/queries" />}
+              <span style={{ fontSize: 11.5, color: S.muted }}>
+                Preguntale al agente sobre cualquier query del catálogo
+              </span>
             </div>
           </div>
 

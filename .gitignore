@@ -5,6 +5,9 @@
 # Lovable internal
 .workspace/
 
+# Supabase CLI cache
+supabase/.temp/
+
 # Logs
 logs
 *.log
