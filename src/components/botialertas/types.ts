@@ -28,9 +28,12 @@ export interface Alerta {
 
 /** URL del webhook n8n que dispara una corrida ad-hoc.
  *  Configurada en n8n: workflow "BotiAlertas Ad-hoc" → Webhook trigger.
- *  Body esperado: { fecha_corte: "YYYY-MM-DD", email: "admin@truora.com" }. */
+ *  Body esperado: { fecha_corte: "YYYY-MM-DD", email: "admin@truora.com" }.
+ *  Workflow "BotiAlertas Ad-hoc" en zapsign (vCLNAyRZ6rvTVd6c).
+ *  NOTA (2026-05-28): migrado de truora.app.n8n.cloud (host que nunca se usó)
+ *  a zapsign self-hosted — la feature "Filtrar fechas" estaba rota apuntando al host viejo. */
 export const BOTIALERTAS_ADHOC_WEBHOOK_URL =
-  "https://truora.app.n8n.cloud/webhook/botialertas-adhoc";
+  "https://n8n.zapsign.com.br/webhook/botialertas-adhoc";
 
 /* Shell palette (matches WelcomeStep + canvas-mbr light/dark patterns) */
 export const S = {
