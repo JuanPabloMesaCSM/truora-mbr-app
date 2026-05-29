@@ -1,0 +1,174 @@
+{
+  "1_metricas_generales": [
+    {
+      "bloque": "1_metricas_generales",
+      "col1": "5360",
+      "col2": "4516",
+      "col3": "844",
+      "col4": "844",
+      "col5": "0",
+      "col6": "0",
+      "col7": "0",
+      "col8": "84.3",
+      "col9": "6162",
+      "col10": "5183",
+      "col11": "84.1",
+      "col_extra1": "-13.0"
+    }
+  ],
+  "3_validaciones_doc_rostro": [
+    {
+      "bloque": "3_validaciones_doc_rostro",
+      "col1": "3187",
+      "col2": "2591",
+      "col3": "81.3",
+      "col4": "3509",
+      "col5": "81.6",
+      "col6": "1091",
+      "col7": "843",
+      "col8": "77.3",
+      "col9": "1329",
+      "col10": "75.1",
+      "col11": "596",
+      "col_extra1": "645",
+      "col_extra2": "248",
+      "col_extra3": "331"
+    }
+  ],
+  "4_historico_3meses": [
+    {
+      "bloque": "4_historico_3meses",
+      "periodo": "2026-03-01",
+      "col1": "6162",
+      "col2": "5183",
+      "col3": "84.1",
+      "col4": "0",
+      "col5": "0"
+    },
+    {
+      "bloque": "4_historico_3meses",
+      "periodo": "2026-04-01",
+      "col1": "5360",
+      "col2": "4516",
+      "col3": "84.3",
+      "col4": "0",
+      "col5": "0"
+    }
+  ],
+  "7_razones_doc": [
+    {
+      "bloque": "7_razones_doc",
+      "col1": "no_se_encontraron_los_campos_necesarios_para_hacer_la_valida",
+      "col2": "132"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "el_análisis_del_rostro_en_la_imagen_del_documento_fue_rechaz",
+      "col2": "95"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "los_datos_de_producción_tienen_inconsistencias_entre_los_dat",
+      "col2": "74"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "el_documento_es_una_foto_de_foto",
+      "col2": "64"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "el_documento_es_una_fotocopia",
+      "col2": "31"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "los_datos_en_el_documento_no_coinciden_con_los_datos_en_la_b",
+      "col2": "25"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "la_fecha_de_expedición_del_documento_es_inválida",
+      "col2": "25"
+    },
+    {
+      "bloque": "7_razones_doc",
+      "col1": "no_se_pudo_identificar_el_documento_frontal_en_la_imagen",
+      "col2": "21"
+    }
+  ],
+  "8_razones_rostro": [
+    {
+      "bloque": "8_razones_rostro",
+      "col1": "la_similitud_de_los_rostros_es_menor_que_el_umbral_definido",
+      "col2": "165"
+    },
+    {
+      "bloque": "8_razones_rostro",
+      "col1": "verificación_de_prueba_de_vida_pasiva_no_fue_aprobada",
+      "col2": "74"
+    },
+    {
+      "bloque": "8_razones_rostro",
+      "col1": "rostro_no_detectado",
+      "col2": "7"
+    },
+    {
+      "bloque": "8_razones_rostro",
+      "col1": "expirado_o_abandonado",
+      "col2": "2"
+    }
+  ],
+  "10_declinados": [
+    {
+      "bloque": "10_declinados",
+      "col1": "la_similitud_de_los_rostros_es_menor_que_el_umbral_definido",
+      "col2": "165"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "no_se_encontraron_los_campos_necesarios_para_hacer_la_valida",
+      "col2": "132"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "el_análisis_del_rostro_en_la_imagen_del_documento_fue_rechaz",
+      "col2": "95"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "verificación_de_prueba_de_vida_pasiva_no_fue_aprobada",
+      "col2": "74"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "los_datos_de_producción_tienen_inconsistencias_entre_los_dat",
+      "col2": "74"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "el_documento_es_una_foto_de_foto",
+      "col2": "64"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "el_documento_es_una_fotocopia",
+      "col2": "31"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "los_datos_en_el_documento_no_coinciden_con_los_datos_en_la_b",
+      "col2": "25"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "la_fecha_de_expedición_del_documento_es_inválida",
+      "col2": "25"
+    },
+    {
+      "bloque": "10_declinados",
+      "col1": "no_se_pudo_identificar_el_documento_frontal_en_la_imagen",
+      "col2": "21"
+    }
+  ]
+}

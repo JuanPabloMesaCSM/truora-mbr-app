@@ -1,0 +1,50 @@
+[
+  {
+    "tipo": "technical",
+    "titulo": "ClickHouse: countDistinctIf + FINAL no se llevan bien (bug de deduplicacion)",
+    "contenido": "En ClickHouse, combinar `countDistinctIf(record_id, fecha BETWEEN ...)` con `FINAL` en la misma CTE produce resultados rotos (típicamente `1 | 0` por cliente cuando debería haber miles). Causa: `FINAL` necesita ver TODAS las versiones del `record_id` para deduplicar correctamente, pero `countDistinctIf` aplica el filtro de fecha ANTES de que FINAL pueda colapsar las versiones. El patrón correcto, validado en producción, es usar DOS CTEs separadas con `FINAL` y `count(DISTINCT record_id)` adentro de cada una: una CTE para Q1, otra para Q2, después JOIN por client_id. Síntoma diagnóstico: resultados con 1 y 0 en todos los TCIs cuando se esperan miles.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "technical",
+    "titulo": "SF IDENTITY_PROCESSES: excluir DECLINED_REASON='not_used' para matchear con front Truora",
+    "contenido": "En `IDENTITY_PROCESSES` (Snowflake) hay registros con `DECLINED_REASON = 'not_used'` que son procesos técnicos creados por el sistema, sin interacción real del usuario. El front de Truora los EXCLUYE en su conteo. Si tu query no agrega ese filtro, vas a contar de más vs el front. Siempre incluir `AND (DECLINED_REASON IS NULL OR DECLINED_REASON != 'not_used')` cuando se cuenta consumo que se compara contra el front. Caso de descubrimiento: WOM CL (TCIddc781cc675f59a5ec603d6de5c49684), nov 2025 — query SF daba ~7k procesos vs ~16k outbounds en front.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "reference",
+    "titulo": "WOM CL: cliente Chile con WhatsApp CE + DI bundled en mismo flujo (TCIddc781cc675f59a5ec603d6de5c49684)",
+    "contenido": "WOM CL es un cliente particular: usa CE (conversaciones WhatsApp) + DI (validación de identidad) como dos productos distintos dentro del MISMO flujo. La facturación se envía manual y los outbounds del front incluyen tanto las conversaciones CE como los procesos DI iniciados dentro de esos flujos. Para analizar consumo hay que mirar AMBAS fuentes: `IDENTITY_PROCESSES` (SF, para detalle de procesos DI) y los contadores CE en CH. Country: Chile (`America/Santiago`). Flow IDs típicos vistos: `IPFf21f22b9a1129df8bfbad5d3371da2d2`, `IPF15ed297bc0e6672f1d911bc7d3814a4b`.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "reference",
+    "titulo": "portfolio_consumption (Supabase): fuente facturable mensual por cliente x producto x mes",
+    "contenido": "La tabla `public.portfolio_consumption` (Supabase) es la fuente oficial de consumo facturable mensual del equipo CSM desde diciembre 2025. PK: (periodo_mes, client_id, product). Se alimenta desde ClickHouse via cron L/M/V 6 AM BOG (workflow n8n 'Portfolio Consumption Sync'). Productos: `validations` (DI), `checks` (BGC), `truconnect` (CE agregado). Para comparaciones billables periodo-vs-periodo (Q1 vs Q2, MoM, etc.), esta tabla es lo más cercano a la factura. Si lo que se pide es churn/variación de consumo facturable, ir acá primero antes que a SF.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "technical",
+    "titulo": "CH client_usage_records: separar productos facturables (Inbound TruConnect, DI, revisiones manuales)",
+    "contenido": "En `production.client_usage_records` (ClickHouse), los productos facturables se distinguen así: (1) **Inbound TruConnect**: `product = 'digital_identity_process' AND channel_type = 'inbound'`. (2) **Revisiones manuales** se cargan aparte y se incluyen con `manual_review_status = 'performed'` — típicamente se traen como UNION ALL al sumar consumo. (3) Para queries de churn/comparación de consumo total, NO olvidar ninguno de los dos o vas a subreportar. Bug histórico documentado: query sin Inbound TruConnect dio subreporte sistemático en análisis de churn Q1 vs Q2 (2026-05-28).",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "feedback",
+    "titulo": "Definicion de churn del equipo CSM: caida >=75% (consumo_p2 <= 0.25 * consumo_p1)",
+    "contenido": "Para análisis de comisión y reportes de churn del equipo CSM, la definición oficial es: un cliente se marca como CHURN si `consumo_periodo_2 <= 0.25 * consumo_periodo_1` (caída >=75%). Equivalente: `ratio q2/q1 <= 0.25`. ATENCIÓN AL BUG COMÚN: NO confundir con `q2/q1 <= 0.75` (eso marcaría como churn a clientes que apenas cayeron 25%, lo cual es incorrecto). El umbral es 0.25, NO 0.75. Aplicable para comparaciones Q1 vs Q2, MoM, etc. en contextos de comisión.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "reference",
+    "titulo": "Cartera de comision: query Supabase para extraer TCIs excluyendo admins y soporte",
+    "contenido": "Para análisis de cartera de comisión (churn, consumo, etc.), NUNCA incluir clientes de admins ni de soporte. Query Supabase canónica: `SELECT nombre, csm_email, client_id_di, client_id_bgc, client_id_ce FROM clientes WHERE activo = true AND csm_email NOT IN ('jdiaz@truora.com', 'amarquez@truora.com', 'soporte@truora.com')`. Como el agente NO tiene acceso de lectura a la tabla `clientes` (vive en Supabase Postgres, no en SF/CH), el patrón es de dos pasos: (1) JP corre este SELECT en Supabase, copia los TCIs; (2) agente arma la query CH/SF para esa lista de TCIs. Snapshot 2026-05-28: 97 TCIs.",
+    "creado_por": "jpmesa@truora.com"
+  },
+  {
+    "tipo": "feedback",
+    "titulo": "Date ranges: NO asumir el ano por costumbre, verificar la fecha actual antes de armar la query",
+    "contenido": "Antes de armar cualquier query con filtros de date range para 'este año' o 'periodo actual', verificar explícitamente la fecha de hoy. Bug histórico (2026-05-28): el agente armó una query de churn Q1 vs Q2 con fechas en 2025 cuando el año en curso era 2026, lo que dio resultados vacíos sin error visible. Regla: si la query es para 'el periodo actual', resolver primero `{{ $now }}` (n8n) o equivalente, NO escribir el año a mano. Síntoma diagnóstico de este bug: COUNT devuelve 0 o resultados absurdos en TODOS los TCIs.",
+    "creado_por": "jpmesa@truora.com"
+  }
+]
