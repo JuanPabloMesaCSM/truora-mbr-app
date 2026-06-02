@@ -79,6 +79,7 @@ export const MODULES: Record<Product, { base: ModuleDef; optional: ModuleDef[] }
       { id: '5_labels', label: 'Análisis de Labels', desc: 'Barras horizontales', description: 'Top labels asignados por el sistema de riesgo, con frecuencia por país.', chart: 'horizontal-bars' },
       { id: '6_labels_high_score', label: 'Labels High + Score', desc: 'Tabla de anomalías', description: 'Detección de anomalías: labels High que deberían tener score 6 pero muestran score diferente.', chart: 'table' },
       { id: '7_historico_3meses', label: 'Evolución Histórica', desc: 'Barras + líneas', description: 'Volumen de checks, score promedio y pass rate de los últimos 3 meses.', chart: 'bars-line' },
+      { id: '8_bases_premium', label: 'Bases de Datos Premium', desc: 'Barras horizontales', description: 'Consumo facturable por base de datos premium consultada (IMSS, PEP FIMPE, Datacrédito, Serasa, etc.) — coincide 1:1 con el panel premium del front de Truora.', chart: 'horizontal-bars' },
     ],
   },
   CE: {
