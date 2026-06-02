@@ -1296,6 +1296,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
   const passRate      = parseFloat(b?.col5 || "0");
   const passRatePrev  = parseFloat(b?.col10 || "0");
   const rejectionRate = parseFloat(b?.col6 || "0");
+  const erroresProceso = parseInt(b?.col3 || "0", 10);
   const varChecks     = b?.col11;
   const deltaScore    = b?.col_extra1;
   const deltaPassRate = b?.col_extra2;
@@ -1314,7 +1315,7 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
       data: {
         labels: [
           `Checks exitosos: ${checksExitosos.toLocaleString("es-CO")} (${passRate.toFixed(1)}%)`,
-          `Checks con errores: ${checksConError.toLocaleString("es-CO")} (${rejectionRate.toFixed(1)}%)`,
+          `Checks con puntaje ≤ 6: ${checksConError.toLocaleString("es-CO")} (${rejectionRate.toFixed(1)}%)`,
         ],
         datasets: [{ data: [passRate, rejectionRate],
           backgroundColor: [BGC.success, BGC.danger], borderWidth: 4, borderColor: t.cardBg }],
@@ -1356,16 +1357,11 @@ function Bgc1Slide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
               </span>
             </div>
           </div>
-          <p style={{ margin: "6px 0 0", fontSize: 12, color: t.textPrimary, textAlign: "center", fontWeight: 600 }}>
-            <span style={{ color: BGC.success }}>{checksExitosos.toLocaleString("es-CO")}</span> exitosos
-            <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
-            <span style={{ color: BGC.danger }}>{checksConError.toLocaleString("es-CO")}</span> con errores
-            <span style={{ color: t.textMuted, fontWeight: 400 }}> · </span>
-            <span style={{ color: t.textMuted, fontWeight: 400 }}>{totalChecks.toLocaleString("es-CO")} totales</span>
-          </p>
-          <p style={{ margin: "4px 0 0", fontSize: 10, color: t.textMuted, textAlign: "center" }}>
-            Calculado con umbral puntaje &gt; 6 · Confirmar umbral con el cliente si es diferente
-          </p>
+          {erroresProceso > 0 && (
+            <p style={{ margin: "8px 0 0", fontSize: 11, color: t.textMuted, textAlign: "center" }}>
+              <span style={{ color: BGC.danger, fontWeight: 700 }}>{erroresProceso.toLocaleString("es-CO")}</span>{" "}con error de proceso · no facturable (fuera del total)
+            </p>
+          )}
         </div>
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Actividad del mes" />
@@ -1387,11 +1383,12 @@ function Bgc2Slide({ data, theme, clientName, periodLabel, pageNum = 2 }: {
 
   const rows = [...(data["2_por_pais"] || [])].sort((a, b) =>
     parseInt(b.col3 || "0", 10) - parseInt(a.col3 || "0", 10)
-  ).slice(0, 5);
+  );
+  const chartRows = rows.slice(0, 8);
 
-  const labels    = rows.map(r => r.col1 || "");
-  const volumes   = rows.map(r => parseInt(r.col3 || "0", 10));
-  const passRates = rows.map(r => parseFloat(r.col6 || "0"));
+  const labels    = chartRows.map(r => r.col1 || "");
+  const volumes   = chartRows.map(r => parseInt(r.col3 || "0", 10));
+  const passRates = chartRows.map(r => parseFloat(r.col6 || "0"));
   const depKey = JSON.stringify([labels, volumes, passRates]);
 
   useEffect(() => {
@@ -2158,6 +2155,182 @@ function Bgc7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
         </div>
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Tipos de verificación" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   BGC-8 · Bases de datos premium
+   Mapeo database_id (hash DBI…) → nombre comercial + país.
+   Fuente de verdad: .claude/skills/clickhouse-counters-metabase.md
+   (tabla "Bases premium"). Si Truora agrega una base nueva, agregar
+   acá la fila — NO se toca CH ni n8n (el endpoint devuelve el hash crudo).
+══════════════════════════════════════════════════════════════ */
+
+// enFront=false → base del check (NO aparece en el panel "bases premium" del front
+// de Truora porque va incluida en el precio del check, no se cobra aparte). Validado:
+// Poder Judicial (criminal_record) es el check base MX, el front NO lo lista como premium.
+// Default (sin enFront) = true = add-on premium que SÍ aparece en el front.
+const BGC_PREMIUM_DB: Record<string, { nombre: string; pais: string; enFront?: boolean }> = {
+  "DBI386340b3ef9b714192cb0d8816769044b14926cc": { nombre: "Premium MX Completo (Poder Judicial)", pais: "mx", enFront: false },
+  "DBIad8319e1d77fa8eb87f66bff029841f12617a272": { nombre: "Premium MX IMSS", pais: "mx" },
+  "DBI75c80148c518ca8922d3b8e17da2b9a2f483f77e": { nombre: "Premium MX Círculo de Crédito", pais: "mx" },
+  "DBIc470038d32fc6e867a0fff8e23f2f7a4b5eeb68c": { nombre: "Premium MX Buró de Crédito", pais: "mx" },
+  "DBI41100407bc220a5d32d553886be2dc1ec5052807": { nombre: "Premium MX PEP FIMPE", pais: "mx" },
+  "DBIa708c91cf66a9cbceeb7b3cc7552469c0f0b81e2": { nombre: "Premium MX PEP por nombre", pais: "mx" },
+  "DBIaa7a3505bf3fcbc742ee5decae58f70d12386355": { nombre: "Premium MX PJV Compliance", pais: "mx" },
+  "DBId0aa7d620383665fdbced76473913a3cc0d9d61e": { nombre: "Premium MX PJV Compliance por nombre", pais: "mx" },
+  "DBIba885b9e8901bf1e7506b1592c2aadfd372f369b": { nombre: "Premium MX PEP", pais: "mx" },
+  "DBIfcf003d6e91a65c61af216e755031f997728be60": { nombre: "Premium CO Datacrédito (historial+acierta)", pais: "co" },
+  "DBIb2ecd883c70c976e013f15b0f4f3acdba9d040f4": { nombre: "Premium CO Datacrédito (historial+acierta)", pais: "co" },
+  "DBI14efd094ec1c4715155be9fd527a5c3fae496f8c": { nombre: "Premium CO Datacrédito (Reconocer)", pais: "co" },
+  "DBI555b90cf23278eb1e1e050d91c0a0ef40e359945": { nombre: "Premium CO Phone checker", pais: "co" },
+  "DBI8eba2314b930c3f6c4d9344dfbe8b6a3e2b20d2c": { nombre: "Premium BR Serasa", pais: "br" },
+  "DBI90974593ff1f7c455eaf808932f453d9d36e94a9": { nombre: "Premium BR Serasa Company", pais: "br" },
+  "DBIedab03f9758e0776b0de8445adde4f1d15899cb9": { nombre: "Premium PE Equifax", pais: "pe" },
+  "DBIa3ad957b5beb3181f6a760ee50d0f963330815aa": { nombre: "Premium PE Phone Checker", pais: "pe" },
+  "DBI412dc5c41f16bc217539b321ddfd6eebb64700aa": { nombre: "Listas/Alertas/PEPs Internacionales (Comply Advantage)", pais: "all" },
+};
+
+const PAIS_FLAG: Record<string, string> = { mx: "🇲🇽", co: "🇨🇴", br: "🇧🇷", pe: "🇵🇪", all: "🌎" };
+
+function resolvePremiumDb(databaseId: string): { nombre: string; pais: string; flag: string; enFront: boolean } {
+  const m = BGC_PREMIUM_DB[databaseId];
+  if (m) return { nombre: m.nombre, pais: m.pais.toUpperCase(), flag: PAIS_FLAG[m.pais] || "🌐", enFront: m.enFront !== false };
+  // Fallback para una base nueva aún no mapeada: muestra un id corto, no rompe (se muestra por defecto).
+  const corto = databaseId ? databaseId.slice(3, 11) : "—";
+  return { nombre: `Base premium (${corto})`, pais: "—", flag: "🔒", enFront: true };
+}
+
+function Bgc8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstance = useRef<Chart | null>(null);
+  const t = tok(theme);
+
+  const rows = [...(data["8_bases_premium"] || [])]
+    .map(r => {
+      const info = resolvePremiumDb(r.col1 || "");
+      return { id: r.col1 || "", nombre: info.nombre, pais: info.pais, flag: info.flag,
+        enFront: info.enFront, consultas: parseInt(r.col2 || "0", 10) };
+    })
+    // Solo bases que el front de Truora lista como premium (add-on cobrado aparte).
+    // Excluye el check base (p.ej. Poder Judicial) para que la suma = panel premium del front.
+    .filter(r => r.consultas > 0 && r.enFront)
+    .sort((a, b) => b.consultas - a.consultas);
+
+  const totalConsultas = rows.reduce((s, r) => s + r.consultas, 0);
+  const labels = rows.map(r => `${r.flag} ${r.nombre.replace(/^Premium\s+/, "")}`);
+  const values = rows.map(r => r.consultas);
+  const depKey = JSON.stringify([labels, values]);
+
+  useEffect(() => {
+    if (!chartRef.current || rows.length === 0) return;
+    chartInstance.current?.destroy();
+    chartInstance.current = new Chart(chartRef.current, {
+      type: "bar",
+      data: { labels, datasets: [{ data: values, backgroundColor: BGC.primary, borderRadius: 8 }] },
+      options: {
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false }, tooltip: { enabled: true },
+          datalabels: { color: t.textPrimary, anchor: "end", align: "right",
+            font: { size: 13, weight: 700 }, formatter: (v: number) => v.toLocaleString("es-CO") },
+        },
+        scales: {
+          x: { display: false, beginAtZero: true },
+          y: { grid: { display: false }, ticks: { color: t.chartText, font: { size: 11 }, padding: 8 } },
+        },
+        layout: { padding: { right: 80, top: 4 } },
+      },
+    } as any);
+    return () => { chartInstance.current?.destroy(); chartInstance.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.textPrimary, t.chartText]);
+
+  const tColW = ["46%", "16%", "20%", "18%"];
+  const tCols = ["Base de datos", "País", "Consultas", "% del total"];
+
+  return (
+    <SlideShell id="BGC-8" theme={theme}>
+      <SlideHeader title={`Bases de datos premium — ${periodLabel}`}
+        subtitle={`Background Check · ${clientName}`} theme={theme} />
+      <div style={bodyStyle}>
+        {rows.length === 0 ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow, borderRadius: 14 }}>
+            <p style={{ fontSize: 15, color: t.textMuted, textAlign: "center", maxWidth: 420 }}>
+              Este cliente no registró consultas a bases de datos premium en el periodo.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Left: horizontal bars */}
+            <div style={{ width: "44%", background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+              borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column",
+              overflow: "hidden", flexShrink: 0 }}>
+              <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.14em" }}>Consultas facturables por base</p>
+              <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+                <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+              </div>
+            </div>
+            {/* Right: table */}
+            <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+              borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", background: BGC.primary, padding: "10px 20px", flexShrink: 0 }}>
+                {tCols.map((c, i) => (
+                  <div key={c} style={{ width: tColW[i], flexShrink: 0, fontSize: 10, fontWeight: 700,
+                    color: "#FFFFFF", textTransform: "uppercase", letterSpacing: "0.12em" }}>{c}</div>
+                ))}
+              </div>
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                {rows.map((row, idx) => {
+                  const pct = totalConsultas > 0 ? (row.consultas / totalConsultas * 100).toFixed(1) : "0.0";
+                  return (
+                    <div key={idx} style={{ display: "flex", alignItems: "center", padding: "10px 20px",
+                      background: idx % 2 === 1 ? t.rowAlt : "transparent",
+                      borderBottom: idx < rows.length - 1 ? `1px solid ${t.footerBorder}` : "none" }}>
+                      <div style={{ width: tColW[0], flexShrink: 0 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: BGC.primary }}>{row.nombre}</span>
+                      </div>
+                      <div style={{ width: tColW[1], flexShrink: 0 }}>
+                        <span style={{ fontSize: 13, color: t.textMuted }}>{row.flag} {row.pais}</span>
+                      </div>
+                      <div style={{ width: tColW[2], flexShrink: 0 }}>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: t.textPrimary }}>
+                          {row.consultas.toLocaleString("es-CO")}
+                        </span>
+                      </div>
+                      <div style={{ width: tColW[3], flexShrink: 0 }}>
+                        <span style={{ fontSize: 13, color: t.textMuted }}>{pct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", padding: "10px 20px",
+                borderTop: `2px solid ${t.footerBorder}`, background: t.rowAlt, flexShrink: 0 }}>
+                <div style={{ width: tColW[0], flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>TOTAL PREMIUM</span>
+                </div>
+                <div style={{ width: tColW[1], flexShrink: 0 }} />
+                <div style={{ width: tColW[2], flexShrink: 0 }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: BGC.primary }}>
+                    {totalConsultas.toLocaleString("es-CO")}
+                  </span>
+                </div>
+                <div style={{ width: tColW[3], flexShrink: 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>100%</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Bases premium" />
     </SlideShell>
   );
 }
@@ -4307,6 +4480,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "7_historico_3meses":  return <Bgc5Slide {...p} />;
         case "2b_pais_x_tipo":      return <Bgc6Slide {...p} />;
         case "3_por_tipo":          return <Bgc7Slide {...p} />;
+        case "8_bases_premium":     return <Bgc8Slide {...p} />;
         default:                   return null;
       }
     }

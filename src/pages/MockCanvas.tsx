@@ -151,6 +151,18 @@ const BGC_MOCK_DATA = {
       { bloque: "3_por_tipo", col1: "person",           col2: "7200",  col3: "6980",  col5: "87.3", col6: "7.6"  },
       { bloque: "3_por_tipo", col1: "doc-verification", col2: "3534",  col3: "3007",  col5: "85.1", col6: "3.3"  },
     ],
+    // COL1=database_id (hash DBI…), COL2=consultas billable (status=completed + dbs.3=completed)
+    // El frontend (Bgc8Slide) mapea el hash → nombre comercial + país.
+    // La 1ª fila (Poder Judicial) tiene enFront=false → el slide la FILTRA (es el check base,
+    // no aparece en el panel premium del front). Sirve para probar la exclusión.
+    "8_bases_premium": [
+      { bloque: "8_bases_premium", col1: "DBI386340b3ef9b714192cb0d8816769044b14926cc", col2: "21661" },
+      { bloque: "8_bases_premium", col1: "DBIad8319e1d77fa8eb87f66bff029841f12617a272", col2: "9114"  },
+      { bloque: "8_bases_premium", col1: "DBIfcf003d6e91a65c61af216e755031f997728be60", col2: "5200"  },
+      { bloque: "8_bases_premium", col1: "DBI8eba2314b930c3f6c4d9344dfbe8b6a3e2b20d2c", col2: "1850"  },
+      { bloque: "8_bases_premium", col1: "DBI412dc5c41f16bc217539b321ddfd6eebb64700aa", col2: "430"   },
+      { bloque: "8_bases_premium", col1: "DBI41100407bc220a5d32d553886be2dc1ec5052807", col2: "14"    },
+    ],
   },
   warnings: [],
 };
@@ -339,6 +351,7 @@ const BGC_SLIDES = [
   "7_historico_3meses",  // BGC-5 Tendencia de los últimos 3 meses
   "2b_pais_x_tipo",      // BGC-6 Qué se verifica en cada país
   "3_por_tipo",          // BGC-7 Tipos de verificación activos
+  "8_bases_premium",     // BGC-8 Bases de datos premium consultadas
 ];
 
 const TOTAL_PAGES = DI_SLIDES.length + BGC_SLIDES.length + CE_SLIDES.length + CE_FLOW_SLIDE_IDS.length + 2;
