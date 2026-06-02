@@ -2630,6 +2630,139 @@ function DiRazonesValidacionSlide({ data, theme, clientName, periodLabel, pageNu
 }
 
 /* ════════════════════════════════════════════════════════════
+   DI · Desempeño de validaciones — Documento vs Rostro (CH + SF) — Validador
+   Vista GRÁFICA que combina throughput + tasa de éxito por tipo
+   (consumo_facturable / POR_TIPO) con el top-5 de razones de rechazo por tipo
+   (razones_validacion). Reemplaza el slide textual de razones para clientes
+   por validador. Cero cambio de capa de datos: lee 2 bloques que el flujo ya devuelve.
+══════════════════════════════════════════════════════════════ */
+
+// Tarjeta de desempeño por tipo: total + barra éxito/fallo + % de éxito.
+function DesempenoTipoCard({ titulo, total, exitosas, fallidas, accent, theme }: {
+  titulo: string; total: number; exitosas: number; fallidas: number; accent: string; theme: Theme;
+}) {
+  const t = tok(theme);
+  const pct = total > 0 ? (exitosas / total) * 100 : 0;
+  return (
+    <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+      borderRadius: 14, padding: "16px 22px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+          textTransform: "uppercase", letterSpacing: "0.14em" }}>{titulo}</p>
+        <span style={{ fontSize: 13, fontWeight: 800, color: accent }}>{pct.toFixed(1)}% éxito</span>
+      </div>
+      <span style={{ fontSize: 32, fontWeight: 800, color: t.textPrimary, lineHeight: 1, letterSpacing: "-0.02em" }}>
+        {total.toLocaleString("es-CO")}
+      </span>
+      <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: t.rowAlt }}>
+        <div style={{ width: `${pct}%`, background: accent }} />
+        <div style={{ width: `${100 - pct}%`, background: "#EF4444" }} />
+      </div>
+      <div style={{ display: "flex", gap: 18, fontSize: 11, color: t.textMuted }}>
+        <span><span style={{ color: accent, fontWeight: 800 }}>●</span> {exitosas.toLocaleString("es-CO")} exitosas</span>
+        <span><span style={{ color: "#EF4444", fontWeight: 800 }}>●</span> {fallidas.toLocaleString("es-CO")} fallidas</span>
+      </div>
+    </div>
+  );
+}
+
+// Lista top-5 de razones de rechazo como barras proporcionales (HTML, sin Chart.js).
+function RazonesBarList({ titulo, rows, accent, theme }: {
+  titulo: string; rows: { codigo: string; count: number }[]; accent: string; theme: Theme;
+}) {
+  const t = tok(theme);
+  const top = rows.slice(0, 5);
+  const max = Math.max(1, ...top.map(r => r.count));
+  return (
+    <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+      borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+      <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+        textTransform: "uppercase", letterSpacing: "0.14em" }}>{titulo}</p>
+      {top.length === 0 ? (
+        <p style={{ fontSize: 13, color: t.textMuted, margin: "auto", textAlign: "center" }}>
+          Sin rechazos en el periodo
+        </p>
+      ) : (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "space-evenly", gap: 6, minHeight: 0 }}>
+          {top.map(r => {
+            const info = describeRazonDI(r.codigo);
+            const w = (r.count / max) * 100;
+            const c = info.esAlerta ? "#EF4444" : accent;
+            return (
+              <div key={r.codigo}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: t.textPrimary, lineHeight: 1.25,
+                    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {info.descripcion}
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: c, flexShrink: 0 }}>
+                    {r.count.toLocaleString("es-CO")}
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 999, background: t.rowAlt, overflow: "hidden" }}>
+                  <div style={{ width: `${w}%`, height: "100%", background: c, borderRadius: 999 }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiDesempenoValidacionSlide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  // Desempeño doc vs rostro desde consumo_facturable (POR_TIPO: col2 total, col3 ex, col4 fa).
+  const por = data["consumo_facturable"] || [];
+  const agg = { doc: { total: 0, ex: 0, fa: 0 }, rostro: { total: 0, ex: 0, fa: 0 } };
+  for (const r of por) {
+    const cat = validationCategory(r.col1 || "");
+    if (cat !== "doc" && cat !== "rostro") continue;
+    agg[cat].total += parseInt(r.col2 || "0", 10) || 0;
+    agg[cat].ex += parseInt(r.col3 || "0", 10) || 0;
+    agg[cat].fa += parseInt(r.col4 || "0", 10) || 0;
+  }
+  // Top-5 razones por tipo desde razones_validacion (col1 código, col2 tipo, col3 cantidad).
+  const raw = data["razones_validacion"] || [];
+  const docMap: Record<string, number> = {};
+  const rosMap: Record<string, number> = {};
+  for (const r of raw) {
+    const codigo = r.col1 || "";
+    const cat = validationCategory(r.col2 || "");
+    const cant = parseInt(r.col3 || "0", 10) || 0;
+    if (!codigo || cant <= 0) continue;
+    if (cat === "doc") docMap[codigo] = (docMap[codigo] || 0) + cant;
+    else if (cat === "rostro") rosMap[codigo] = (rosMap[codigo] || 0) + cant;
+  }
+  const toSorted = (m: Record<string, number>) =>
+    Object.entries(m).map(([codigo, count]) => ({ codigo, count }))
+      .sort((a, b) => b.count - a.count).slice(0, 5);
+
+  return (
+    <SlideShell id="DI-DV" theme={theme}>
+      <SlideHeader title={`Documento vs Rostro — desempeño y fallas — ${periodLabel}`}
+        subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 148 }}>
+          <DesempenoTipoCard titulo="Documento" total={agg.doc.total} exitosas={agg.doc.ex}
+            fallidas={agg.doc.fa} accent="#00C9A7" theme={theme} />
+          <DesempenoTipoCard titulo="Rostro" total={agg.rostro.total} exitosas={agg.rostro.ex}
+            fallidas={agg.rostro.fa} accent="#00C9A7" theme={theme} />
+        </div>
+        <div style={{ flex: 1, display: "flex", gap: 12, minHeight: 0 }}>
+          <RazonesBarList titulo="Top 5 rechazos — Documento" rows={toSorted(docMap)} accent="#F59E0B" theme={theme} />
+          <RazonesBarList titulo="Top 5 rechazos — Rostro" rows={toSorted(rosMap)} accent="#F59E0B" theme={theme} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Desempeño de validaciones" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
    DI · Histórico del consumo facturable (solo-CH) — para standalone
    Volumen billable mensual + tasa de éxito de validación. Data: rows
    {periodo, col1=total, col2=exitosas} (Endpoint 3).
@@ -4853,6 +4986,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "11_friccion_usuario":       return <Di10Slide {...p} />;
         case "consumo_facturable":        return <DiConsumoFacturableSlide {...p} />;
         case "razones_validacion":        return <DiRazonesValidacionSlide {...p} />;
+        case "desempeno_validacion":      return <DiDesempenoValidacionSlide {...p} />;
         case "historico_facturable":      return <DiHistoricoFacturableSlide {...p} />;
         default:                          return null;
       }

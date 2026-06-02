@@ -91,7 +91,9 @@ const MOCK_MBR_DATA: Record<string, any[]> = {
   ],
 };
 
-const VALIDADOR_SLIDES = ["consumo_facturable", "razones_validacion", "historico_facturable"];
+// "desempeno_validacion" combina doc-vs-rostro (POR_TIPO de consumo_facturable) + top-5
+// razones (razones_validacion) en un solo slide gráfico → reemplaza el slide textual de razones.
+const VALIDADOR_SLIDES = ["consumo_facturable", "desempeno_validacion", "historico_facturable"];
 
 // Webhook del flujo n8n "Report Builder Validador" (CH consumo/histórico + SF razones).
 const VALIDADOR_WEBHOOK = "https://n8n.zapsign.com.br/webhook/report-builder-validador";

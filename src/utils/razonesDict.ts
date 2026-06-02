@@ -24,6 +24,16 @@ export const RAZONES_DI: Record<string, { descripcion: string; esAlerta: boolean
   'document_does_not_match_account_id': { descripcion: 'El documento no coincide con la cuenta del usuario', esAlerta: true },
   'document_validation_not_started': { descripcion: 'El usuario no inició la validación de documento', esAlerta: false },
 
+  // ── Rechazos de documento — nivel VALIDACIÓN (Validador / DOCUMENT_VALIDATION_HISTORY) ──
+  // Códigos que llegan por DECLINED_REASON en el flujo "Report Builder Validador".
+  // NO requieren sync con el SQL de RB DI (ese filtra por lista de procesos; este no).
+  'missing_text':                    { descripcion: 'No se encontraron los campos necesarios para validar el documento', esAlerta: false },
+  'image_face_validation_not_passed':{ descripcion: 'El análisis del rostro en la imagen del documento no fue aprobado', esAlerta: false },
+  'production_data_inconsistency':   { descripcion: 'Los datos del documento presentan inconsistencias', esAlerta: false },
+  'invalid_issue_date':              { descripcion: 'La fecha de expedición del documento es inválida', esAlerta: false },
+  'front_document_not_found':        { descripcion: 'No se pudo identificar el documento frontal en la imagen', esAlerta: false },
+  'document_not_recognized':         { descripcion: 'No se pudo reconocer el tipo de documento', esAlerta: false },
+
   // ── Rechazos de rostro ───────────────────────────────────────────
   'no_face_detected':                { descripcion: 'La cámara no detectó un rostro válido', esAlerta: false },
   'similarity_threshold_not_passed': { descripcion: 'El rostro no coincide suficientemente con la foto del documento', esAlerta: false },
