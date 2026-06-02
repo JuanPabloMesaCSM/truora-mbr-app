@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell, Activity, BookText } from "lucide-react";
+import { UserCheck, ShieldCheck, MessageSquare, LogOut, Lightbulb, Headphones, Home, Bell, Activity, BookText, Fingerprint } from "lucide-react";
 import { type Product, type CsmRow, PRODUCT_COLORS } from "./moduleDefinitions";
 import { FeedbackModal } from "./FeedbackModal";
 
@@ -240,7 +240,7 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
       </div>
 
       {/* ── Center content ── */}
-      <div style={{ textAlign: 'center', maxWidth: 860, width: '100%' }}>
+      <div style={{ textAlign: 'center', maxWidth: 1080, width: '100%' }}>
 
         {/* Greeting */}
         <motion.div
@@ -372,6 +372,54 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
               </motion.button>
             );
           })}
+
+          {/* ── 4to card: Clientes por Validador (standalone, CH-powered) ── */}
+          {!isOncall && (() => {
+            const color = '#34D399';
+            const isHov = hovered === ('VALIDADOR' as unknown as Product);
+            return (
+              <motion.button
+                key="validador"
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.45 + PRODUCTS.length * 0.12, ease: [0.34, 1.56, 0.64, 1] }}
+                onClick={() => navigate('/validador')}
+                onMouseEnter={() => setHovered('VALIDADOR' as unknown as Product)}
+                onMouseLeave={() => setHovered(null)}
+                style={{
+                  width: 240, padding: '28px 24px 24px', borderRadius: 18,
+                  background: isHov ? `${color}12` : `${color}06`,
+                  border: `1px solid ${isHov ? `${color}60` : `${color}22`}`,
+                  boxShadow: isHov ? `0 0 40px ${color}18, 0 8px 32px rgba(0,0,0,0.3)` : '0 4px 20px rgba(0,0,0,0.2)',
+                  cursor: 'pointer', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 0,
+                  transform: isHov ? 'translateY(-4px)' : 'translateY(0)', transition: 'all 0.22s ease', outline: 'none',
+                }}
+              >
+                <div style={{
+                  width: 52, height: 52, borderRadius: 14, background: `${color}18`,
+                  border: `1px solid ${color}30`, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', color: color, marginBottom: 20,
+                }}>
+                  <Fingerprint size={28} strokeWidth={1.8} />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em',
+                  textTransform: 'uppercase', color: color, marginBottom: 6 }}>
+                  Validador
+                </span>
+                <p style={{ fontSize: 17, fontWeight: 700, color: S.text, lineHeight: 1.25, marginBottom: 10 }}>
+                  Clientes por Validador
+                </p>
+                <p style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.55, flexGrow: 1, marginBottom: 22 }}>
+                  Clientes medidos por validación (standalone). MBR de consumo facturable desde ClickHouse.
+                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
+                  color: isHov ? color : S.dim, transition: 'color 0.18s' }}>
+                  Ver clientes
+                  <motion.span animate={{ x: isHov ? 3 : 0 }} transition={{ duration: 0.18 }}>→</motion.span>
+                </div>
+              </motion.button>
+            );
+          })()}
         </div>
       </div>
 

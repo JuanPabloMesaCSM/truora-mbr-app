@@ -26,10 +26,10 @@
 // Admin emails: NO tienen cartera real. Las filas de clientes con estos
 // csm_email son duplicados administrativos creados para visibilidad RLS
 // histórica. Se saltan acá para que el dedup quede con la fila del CSM real
-// y los Telegram nunca le lleguen como "primarios" a Ana o JD.
-// (Ellos siguen recibiendo BCC desde classify.js — eso pasa por chat_id, no
+// y los Telegram nunca le lleguen como "primarios" a JD.
+// (El admin sigue recibiendo BCC desde classify.js — eso pasa por chat_id, no
 //  por este pool.)
-const ADMIN_EMAILS = ['amarquez@truora.com', 'jdiaz@truora.com'];
+const ADMIN_EMAILS = ['jdiaz@truora.com'];
 
 const buckets = {
   di:  { ids: [], map: {} },

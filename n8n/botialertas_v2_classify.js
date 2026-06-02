@@ -18,7 +18,7 @@
 //   * Top 5 caídas + Top 5 crecimientos por |variacion_abs| (v4).
 //   * boti_alertas recibe TODAS las clasificaciones para la página.
 //   * Splitter de mensajes >4000 chars (con cards más compactas casi nunca dispara).
-//   * BCC a admins (jdiaz + amarquez) — siguen recibiendo copias de los demás.
+//   * BCC al admin (jdiaz) — sigue recibiendo copias de los demás.
 
 // =========================================================================
 // 1. Constantes
@@ -29,7 +29,7 @@ const TG_MAX_CHARS = 4000;
 
 // Admin emails: defensa redundante contra prepare_whitelists. Nunca deben
 // recibir Telegram como CSM primario, solo como BCC (chat_id).
-const ADMIN_EMAILS = ['jdiaz@truora.com', 'amarquez@truora.com'];
+const ADMIN_EMAILS = ['jdiaz@truora.com'];
 
 const PRODUCT_LABEL = {
   DI:  'Validaciones (DI)',
@@ -434,7 +434,7 @@ for (const email in telegramByCsm) {
 //    Si el original venia particionado en N partes, cada admin recibe N copias.
 //    Snapshot de telegramItems antes de empezar para no BCCs sobre BCCs.
 // =========================================================================
-const BCC_EMAILS = ['jdiaz@truora.com', 'amarquez@truora.com'];
+const BCC_EMAILS = ['jdiaz@truora.com'];
 const originalMessages = telegramItems.slice();
 const bccCopies = [];
 

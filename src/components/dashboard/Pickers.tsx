@@ -80,7 +80,7 @@ function pillStyle(active: boolean, accent: string): React.CSSProperties {
  */
 export type ClientePickerVariant = "hero" | "compact";
 
-const ADMIN_EMAILS_DASH = new Set<string>(["amarquez@truora.com", "jdiaz@truora.com"]);
+const ADMIN_EMAILS_DASH = new Set<string>(["jdiaz@truora.com"]);
 
 /** Resuelve un TCI a un cliente canónico. Devuelve null si no matchea ningún cliente. */
 export function resolveTci(clientes: ClienteRow[], tci: string): ClienteRow | null {

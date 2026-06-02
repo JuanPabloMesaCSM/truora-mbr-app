@@ -12,6 +12,14 @@ const DI_MOCK_DATA = {
       col7: "523",   col8: "78.9",  col9: "24100",
       col10: "18800", col11: "78.0", col_extra1: "10.4",
     }],
+    // DI Consumo facturable (CH billable validations). col1=product, col2=total,
+    // col3=exitosas, col4=fallidas, col5=prev_total (en la 1ª fila, para MoM).
+    "consumo_facturable": [
+      { bloque: "consumo_facturable", col1: "validations_document_validation",                col2: "24100", col3: "19800", col4: "4300", col5: "52300" },
+      { bloque: "consumo_facturable", col1: "validations_face_recognition_passive_liveness",  col2: "18200", col3: "14600", col4: "3600" },
+      { bloque: "consumo_facturable", col1: "validations_face_search",                        col2: "12400", col3: "12400", col4: "0"    },
+      { bloque: "consumo_facturable", col1: "validations_phone_verification",                 col2: "3200",  col3: "2900",  col4: "300"  },
+    ],
     "2_usuarios_reintentos": [{
       bloque: "2_usuarios_reintentos",
       col1: "18450", col2: "14600", col3: "79.1",
@@ -333,6 +341,7 @@ const CE_FLOW_SLIDE_IDS = CE_MOCK_FLOWS.flatMap((_, i) => [
 
 const DI_SLIDES = [
   "1_metricas_generales",
+  "consumo_facturable",
   "2_usuarios_reintentos",
   "3_validaciones_doc_rostro",
   "4_historico_3meses",

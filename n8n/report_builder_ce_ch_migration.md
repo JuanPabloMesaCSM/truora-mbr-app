@@ -1,6 +1,6 @@
 # Report Builder CE → ClickHouse — cambios n8n
 
-Estado **2026-05-29**. Fase 1 (Ce1) probada en copia, **no publicada**. Fase 2 (Ce12/13/14) diseñada, pendiente.
+Estado **✅ PUBLICADO/LIVE 2026-06-02**. Fase 1 (Ce1) + Fase 2 (Ce12/13/14) cableadas en el workflow VIVO y validadas end-to-end (Financiera + GDC datos, FMP render). El nodo `Preparar Datos` vivo = secciones **1 + 1b + 1c + 1d + 2 + 3 + 4** (la Fase 1 de abajo con los bloques `1c`+`1d` insertados entre `1b` y la sección 2).
 SQL de los endpoints: `truora-mbr-app/clickhouse/ce_report_builder_migration.sql`.
 Workflows n8n: `Report Builder CE` (`JiPo0n1sEUQbJ2k4`), `CE por Flujos y VRF` (`96t8Xl3WGpIaKCLb`).
 

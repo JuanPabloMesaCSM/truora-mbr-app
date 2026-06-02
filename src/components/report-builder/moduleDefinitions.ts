@@ -57,6 +57,7 @@ export const MODULES: Record<Product, { base: ModuleDef; optional: ModuleDef[] }
   DI: {
     base: { id: '1_metricas_generales', label: 'Conversión General del Proceso', desc: 'Dona + KPIs principales', description: 'Volumen total de procesos, tasa de conversión global y distribución de exitosos, fallidos, expirados y cancelados.', chart: 'donut', isBase: true },
     optional: [
+      { id: 'consumo_facturable', label: 'Consumo Facturable', desc: 'Barras horizontales + tabla', description: 'Validaciones facturables por tipo (documento, rostro, TruFace, teléfono, email…) — coincide 1:1 con el consumo que el cliente ve en su consola Truora y con la factura. Tomado de ClickHouse. Es la unidad que el cliente sí puede cuadrar (distinta de "procesos iniciados").', chart: 'horizontal-bars' },
       { id: '2_usuarios_reintentos', label: 'Usuarios y Reintentos', desc: 'Barras verticales', description: 'Usuarios únicos que iniciaron el proceso, tasa de conversión por usuario y distribución por número de intentos realizados.', chart: 'vertical-bars' },
       { id: '3_validaciones_doc_rostro', label: 'Validación de Documento vs Rostro', desc: 'Semicírculos', description: 'Tasa de éxito separada para validación de documento y reconocimiento facial, con detalle de abandonos y declinados.', chart: 'semicircles' },
       { id: '6_funnel', label: 'Embudo de Conversión', desc: 'Barras horizontales', description: 'Paso a paso de cuántos usuarios inician el proceso, llegan a documento y llegan a rostro.', chart: 'horizontal-bars' },

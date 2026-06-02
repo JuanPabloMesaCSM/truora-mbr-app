@@ -10,6 +10,7 @@ import AdminPage from "./pages/AdminPage.tsx";
 import BotiAlertas from "./pages/BotiAlertas.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import QueriesPage from "./pages/QueriesPage.tsx";
+import Validador from "./pages/Validador.tsx";
 import MockCanvas from "./pages/MockCanvas.tsx";
 import MockConfiamosAbril from "./pages/MockConfiamosAbril.tsx";
 import MockCuerosBiometric from "./pages/MockCuerosBiometric.tsx";
@@ -26,7 +27,12 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/admin" element={<AdminPage />} />
-          {import.meta.env.DEV && <Route path="/mock" element={<MockCanvas />} />}
+          {import.meta.env.DEV && (
+            <>
+              <Route path="/mock" element={<MockCanvas />} />
+              <Route path="/mock-canvas" element={<MockCanvas />} />
+            </>
+          )}
           <Route path="/mbr-confiamos-abril" element={<MockConfiamosAbril />} />
           <Route path="/mbr-cueros-biometric" element={<MockCuerosBiometric />} />
           <Route path="/mbr-cueros-completo" element={<MockCuerosCompleto />} />
@@ -36,6 +42,7 @@ const App = () => (
           <Route path="/botialertas" element={<BotiAlertas />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/queries" element={<QueriesPage />} />
+          <Route path="/validador" element={<Validador />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

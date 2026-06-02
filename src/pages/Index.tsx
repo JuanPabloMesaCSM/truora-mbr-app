@@ -20,6 +20,12 @@ import type { Theme, ReportData, CeFlowData } from "@/components/report-builder/
 type AppStep = 'welcome' | 'config' | 'builder' | 'canvas';
 type ClientSource = 'regular' | 'oncall';
 
+const DEV_BYPASS_LOGIN =
+  import.meta.env.DEV && String(import.meta.env.VITE_DEV_BYPASS_LOGIN).toLowerCase() === 'true';
+
+const DEV_USER_EMAIL =
+  (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined)?.trim() || 'jpmesa@truora.com';
+
 /* Módulos CE que tienen selector de flujos. Cada uno mantiene su propio
  * subconjunto en `selectedCeFlowsByModule`. Si agregas un nuevo módulo con
  * `hasFlowSelector: true` en moduleDefinitions, agregalo también acá. */
@@ -146,12 +152,22 @@ const Index = ({ source = 'regular' }: IndexProps) => {
 
     console.log('Clientes cargados:', clientsResult.data?.length ?? 0);
 
-    setCsmProfile((csmResult.data as unknown as CsmRow) ?? null);
+    const csm = (csmResult.data as unknown as CsmRow) ?? null;
+    setCsmProfile(
+      csm ??
+      (DEV_BYPASS_LOGIN
+        ? { id: 'dev', nombre: 'Dev', email: normalizedEmail, activo: true }
+        : null)
+    );
     setClients((clientsResult.data as unknown as ClienteRow[]) ?? []);
   }, [clientsTable]);
 
   const syncAuthenticatedUser = useCallback(async (session: Session | null) => {
     if (!session?.user?.email) {
+      if (DEV_BYPASS_LOGIN) {
+        await loadSessionData(DEV_USER_EMAIL);
+        return;
+      }
       setUserEmail('');
       setCsmProfile(null);
       setClients([]);

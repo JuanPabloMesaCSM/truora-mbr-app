@@ -261,6 +261,10 @@ function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1, convTotal
   const usuariosUnicos   = b2 ? parseInt(b2.col1 || "0", 10) : null;
   const convUsuarioPct   = b2?.col3;
   const pctFallo         = totalProcesos > 0 ? (100 - convPct).toFixed(1) : "0.0";
+  // Consumo facturable (CH, bloque aditivo): validaciones que el cliente ve en su
+  // consola/factura. NO es lo mismo que procesos (1 proceso → 0..N validaciones).
+  const cfRows           = data["consumo_facturable"] || [];
+  const billableTotal    = cfRows.reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
 
   useEffect(() => {
     if (!chartRef.current || totalProcesos === 0) return;
@@ -291,7 +295,19 @@ function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1, convTotal
       <SlideHeader title={`Métricas generales — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
       <div style={bodyStyle}>
         <div style={{ width: "36%", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-          <KpiCard label="Total procesos" value={num(b1?.col1)} delta={variacion} theme={theme} />
+          <KpiCard label="Procesos iniciados" value={num(b1?.col1)} delta={variacion} theme={theme} />
+          {billableTotal > 0 && (
+            <div style={{ padding: "8px 14px", borderRadius: 12, background: "rgba(0,201,167,0.10)",
+              border: "1px solid rgba(0,201,167,0.35)", display: "flex", alignItems: "center",
+              justifyContent: "space-between", gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
+                Consumo facturable
+              </span>
+              <span style={{ fontSize: 15, fontWeight: 800, color: "#00C9A7", whiteSpace: "nowrap" }}>
+                {billableTotal.toLocaleString("es-CO")} validaciones
+              </span>
+            </div>
+          )}
           <KpiCard label="Tasa de conversión" value={`${num(b1?.col8, 1)}%`} valueColor="#00C9A7" footnote={`Anterior: ${convPrev.toFixed(1)}%`} theme={theme} />
           <KpiCard label="Usuarios únicos" value={usuariosUnicos !== null ? usuariosUnicos.toLocaleString("es-CO") : "—"}
             footnote={convUsuarioPct ? `${num(convUsuarioPct, 1)}% conversión por usuario` : undefined} theme={theme} />
@@ -447,7 +463,7 @@ function GaugeColumn({ label, pct, total, exitosas, expirados, declinados, theme
   }, [pct, t.gaugeBg]);
 
   const rows = [
-    { label: "Total validaciones", val: total.toLocaleString("es-CO"),    color: undefined },
+    { label: "Total procesos",     val: total.toLocaleString("es-CO"),    color: undefined },
     { label: "Exitosas",           val: exitosas.toLocaleString("es-CO"),  color: "#00C9A7" },
     { label: "Expiradas",          val: expirados.toLocaleString("es-CO"), color: "#F59E0B" },
     { label: "Declinadas",         val: declinados.toLocaleString("es-CO"),color: "#EF4444" },
@@ -2331,6 +2347,374 @@ function Bgc8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
         )}
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Bases premium" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   DI · Consumo Facturable (solo-CH) — validaciones facturables por tipo
+   = lo que el cliente ve en su consola Truora / factura. Bloque ADITIVO:
+   no reemplaza el embudo SF (procesos/usuarios), lo complementa con la
+   unidad que el cliente sí puede cuadrar contra su factura.
+   Fuente: ClickHouse client_usage_records (reglas billable validations).
+══════════════════════════════════════════════════════════════ */
+
+// product (validations_*) → nombre comercial client-facing.
+// Fuente: skill clickhouse-counters-metabase (Regla 5) + truora-domain.
+const DI_VALIDATION_TYPE: Record<string, string> = {
+  document_validation: "Validación de Documento",
+  face_recognition: "Reconocimiento facial",
+  face_recognition_passive_liveness: "Rostro · Prueba de vida (selfie)",
+  face_recognition_facematch_or_active_liveness: "Rostro · Facematch / Prueba activa",
+  face_recognition_government_validation: "Rostro · Validación gubernamental",
+  face_recognition_speech_match: "Rostro · Coincidencia de voz",
+  face_search: "TruFace (búsqueda facial)",
+  phone_verification: "Verificación de Teléfono",
+  email_verification: "Verificación de Email",
+  electronic_signature: "Firma Electrónica",
+};
+
+function resolveValidationType(product: string): string {
+  const key = (product || "").replace(/^validations_/, "");
+  return DI_VALIDATION_TYPE[key] || key.replace(/_/g, " ") || "—";
+}
+
+// face_search/TruFace es una búsqueda que se cobra al ejecutarse (siempre "éxito"),
+// no una compuerta pass/fail → no mostrar "tasa de éxito" para ese tipo.
+const DI_NO_SUCCESS_RATE = new Set(["validations_face_search", "face_search"]);
+
+function DiConsumoFacturableSlide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstance = useRef<Chart | null>(null);
+  const t = tok(theme);
+
+  const raw = data["consumo_facturable"] || [];
+  const rows = [...raw]
+    .map(r => ({
+      product: r.col1 || "",
+      nombre: resolveValidationType(r.col1 || ""),
+      total: parseInt(r.col2 || "0", 10),
+      exitosas: parseInt(r.col3 || "0", 10),
+      fallidas: parseInt(r.col4 || "0", 10),
+    }))
+    .filter(r => r.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  // El total facturable = suma de los tipos (cada record_id tiene un solo product).
+  const totalGeneral = rows.reduce((s, r) => s + r.total, 0);
+  const prevTotal = parseInt(raw[0]?.col5 || "0", 10);
+  const variacion = prevTotal > 0 ? ((totalGeneral - prevTotal) / prevTotal) * 100 : null;
+  const dir = variacion === null ? "FLAT" : Math.abs(variacion) < 0.05 ? "FLAT" : variacion > 0 ? "UP" : "DOWN";
+
+  const labels = rows.map(r => r.nombre);
+  const values = rows.map(r => r.total);
+  const depKey = JSON.stringify([labels, values]);
+
+  useEffect(() => {
+    if (!chartRef.current || rows.length === 0) return;
+    chartInstance.current?.destroy();
+    chartInstance.current = new Chart(chartRef.current, {
+      type: "bar",
+      data: { labels, datasets: [{ data: values, backgroundColor: "#00C9A7", borderRadius: 8 }] },
+      options: {
+        indexAxis: "y",
+        plugins: {
+          legend: { display: false }, tooltip: { enabled: true },
+          datalabels: { color: t.textPrimary, anchor: "end", align: "right",
+            font: { size: 13, weight: 700 }, formatter: (v: number) => v.toLocaleString("es-CO") },
+        },
+        scales: {
+          x: { display: false, beginAtZero: true },
+          y: { grid: { display: false }, ticks: { color: t.chartText, font: { size: 11 }, padding: 8 } },
+        },
+        layout: { padding: { right: 80, top: 4 } },
+      },
+    } as any);
+    return () => { chartInstance.current?.destroy(); chartInstance.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.textPrimary, t.chartText]);
+
+  const tColW = ["52%", "26%", "22%"];
+  const tCols = ["Tipo de validación", "Cantidad", "% del total"];
+  const deltaColor = dir === "UP" ? "#00C9A7" : dir === "DOWN" ? "#FF4B5C" : t.textMuted;
+  const deltaArrow = dir === "UP" ? "↑" : dir === "DOWN" ? "↓" : "→";
+
+  return (
+    <SlideShell id="DI-CF" theme={theme}>
+      <SlideHeader title={`Consumo facturable — ${periodLabel}`}
+        subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        {rows.length === 0 ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow, borderRadius: 14 }}>
+            <p style={{ fontSize: 15, color: t.textMuted, textAlign: "center", maxWidth: 440 }}>
+              Este cliente no registró validaciones facturables en el periodo.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* KPI band: total facturable + MoM */}
+            <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 96 }}>
+              <div style={{ flex: 2, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+                borderRadius: 14, padding: "14px 22px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+                  textTransform: "uppercase", letterSpacing: "0.12em" }}>Total validaciones facturables</p>
+                <span style={{ fontSize: 40, fontWeight: 800, color: "#00C9A7", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+                  {totalGeneral.toLocaleString("es-CO")}
+                </span>
+              </div>
+              <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+                borderRadius: 14, padding: "14px 22px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+                  textTransform: "uppercase", letterSpacing: "0.12em" }}>Variación vs mes anterior</p>
+                <span style={{ fontSize: 30, fontWeight: 800, color: deltaColor, lineHeight: 1 }}>
+                  {variacion === null ? "—" : `${deltaArrow} ${Math.abs(variacion).toFixed(1)}%`}
+                </span>
+                {prevTotal > 0 && (
+                  <p style={{ margin: "4px 0 0", fontSize: 11, color: t.textMuted }}>
+                    Anterior: {prevTotal.toLocaleString("es-CO")}
+                  </p>
+                )}
+              </div>
+            </div>
+            {/* bars + table */}
+            <div style={{ flex: 1, display: "flex", gap: 12, minHeight: 0 }}>
+              <div style={{ width: "44%", background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+                borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column",
+                overflow: "hidden", flexShrink: 0 }}>
+                <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+                  textTransform: "uppercase", letterSpacing: "0.14em" }}>Validaciones por tipo</p>
+                <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+                  <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+                </div>
+              </div>
+              <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+                borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div style={{ display: "flex", background: "#00C9A7", padding: "10px 20px", flexShrink: 0 }}>
+                  {tCols.map((c, i) => (
+                    <div key={c} style={{ width: tColW[i], flexShrink: 0, fontSize: 10, fontWeight: 700,
+                      color: "#062A24", textTransform: "uppercase", letterSpacing: "0.12em" }}>{c}</div>
+                  ))}
+                </div>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  {rows.map((row, idx) => {
+                    const pct = totalGeneral > 0 ? (row.total / totalGeneral * 100).toFixed(1) : "0.0";
+                    return (
+                      <div key={idx} style={{ display: "flex", alignItems: "center", padding: "10px 20px",
+                        background: idx % 2 === 1 ? t.rowAlt : "transparent",
+                        borderBottom: idx < rows.length - 1 ? `1px solid ${t.footerBorder}` : "none" }}>
+                        <div style={{ width: tColW[0], flexShrink: 0 }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#00C9A7" }}>{row.nombre}</span>
+                        </div>
+                        <div style={{ width: tColW[1], flexShrink: 0 }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: t.textPrimary }}>
+                            {row.total.toLocaleString("es-CO")}
+                          </span>
+                        </div>
+                        <div style={{ width: tColW[2], flexShrink: 0 }}>
+                          <span style={{ fontSize: 13, color: t.textMuted }}>{pct}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", padding: "10px 20px",
+                  borderTop: `2px solid ${t.footerBorder}`, background: t.rowAlt, flexShrink: 0 }}>
+                  <div style={{ width: tColW[0], flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>TOTAL FACTURABLE</span>
+                  </div>
+                  <div style={{ width: tColW[1], flexShrink: 0 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: "#00C9A7" }}>
+                      {totalGeneral.toLocaleString("es-CO")}
+                    </span>
+                  </div>
+                  <div style={{ width: tColW[2], flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>100%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Consumo facturable" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   DI · Razones de rechazo POR VALIDACIÓN (solo-CH) — para standalone
+   A nivel validación (no proceso). Reemplaza DI-7/DI-8 (que asumen procesos).
+   Data: rows {col1=reason_code, col2=product, col3=cantidad} (Endpoint 2).
+══════════════════════════════════════════════════════════════ */
+
+// Acepta tanto el `product` de CH (validations_document_validation, validations_face_*)
+// como el `TYPE` de SF DOCUMENT_VALIDATION_HISTORY (document-validation / face-recognition).
+function validationCategory(v: string): "doc" | "rostro" | "otro" {
+  const k = (v || "").replace(/^validations_/, "").replace(/-/g, "_").toLowerCase();
+  if (k === "document_validation") return "doc";
+  if (k.indexOf("face") === 0) return "rostro";
+  return "otro";
+}
+
+function RazonesValidacionColumn({ titulo, rows, theme }: {
+  titulo: string; rows: { codigo: string; count: number }[]; theme: Theme;
+}) {
+  const t = tok(theme);
+  return (
+    <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+      boxShadow: t.cardShadow, borderRadius: 14, padding: "20px 24px",
+      display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <p style={{ margin: "0 0 14px", fontSize: 11, fontWeight: 700, color: t.textMuted,
+        textTransform: "uppercase", letterSpacing: "0.14em" }}>{titulo}</p>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
+        {rows.length === 0 ? (
+          <p style={{ fontSize: 13, color: t.textMuted, margin: "auto", textAlign: "center" }}>
+            Sin rechazos en el periodo
+          </p>
+        ) : rows.map(r => {
+          const info = describeRazonDI(r.codigo);
+          return (
+            <div key={r.codigo} style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <RazonRechazo codigo={r.codigo} descripcion={info.descripcion} tema={theme} esAlerta={info.esAlerta} />
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, flexShrink: 0, marginTop: 10,
+                color: info.esAlerta ? "#EF4444" : "#94A3B8" }}>
+                {r.count.toLocaleString("es-CO")}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DiRazonesValidacionSlide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const raw = data["razones_validacion"] || [];
+  // Agrupa por código sumando cantidades (puede venir 1 fila por reason+product).
+  const docMap: Record<string, number> = {};
+  const rosMap: Record<string, number> = {};
+  for (const r of raw) {
+    const codigo = r.col1 || "";
+    const cat = validationCategory(r.col2 || "");
+    const cant = parseInt(r.col3 || "0", 10);
+    if (!codigo || cant <= 0) continue;
+    if (cat === "doc") docMap[codigo] = (docMap[codigo] || 0) + cant;
+    else if (cat === "rostro") rosMap[codigo] = (rosMap[codigo] || 0) + cant;
+  }
+  const toSorted = (m: Record<string, number>) =>
+    Object.entries(m).map(([codigo, count]) => ({ codigo, count }))
+      .sort((a, b) => b.count - a.count).slice(0, 8);
+  const docRows = toSorted(docMap);
+  const rosRows = toSorted(rosMap);
+
+  return (
+    <SlideShell id="DI-RV" theme={theme}>
+      <SlideHeader title={`Razones de rechazo por validación — ${periodLabel}`}
+        subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={bodyStyle}>
+        <RazonesValidacionColumn titulo="Documento" rows={docRows} theme={theme} />
+        <RazonesValidacionColumn titulo="Rostro" rows={rosRows} theme={theme} />
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Razones de rechazo" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
+   DI · Histórico del consumo facturable (solo-CH) — para standalone
+   Volumen billable mensual + tasa de éxito de validación. Data: rows
+   {periodo, col1=total, col2=exitosas} (Endpoint 3).
+══════════════════════════════════════════════════════════════ */
+
+function DiHistoricoFacturableSlide({ data, theme, clientName, periodLabel, pageNum = 1 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartInstance = useRef<Chart | null>(null);
+  const t = tok(theme);
+
+  const hist = [...(data["historico_facturable"] || [])]
+    .sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+  const labels   = hist.map(r => monthLabel(r.periodo || ""));
+  const volumes  = hist.map(r => parseInt(r.col1 || "0", 10));
+  const exitosas = hist.map(r => parseInt(r.col2 || "0", 10));
+  const tasas    = hist.map((r, i) => volumes[i] > 0 ? Math.round(exitosas[i] / volumes[i] * 1000) / 10 : 0);
+  const depKey   = JSON.stringify([volumes, tasas, labels]);
+
+  useEffect(() => {
+    if (!chartRef.current || hist.length === 0) return;
+    chartInstance.current?.destroy();
+    chartInstance.current = new Chart(chartRef.current, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { type: "line" as any, label: "% Éxito de validación", data: tasas,
+            borderColor: "#00C9A7", backgroundColor: "transparent", borderWidth: 3,
+            pointRadius: 7, pointBackgroundColor: "#fff", pointBorderColor: "#00C9A7",
+            pointBorderWidth: 2.5, yAxisID: "yConv", order: 1,
+            datalabels: { display: true, anchor: "end", align: "top",
+              color: "#00C9A7", font: { size: 13, weight: 700 },
+              formatter: (v: number) => v.toFixed(1) + "%" } as any },
+          { type: "bar" as any, label: "Validaciones facturables", data: volumes,
+            backgroundColor: t.histBar, borderRadius: 8, yAxisID: "yVol", order: 2,
+            datalabels: { display: true, anchor: "end", align: "top", color: t.textPrimary,
+              font: { size: 12, weight: 700 }, formatter: (v: number) => v.toLocaleString("es-CO") } as any },
+        ],
+      },
+      options: {
+        plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: t.chartText, font: { size: 14 } } },
+          yConv: { display: false, min: 0, max: 100, position: "left" },
+          yVol:  { display: false, beginAtZero: true, position: "right" },
+        },
+        layout: { padding: { top: 44, right: 20 } },
+      },
+    } as any);
+    return () => { chartInstance.current?.destroy(); chartInstance.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, t.histBar, t.chartText, t.textPrimary]);
+
+  return (
+    <SlideShell id="DI-HF" theme={theme}>
+      <SlideHeader title={`Evolución del consumo facturable — últimos meses`}
+        subtitle={`Digital Identity · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 86 }}>
+          {hist.map((row, i) => (
+            <div key={i} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
+              borderRadius: 12, padding: "10px 16px", display: "flex", flexDirection: "column",
+              justifyContent: "space-between", overflow: "hidden" }}>
+              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.1em" }}>{monthLabel(row.periodo || "")}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span style={{ fontSize: 22, fontWeight: 800, color: t.textPrimary }}>
+                  {volumes[i].toLocaleString("es-CO")}
+                </span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#00C9A7" }}>
+                  {tasas[i].toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+          borderRadius: 14, padding: "16px 20px 12px", overflow: "hidden", position: "relative", minHeight: 0 }}>
+          <canvas ref={chartRef} style={{ width: "100%", height: "100%" }} />
+        </div>
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Histórico facturable" />
     </SlideShell>
   );
 }
@@ -4467,6 +4851,9 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "9_abandono":                return <Di9Slide  {...p} />;
         case "10_declinados":             return <DiDeclinadosSlide {...p} />;
         case "11_friccion_usuario":       return <Di10Slide {...p} />;
+        case "consumo_facturable":        return <DiConsumoFacturableSlide {...p} />;
+        case "razones_validacion":        return <DiRazonesValidacionSlide {...p} />;
+        case "historico_facturable":      return <DiHistoricoFacturableSlide {...p} />;
         default:                          return null;
       }
     }

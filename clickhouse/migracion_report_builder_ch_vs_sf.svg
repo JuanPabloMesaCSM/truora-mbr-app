@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="920" viewBox="0 0 1300 920" font-family="Inter, 'Segoe UI', Arial, sans-serif">
+  <!-- bg -->
+  <rect width="1300" height="920" fill="#0B1020"/>
+
+  <!-- title -->
+  <text x="40" y="56" fill="#EEF1FF" font-size="26" font-weight="700">Report Builder</text>
+
+  <!-- ===================== COLUMNA CLICKHOUSE ===================== -->
+  <rect x="30" y="100" width="610" height="700" rx="16" fill="#141A33" stroke="#2A3350" stroke-width="1"/>
+  <rect x="30" y="100" width="610" height="62" rx="16" fill="#0E2A2A"/>
+  <rect x="30" y="146" width="610" height="16" fill="#0E2A2A"/>
+  <circle cx="58" cy="132" r="7" fill="#34D399"/>
+  <text x="76" y="130" fill="#34D399" font-size="19" font-weight="700">ClickHouse — Consumo facturable</text>
+  <text x="76" y="152" fill="#9FE9CE" font-size="13">= lo que el cliente ve en su factura / front de Truora</text>
+
+  <!-- CE en CH -->
+  <text x="50" y="200" fill="#38BDF8" font-size="12" font-weight="700" letter-spacing="1.5">CUSTOMER ENGAGEMENT · WHATSAPP</text>
+  <circle cx="56" cy="226" r="3.5" fill="#34D399"/>
+  <text x="70" y="231" fill="#E6EAFb" font-size="14">Consumo total: conversaciones entrantes, mensajes y notificaciones</text>
+  <circle cx="56" cy="254" r="3.5" fill="#34D399"/>
+  <text x="70" y="259" fill="#E6EAFb" font-size="14">Consumo por línea de WhatsApp</text>
+  <circle cx="56" cy="282" r="3.5" fill="#34D399"/>
+  <text x="70" y="287" fill="#E6EAFb" font-size="14">Tendencia mensual de consumo</text>
+  <circle cx="56" cy="310" r="3.5" fill="#34D399"/>
+  <text x="70" y="315" fill="#E6EAFb" font-size="14">Actividad por línea (altas y bajas mes a mes)</text>
+
+  <line x1="50" y1="338" x2="620" y2="338" stroke="#2A3350" stroke-width="1"/>
+
+  <!-- BGC en CH -->
+  <text x="50" y="372" fill="#A78BFA" font-size="12" font-weight="700" letter-spacing="1.5">BACKGROUND CHECK</text>
+  <circle cx="56" cy="398" r="3.5" fill="#34D399"/>
+  <text x="70" y="403" fill="#E6EAFb" font-size="14">Total de verificaciones facturables (checks completados)</text>
+  <circle cx="56" cy="426" r="3.5" fill="#34D399"/>
+  <text x="70" y="431" fill="#E6EAFb" font-size="14">Volumen por país</text>
+  <circle cx="56" cy="454" r="3.5" fill="#34D399"/>
+  <text x="70" y="459" fill="#E6EAFb" font-size="14">Volumen por país × tipo de verificación</text>
+  <circle cx="56" cy="482" r="3.5" fill="#34D399"/>
+  <text x="70" y="487" fill="#E6EAFb" font-size="14">Volumen por tipo de verificación</text>
+  <circle cx="56" cy="510" r="3.5" fill="#34D399"/>
+  <text x="70" y="515" fill="#E6EAFb" font-size="14">Evolución histórica (mensual)</text>
+  <circle cx="56" cy="538" r="3.5" fill="#34D399"/>
+  <text x="70" y="543" fill="#E6EAFb" font-size="14">Bases de datos premium consultadas (IMSS, PEP FIMPE…)</text>
+  <rect x="70" y="552" width="62" height="18" rx="9" fill="#6C3FC5"/>
+  <text x="79" y="565" fill="#FFFFFF" font-size="10" font-weight="700">NUEVO</text>
+
+  <!-- ===================== COLUMNA SNOWFLAKE ===================== -->
+  <rect x="660" y="100" width="610" height="700" rx="16" fill="#141A33" stroke="#2A3350" stroke-width="1"/>
+  <rect x="660" y="100" width="610" height="62" rx="16" fill="#2A2410"/>
+  <rect x="660" y="146" width="610" height="16" fill="#2A2410"/>
+  <circle cx="688" cy="132" r="7" fill="#FBBF24"/>
+  <text x="706" y="130" fill="#FBBF24" font-size="19" font-weight="700">Snowflake — Detalle operativo y de calidad</text>
+  <text x="706" y="152" fill="#F0D79B" font-size="13">el análisis profundo que ClickHouse no tiene</text>
+
+  <!-- CE en SF -->
+  <text x="680" y="200" fill="#38BDF8" font-size="12" font-weight="700" letter-spacing="1.5">CUSTOMER ENGAGEMENT · WHATSAPP</text>
+  <circle cx="686" cy="226" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="231" fill="#E6EAFb" font-size="14">Eficiencia de campañas (entrega, lectura, interacción)</text>
+  <circle cx="686" cy="254" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="259" fill="#E6EAFb" font-size="14">Razones de fallo de envío</text>
+  <circle cx="686" cy="282" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="287" fill="#E6EAFb" font-size="14">Resultados del flujo entrante (% que pasa a agente)</text>
+  <circle cx="686" cy="310" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="315" fill="#E6EAFb" font-size="14">Desempeño de agentes (tiempos, % cerradas)</text>
+  <circle cx="686" cy="338" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="343" fill="#E6EAFb" font-size="14">Métricas por agente (top 5)</text>
+  <circle cx="686" cy="366" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="371" fill="#E6EAFb" font-size="14">Embudo y validación de identidad dentro del flujo</text>
+
+  <line x1="680" y1="394" x2="1250" y2="394" stroke="#2A3350" stroke-width="1"/>
+
+  <!-- BGC en SF -->
+  <text x="680" y="428" fill="#A78BFA" font-size="12" font-weight="700" letter-spacing="1.5">BACKGROUND CHECK</text>
+  <circle cx="686" cy="454" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="459" fill="#E6EAFb" font-size="14">Puntaje de confianza (score 0–10)</text>
+  <circle cx="686" cy="482" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="487" fill="#E6EAFb" font-size="14">Checks exitosos / sin advertencias (umbral del cliente)</text>
+  <circle cx="686" cy="510" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="515" fill="#E6EAFb" font-size="14">Puntaje por país</text>
+  <circle cx="686" cy="538" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="543" fill="#E6EAFb" font-size="14">Alertas de riesgo (labels)</text>
+  <circle cx="686" cy="566" r="3.5" fill="#FBBF24"/>
+  <text x="700" y="571" fill="#E6EAFb" font-size="14">Anomalías de alertas vs puntaje</text>
+
+  <!-- ===================== FOOTER ===================== -->
+  <rect x="30" y="820" width="1240" height="72" rx="14" fill="#10162E" stroke="#2A3350" stroke-width="1"/>
+  <text x="50" y="850" fill="#EEF1FF" font-size="14" font-weight="700">Regla:</text>
+  <text x="108" y="850" fill="#C7CEEC" font-size="14"><tspan fill="#34D399" font-weight="700">ClickHouse</tspan> = la verdad facturable (cuadra al unit con el front del cliente).  <tspan fill="#FBBF24" font-weight="700">Snowflake</tspan> = detalle de calidad, agentes, campañas, embudos y razones.</text>
+  <text x="50" y="876" fill="#95A0C8" font-size="13">Digital Identity (DI): el Report Builder sigue 100% en Snowflake — no incluido en esta migración.</text>
+</svg>
