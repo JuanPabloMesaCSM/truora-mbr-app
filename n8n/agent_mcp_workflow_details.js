@@ -61,7 +61,7 @@ const item = $input.first().json;
 let startedAt = Date.now();
 let workflowIdReq = '';
 try {
-  const setItem = $('Set: Build MCP Body').first().json;
+  const setItem = $('Code: Build MCP Body').first().json;
   startedAt = setItem.started_at || Date.now();
   workflowIdReq = setItem.workflow_id || '';
 } catch (_) {

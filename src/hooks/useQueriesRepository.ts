@@ -22,6 +22,7 @@ export function useQueriesRepository() {
       .select(
         "*, workflow:workflow_snapshots!workflow_id_origen(workflow_id,workflow_name,last_synced_at,drift_detected_at)"
       )
+      .neq("status", "deprecated")
       .order("producto")
       .order("nombre");
 

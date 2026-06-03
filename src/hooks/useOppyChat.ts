@@ -159,33 +159,37 @@ async function mockReply(text: string): Promise<string> {
 
   if (/consumo|factur|cuanto.*pago|pexto.*may/.test(low)) {
     return [
-      "Yo no ejecuto queries todavia, solo te ayudo a encontrarlas en el catalogo.",
+      "Para consumo facturable usá los endpoints ClickHouse — son la fuente oficial desde dic-2025.",
       "",
-      "Para consumo facturable usá `ch_resumen_por_producto` (ClickHouse) — te da el total mensual por producto del cliente.",
+      "- BGC → `ch_bgc_resumen` (completados del mes, = front del cliente)",
+      "- CE  → `ch_ce_consumo` (outbound/notif/inbound del mes)",
+      "- DI  → `ch_di_consumo_facturable` (validaciones billables, rescata también clientes standalone)",
       "",
-      "¿Querés que te muestre el SQL?",
+      "¿De qué producto y cliente necesitás el dato?",
     ].join("\n");
   }
 
   if (/bgc|background|check/.test(low)) {
     return [
-      "El catalogo tiene 8 queries BGC del Report Builder. Las mas usadas:",
+      "El catálogo tiene 8 queries BGC del Report Builder + 3 endpoints ClickHouse facturables. Las más usadas:",
       "",
-      "- `sf_bgc_resumen_general` — Resumen general de checks del mes (total, exitosos, con advertencias).",
-      "- `sf_bgc_funnel` — Embudo de conversion BGC.",
-      "- `sf_bgc_top_tipos_check` — Top tipos de check del cliente.",
+      "- `ch_bgc_resumen` — Completados BGC del mes (= lo que ve el cliente en su factura).",
+      "- `sf_bgc_resumen_general` — Resumen general checks (incluye score y pass_rate — solo Snowflake).",
+      "- `ch_bgc_pais_tipo` — Desglose por país y tipo de check (facturable).",
+      "- `ch_bgc_historico` — Completados BGC últimos 4 meses (tendencia).",
       "",
-      "¿Cual te interesa o querés que listemos todas?",
+      "¿Cuál te interesa o querés que listemos todas?",
     ].join("\n");
   }
 
   if (/ce\b|whatsapp|inbound|outbound|conversacion/.test(low)) {
     return [
-      "El catalogo tiene 9 queries CE Global + 3 CE por flujo. Las más útiles para empezar:",
+      "El catálogo tiene 9 queries CE Global + 3 CE por flujo + 4 endpoints ClickHouse facturables. Las más útiles:",
       "",
-      "- `sf_ce_consumo_total` — Total mensajes inbound/outbound/notificaciones.",
-      "- `sf_ce_funnel_otb` — Embudo outbound (enviados → entregados → leídos → respondidos).",
-      "- `sf_ce_agentes_inbound` — Métricas de agentes humanos (medianas en horas).",
+      "- `ch_ce_consumo` — Total mensajes outbound/notif/inbound del mes (= factura).",
+      "- `ch_ce_tendencia` — Tendencia mensual CE (6 meses, zero-fill).",
+      "- `sf_ce_eficiencia_campanas` — Tasa de entrega y lectura por campaña (Snowflake).",
+      "- `sf_ce_desempeno_agentes` — Métricas de agentes humanos con medianas en horas.",
       "",
       "¿Algo en especifico?",
     ].join("\n");
