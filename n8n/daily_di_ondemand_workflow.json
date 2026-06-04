@@ -1,0 +1,196 @@
+{
+  "name": "Reporte DI Diario (on-demand)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reporte-di-diario",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "b1000000-0000-0000-0000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "reporte-di-diario"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node — \"Preparar Query\" (webhook on-demand: reporte-di-diario)\n// Mode: Run Once for All Items\n// =========================================================================\n// Recibe del Webhook: { cid, flujos (array o \"a,b\"), fecha (YYYY-MM-DD opcional) }\n// Devuelve 1 item con { sql_conversion, sql_razones, meta } para que los nodos\n// Snowflake corran cada query vía expresión:\n//   SF Conversión.query = {{ $('Preparar Query').first().json.sql_conversion }}\n//   SF Razones.query     = {{ $('Preparar Query').first().json.sql_razones }}\n//\n// Reglas n8n: sin optional chaining (?.). Template literals y arrows OK en Code.\n// hoy = fecha (o CURRENT_DATE) ; ayer = hoy - 1 día. Compara HOY (parcial) vs AYER.\n// =========================================================================\n\nconst json = $json || {};\nconst body = json.body ? json.body : json;\n\nconst cidRaw = body.cid || body.CLIENT_ID || '';\nlet flujos = body.flujos || body.flow_ids || [];\nif (typeof flujos === 'string') flujos = flujos.split(',');\nif (!Array.isArray(flujos)) flujos = [];\nconst fechaRaw = String(body.fecha || '').trim();\n\n// Sanitización: TCIs y FLOW_IDs son alfanuméricos (+ _ -). Quita cualquier otra cosa\n// para evitar inyección en el SQL armado por string.\nconst clean = (s) => String(s).replace(/[^A-Za-z0-9_-]/g, '');\nconst cid = clean(cidRaw);\nif (!cid) throw new Error('Falta cid (CLIENT_ID).');\n\nconst flujosSafe = flujos.map(clean).filter(Boolean);\nconst flowFilter = flujosSafe.length\n  ? `FLOW_ID IN (${flujosSafe.map((f) => `'${f}'`).join(',')})`\n  : '1=1';\n\nconst hoyExpr = /^\\d{4}-\\d{2}-\\d{2}$/.test(fechaRaw)\n  ? `CAST('${fechaRaw}' AS DATE)`\n  : 'CURRENT_DATE';\n\n// CTE base de procesos (compartida, varía la proyección por query)\nconst procesosCTE = (cols) => `\nprocesos AS (\n  SELECT ${cols},\n         CAST(ip.CREATION_DATE AS DATE) AS fecha\n  FROM TRUORA.TRUORA_SCHEMA.IDENTITY_PROCESSES ip\n  CROSS JOIN params p\n  WHERE ip.CLIENT_ID = '${cid}'\n    AND ${flowFilter}\n    AND CAST(ip.CREATION_DATE AS DATE) IN (p.hoy, p.ayer)\n    AND (ip.DECLINED_REASON IS NULL OR LOWER(ip.DECLINED_REASON) != 'not_used')\n    AND ip.STATUS IS NOT NULL\n    AND (ip.IS_USED IS NULL OR ip.IS_USED = TRUE)\n)`;\n\nconst paramsCTE = `params AS (SELECT ${hoyExpr} AS hoy, DATEADD('day', -1, ${hoyExpr}) AS ayer)`;\n\n// ---- Query 1: conversión (proceso + usuario único) por flujo + TOTAL ----\nconst sql_conversion = `\nWITH ${paramsCTE},\n${procesosCTE('ip.PROCESS_ID, ip.ACCOUNT_ID, ip.STATUS, ip.FLOW_ID')},\nagg AS (\n  SELECT\n    COALESCE(pr.FLOW_ID,'TOTAL (ambos)') AS flujo,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.PROCESS_ID END)                                AS proc_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  AND LOWER(pr.STATUS)='success' THEN pr.PROCESS_ID END) AS proc_ok_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.PROCESS_ID END)                                AS proc_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer AND LOWER(pr.STATUS)='success' THEN pr.PROCESS_ID END) AS proc_ok_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.ACCOUNT_ID END)                                AS u_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  AND LOWER(pr.STATUS)='success' THEN pr.ACCOUNT_ID END) AS u_ok_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.ACCOUNT_ID END)                                AS u_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer AND LOWER(pr.STATUS)='success' THEN pr.ACCOUNT_ID END) AS u_ok_ayer\n  FROM procesos pr CROSS JOIN params p\n  GROUP BY GROUPING SETS ((pr.FLOW_ID), ())\n)\nSELECT\n  flujo,\n  proc_hoy AS procesos_iniciados_hoy, proc_ayer AS procesos_iniciados_ayer,\n  proc_ok_hoy AS procesos_exitosos_hoy, proc_ok_ayer AS procesos_exitosos_ayer,\n  ROUND(proc_ok_hoy *100.0/NULLIF(proc_hoy ,0),1) AS conversion_proc_hoy_pct,\n  ROUND(proc_ok_ayer*100.0/NULLIF(proc_ayer,0),1) AS conversion_proc_ayer_pct,\n  ROUND(proc_ok_hoy *100.0/NULLIF(proc_hoy ,0),1) - ROUND(proc_ok_ayer*100.0/NULLIF(proc_ayer,0),1) AS conv_proc_delta_pp,\n  u_hoy AS usuarios_unicos_hoy, u_ayer AS usuarios_unicos_ayer,\n  u_ok_hoy AS usuarios_exitosos_hoy, u_ok_ayer AS usuarios_exitosos_ayer,\n  ROUND(u_ok_hoy *100.0/NULLIF(u_hoy ,0),1) AS conversion_usuario_hoy_pct,\n  ROUND(u_ok_ayer*100.0/NULLIF(u_ayer,0),1) AS conversion_usuario_ayer_pct,\n  ROUND(u_ok_hoy *100.0/NULLIF(u_hoy ,0),1) - ROUND(u_ok_ayer*100.0/NULLIF(u_ayer,0),1) AS conv_usuario_delta_pp\nFROM agg\nORDER BY (flujo = 'TOTAL (ambos)'), flujo;`;\n\n// ---- Query 2: razones de rechazo (doc/rostro) por flujo + TOTAL ----\nconst sql_razones = `\nWITH ${paramsCTE},\n${procesosCTE('ip.PROCESS_ID, ip.STATUS, ip.FAILURE_STATUS, ip.DECLINED_REASON, ip.FLOW_ID')},\nr AS (\n  SELECT\n    COALESCE(pr.FLOW_ID,'TOTAL (ambos)') AS flujo,\n    pr.DECLINED_REASON AS razon,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.PROCESS_ID END) AS rechazos_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.PROCESS_ID END) AS rechazos_ayer\n  FROM procesos pr CROSS JOIN params p\n  WHERE LOWER(pr.STATUS)='failure'\n    AND (LOWER(pr.FAILURE_STATUS) LIKE '%rechazado%' OR LOWER(pr.FAILURE_STATUS)='declined')\n    AND pr.DECLINED_REASON IS NOT NULL\n    AND LOWER(pr.DECLINED_REASON) IN (\n      'blurry_image','expired_document','document_has_expired','document_is_a_photocopy',\n      'document_is_a_photo_of_photo','document_does_not_match_account_id','document_validation_not_started',\n      'damaged_document','invalid_document_emission_date','document_data_does_not_match_government_data',\n      'document_image_no_text_detected','document_front_not_identified',\n      'no_face_detected','similarity_threshold_not_passed','risky_face_detected',\n      'passive_liveness_verification_not_passed','user_face_match_in_client_collection',\n      'user_face_match_in_fraud_collection','face_validation_not_started','invalid_video_file'\n    )\n  GROUP BY GROUPING SETS ((pr.FLOW_ID, pr.DECLINED_REASON), (pr.DECLINED_REASON))\n)\nSELECT\n  CASE WHEN LOWER(razon) IN (\n      'no_face_detected','similarity_threshold_not_passed','risky_face_detected',\n      'passive_liveness_verification_not_passed','user_face_match_in_client_collection',\n      'user_face_match_in_fraud_collection','face_validation_not_started','invalid_video_file'\n    ) THEN 'Rostro' ELSE 'Documento' END AS tipo,\n  flujo, razon, rechazos_hoy, rechazos_ayer, (rechazos_hoy - rechazos_ayer) AS delta\nFROM r\nORDER BY tipo, (flujo='TOTAL (ambos)'), flujo, rechazos_hoy DESC;`;\n\nreturn [{\n  json: {\n    sql_conversion: sql_conversion,\n    sql_razones: sql_razones,\n    meta: { cid: cid, flujos: flujosSafe, hoy_expr: hoyExpr },\n  },\n}];\n"
+      },
+      "id": "b1000000-0000-0000-0000-000000000002",
+      "name": "Preparar Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Preparar Query').first().json.sql_conversion }}"
+      },
+      "id": "b1000000-0000-0000-0000-000000000003",
+      "name": "SF Conversión",
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [
+        480,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Preparar Query').first().json.sql_razones }}"
+      },
+      "id": "b1000000-0000-0000-0000-000000000004",
+      "name": "SF Razones",
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [
+        480,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2
+      },
+      "id": "b1000000-0000-0000-0000-000000000005",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node — \"Armar Respuesta\" (webhook on-demand: reporte-di-diario)\n// Mode: Run Once for All Items\n// =========================================================================\n// Lee por nombre los 2 Snowflake y devuelve el JSON que consume la página\n// /reporte-di-diario. Normaliza las claves a minúsculas (Snowflake devuelve\n// MAYÚSCULAS) para que el frontend use acceso directo.\n//\n// Salida: 1 item { json: { status, conversion: [...], razones: [...] } }\n// El nodo \"Respond to Webhook\" debe responder con \"First Incoming Item\".\n// Reglas n8n: sin optional chaining (?.).\n// =========================================================================\n\nconst lower = (row) => {\n  const out = {};\n  if (!row) return out;\n  const keys = Object.keys(row);\n  for (let i = 0; i < keys.length; i++) {\n    out[keys[i].toLowerCase()] = row[keys[i]];\n  }\n  return out;\n};\n\nconst conv = $('SF Conversión').all().map((i) => lower(i.json));\nconst raz = $('SF Razones').all().map((i) => lower(i.json));\n\nreturn [{\n  json: {\n    status: 'success',\n    conversion: conv,\n    razones: raz,\n  },\n}];\n"
+      },
+      "id": "b1000000-0000-0000-0000-000000000006",
+      "name": "Armar Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b1000000-0000-0000-0000-000000000007",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Preparar Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Query": {
+      "main": [
+        [
+          {
+            "node": "SF Conversión",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SF Razones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Conversión": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Razones": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Armar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "meta": {},
+  "pinData": {}
+}

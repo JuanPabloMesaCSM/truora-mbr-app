@@ -1,0 +1,215 @@
+{
+  "name": "Reporte Diario DI 2 Flujos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 14,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000001",
+      "name": "Schedule 2pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH params AS (\n  SELECT CURRENT_DATE AS hoy, DATEADD('day', -1, CURRENT_DATE) AS ayer\n),\nprocesos AS (\n  SELECT ip.PROCESS_ID, ip.ACCOUNT_ID, ip.STATUS, ip.FLOW_ID,\n         CAST(ip.CREATION_DATE AS DATE) AS fecha\n  FROM TRUORA.TRUORA_SCHEMA.IDENTITY_PROCESSES ip\n  CROSS JOIN params p\n  WHERE ip.CLIENT_ID = 'TCId5981cce1073baf2a0bc311dc90220bc'\n    AND ip.FLOW_ID IN ('IPFd2ce1706f9d0a34ac4699ee9cb5deae2','IPFdbb5de09c089403c0e20b86313abc47b')\n    AND CAST(ip.CREATION_DATE AS DATE) IN (p.hoy, p.ayer)\n    AND (ip.DECLINED_REASON IS NULL OR LOWER(ip.DECLINED_REASON) != 'not_used')\n    AND ip.STATUS IS NOT NULL\n    AND (ip.IS_USED IS NULL OR ip.IS_USED = TRUE)\n),\nagg AS (\n  SELECT\n    COALESCE(pr.FLOW_ID,'TOTAL (ambos)') AS flujo,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.PROCESS_ID END)                                AS proc_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  AND LOWER(pr.STATUS)='success' THEN pr.PROCESS_ID END) AS proc_ok_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.PROCESS_ID END)                                AS proc_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer AND LOWER(pr.STATUS)='success' THEN pr.PROCESS_ID END) AS proc_ok_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.ACCOUNT_ID END)                                AS u_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  AND LOWER(pr.STATUS)='success' THEN pr.ACCOUNT_ID END) AS u_ok_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.ACCOUNT_ID END)                                AS u_ayer,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer AND LOWER(pr.STATUS)='success' THEN pr.ACCOUNT_ID END) AS u_ok_ayer\n  FROM procesos pr CROSS JOIN params p\n  GROUP BY GROUPING SETS ((pr.FLOW_ID), ())\n)\nSELECT\n  flujo,\n  proc_hoy      AS procesos_iniciados_hoy,\n  proc_ayer     AS procesos_iniciados_ayer,\n  proc_ok_hoy   AS procesos_exitosos_hoy,\n  proc_ok_ayer  AS procesos_exitosos_ayer,\n  ROUND(proc_ok_hoy *100.0/NULLIF(proc_hoy ,0),1) AS conversion_proc_hoy_pct,\n  ROUND(proc_ok_ayer*100.0/NULLIF(proc_ayer,0),1) AS conversion_proc_ayer_pct,\n  ROUND(proc_ok_hoy *100.0/NULLIF(proc_hoy ,0),1)\n    - ROUND(proc_ok_ayer*100.0/NULLIF(proc_ayer,0),1) AS conv_proc_delta_pp,\n  u_hoy         AS usuarios_unicos_hoy,\n  u_ayer        AS usuarios_unicos_ayer,\n  u_ok_hoy      AS usuarios_exitosos_hoy,\n  u_ok_ayer     AS usuarios_exitosos_ayer,\n  ROUND(u_ok_hoy *100.0/NULLIF(u_hoy ,0),1) AS conversion_usuario_hoy_pct,\n  ROUND(u_ok_ayer*100.0/NULLIF(u_ayer,0),1) AS conversion_usuario_ayer_pct,\n  ROUND(u_ok_hoy *100.0/NULLIF(u_hoy ,0),1)\n    - ROUND(u_ok_ayer*100.0/NULLIF(u_ayer,0),1) AS conv_usuario_delta_pp\nFROM agg\nORDER BY (flujo = 'TOTAL (ambos)'), flujo;"
+      },
+      "id": "a1000000-0000-0000-0000-000000000002",
+      "name": "SF Conversión",
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [
+        280,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH params AS (\n  SELECT CURRENT_DATE AS hoy, DATEADD('day', -1, CURRENT_DATE) AS ayer\n),\nprocesos AS (\n  SELECT ip.PROCESS_ID, ip.STATUS, ip.FAILURE_STATUS, ip.DECLINED_REASON, ip.FLOW_ID,\n         CAST(ip.CREATION_DATE AS DATE) AS fecha\n  FROM TRUORA.TRUORA_SCHEMA.IDENTITY_PROCESSES ip\n  CROSS JOIN params p\n  WHERE ip.CLIENT_ID = 'TCId5981cce1073baf2a0bc311dc90220bc'\n    AND ip.FLOW_ID IN ('IPFd2ce1706f9d0a34ac4699ee9cb5deae2','IPFdbb5de09c089403c0e20b86313abc47b')\n    AND CAST(ip.CREATION_DATE AS DATE) IN (p.hoy, p.ayer)\n    AND (ip.DECLINED_REASON IS NULL OR LOWER(ip.DECLINED_REASON) != 'not_used')\n    AND ip.STATUS IS NOT NULL\n    AND (ip.IS_USED IS NULL OR ip.IS_USED = TRUE)\n),\nr AS (\n  SELECT\n    COALESCE(pr.FLOW_ID,'TOTAL (ambos)') AS flujo,\n    pr.DECLINED_REASON AS razon,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.hoy  THEN pr.PROCESS_ID END) AS rechazos_hoy,\n    COUNT(DISTINCT CASE WHEN pr.fecha=p.ayer THEN pr.PROCESS_ID END) AS rechazos_ayer\n  FROM procesos pr CROSS JOIN params p\n  WHERE LOWER(pr.STATUS)='failure'\n    AND (LOWER(pr.FAILURE_STATUS) LIKE '%rechazado%' OR LOWER(pr.FAILURE_STATUS)='declined')\n    AND pr.DECLINED_REASON IS NOT NULL\n    AND LOWER(pr.DECLINED_REASON) IN (\n      -- documento\n      'blurry_image','expired_document','document_has_expired','document_is_a_photocopy',\n      'document_is_a_photo_of_photo','document_does_not_match_account_id','document_validation_not_started',\n      'damaged_document','invalid_document_emission_date','document_data_does_not_match_government_data',\n      'document_image_no_text_detected','document_front_not_identified',\n      -- rostro\n      'no_face_detected','similarity_threshold_not_passed','risky_face_detected',\n      'passive_liveness_verification_not_passed','user_face_match_in_client_collection',\n      'user_face_match_in_fraud_collection','face_validation_not_started','invalid_video_file'\n    )\n  GROUP BY GROUPING SETS ((pr.FLOW_ID, pr.DECLINED_REASON), (pr.DECLINED_REASON))\n)\nSELECT\n  CASE WHEN LOWER(razon) IN (\n      'no_face_detected','similarity_threshold_not_passed','risky_face_detected',\n      'passive_liveness_verification_not_passed','user_face_match_in_client_collection',\n      'user_face_match_in_fraud_collection','face_validation_not_started','invalid_video_file'\n    ) THEN 'Rostro' ELSE 'Documento' END AS tipo,\n  flujo, razon, rechazos_hoy, rechazos_ayer, (rechazos_hoy - rechazos_ayer) AS delta\nFROM r\nORDER BY tipo, (flujo='TOTAL (ambos)'), flujo, rechazos_hoy DESC;"
+      },
+      "id": "a1000000-0000-0000-0000-000000000003",
+      "name": "SF Razones",
+      "type": "n8n-nodes-base.snowflake",
+      "typeVersion": 1,
+      "position": [
+        280,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "csm",
+        "returnAll": true,
+        "matchType": "anyFilter",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "email",
+              "condition": "eq",
+              "keyValue": "sduran@truora.com"
+            },
+            {
+              "keyName": "email",
+              "condition": "eq",
+              "keyValue": "jdiaz@truora.com"
+            }
+          ]
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000004",
+      "name": "Get CSM",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        280,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 3
+      },
+      "id": "a1000000-0000-0000-0000-000000000005",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        560,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// n8n Code node — \"Armar Resumen\" (Reporte Diario DI 2 Flujos)\n// Mode: Run Once for All Items\n// =========================================================================\n// Lee por NOMBRE de nodo (no via $input):\n//   $('SF Conversión').all()  -> Query 1 (1 fila por flujo + TOTAL)\n//   $('SF Razones').all()     -> Query 2 (1 fila por razón, por flujo + TOTAL)\n//   $('Get CSM').all()        -> 1 fila por destinatario en public.csm (chat_id + nombre)\n// Devuelve 1 item POR destinatario: { json: { payload: { chat_id, text } } }.\n// El nodo Telegram corre una vez por item -> un mensaje (idéntico) a cada CSM.\n//\n// Reglas n8n: SIN optional chaining (?.), SIN fetch(). new Date() sí está permitido\n// en Code nodes (lo usa botialertas_v2_classify.js).\n// Columnas de Snowflake vuelven en MAYÚSCULAS.\n// =========================================================================\n\n// ---------------- CONFIG (editar aquí) ----------------\nconst CLIENTE_NOMBRE = 'Cliente';          // nombre legible para el encabezado\nconst UMBRAL_CAIDA_PP = 10;                // 🔴 si la conversión cae >= 10 pp vs ayer\nconst FLUJOS = [\n  { id: 'IPFd2ce1706f9d0a34ac4699ee9cb5deae2', nombre: 'Flujo 1' },\n  { id: 'IPFdbb5de09c089403c0e20b86313abc47b', nombre: 'Flujo 2' },\n];\nconst TOTAL_KEY = 'TOTAL (ambos)';\nconst SEP = '━━━━━━━━━━━━━━━━━━━━';\n// Para armar el link al reporte con gráficas + descarga PDF (ruta /reporte-di-diario).\nconst CLIENT_ID = 'TCId5981cce1073baf2a0bc311dc90220bc';\nconst REPORTE_BASE = 'https://csmcenter.netlify.app/reporte-di-diario';\n\n// Diccionario de motivos (subset de src/utils/razonesDict.ts).\n// Si Truora suma un motivo nuevo: agregarlo acá y en la lista IN del SQL (Query 2).\nconst RAZONES = {\n  blurry_image: 'Foto del documento borrosa o mal iluminada',\n  expired_document: 'Documento vencido',\n  document_has_expired: 'Documento vencido',\n  document_is_a_photocopy: 'Subió una fotocopia, no el original',\n  document_is_a_photo_of_photo: 'Tomó foto a una foto del documento',\n  document_does_not_match_account_id: 'El documento no coincide con la cuenta',\n  document_validation_not_started: 'No inició la validación de documento',\n  damaged_document: 'Documento dañado',\n  invalid_document_emission_date: 'Fecha de emisión inválida',\n  document_data_does_not_match_government_data: 'Datos no coinciden con la fuente oficial',\n  document_image_no_text_detected: 'No se detectó texto en la imagen del documento',\n  document_front_not_identified: 'No se identificó el frente del documento',\n  no_face_detected: 'La cámara no detectó un rostro válido',\n  similarity_threshold_not_passed: 'El rostro no coincide con el documento',\n  risky_face_detected: 'Posible suplantación de identidad',\n  passive_liveness_verification_not_passed: 'No superó la prueba de vida',\n  user_face_match_in_client_collection: 'El rostro coincide con otro usuario registrado',\n  user_face_match_in_fraud_collection: 'El rostro coincide con la lista de fraude',\n  face_validation_not_started: 'Llegó a la selfie pero no la completó',\n  invalid_video_file: 'Archivo de video inválido',\n};\n\n// ---------------- Helpers ----------------\nfunction g(row, key) {\n  if (!row) return undefined;\n  if (row[key] !== undefined) return row[key];\n  const up = key.toUpperCase();\n  if (row[up] !== undefined) return row[up];\n  const lo = key.toLowerCase();\n  if (row[lo] !== undefined) return row[lo];\n  return undefined;\n}\nfunction num(v) {\n  if (v === null || v === undefined || v === '') return null;\n  const x = Number(v);\n  return isNaN(x) ? null : x;\n}\nfunction pct(v) {\n  if (v === null) return 's/d';\n  return (Math.round(v * 10) / 10).toFixed(1) + '%';\n}\nfunction ppStr(v) {\n  if (v === null) return '';\n  const s = v >= 0 ? '+' : '';\n  return s + (Math.round(v * 10) / 10).toFixed(1) + ' pp';\n}\nfunction emojiDelta(delta) {\n  if (delta === null) return '';\n  if (delta <= -UMBRAL_CAIDA_PP) return '🔴';\n  if (delta < 0) return '🟡';\n  if (delta > 0) return '🟢';\n  return '➖';\n}\nfunction razonHumana(code) {\n  if (RAZONES[code]) return RAZONES[code];\n  return String(code || '').replace(/_/g, ' ');\n}\nfunction shortId(id) {\n  if (!id || id.length < 16) return id || '';\n  return id.slice(0, 8) + '…' + id.slice(-5);\n}\n\n// ---------------- Data ----------------\nconst conv = $('SF Conversión').all().map(function (i) { return i.json; });\nconst raz  = $('SF Razones').all().map(function (i) { return i.json; });\n// Get CSM trae 1 fila por destinatario (Sebas + JD). El mensaje es el mismo;\n// fan-out a un item por CSM con telegram_chat_id (ver salida abajo).\nconst csmRows = $('Get CSM').all().map(function (i) { return i.json; });\n\nfunction convRow(flujoId) {\n  for (let i = 0; i < conv.length; i++) {\n    if (g(conv[i], 'flujo') === flujoId) return conv[i];\n  }\n  return null;\n}\nfunction razonesDe(flujoId) {\n  const out = [];\n  for (let i = 0; i < raz.length; i++) {\n    if (g(raz[i], 'flujo') === flujoId) out.push(raz[i]);\n  }\n  return out;\n}\n\n// ---------------- Construir bloque por flujo ----------------\nconst alertas = [];\n\nfunction bloque(label, flujoId, esTotal) {\n  const r = convRow(flujoId);\n  const head = esTotal ? '📦 ' + label : '🔹 ' + label + '  (' + shortId(flujoId) + ')';\n  if (!r) {\n    if (!esTotal) {\n      alertas.push('🔴 ' + label + ': 0 procesos hoy y ayer — verificar si el flujo está activo.');\n    }\n    return head + '\\n⚠️ Sin procesos en la ventana (hoy y ayer).';\n  }\n\n  const pHoy  = num(g(r, 'procesos_iniciados_hoy'));\n  const pAyer = num(g(r, 'procesos_iniciados_ayer'));\n  const okHoy = num(g(r, 'procesos_exitosos_hoy'));\n  const okAyer = num(g(r, 'procesos_exitosos_ayer'));\n  const cvHoy = num(g(r, 'conversion_proc_hoy_pct'));\n  const cvAyer = num(g(r, 'conversion_proc_ayer_pct'));\n  const cvD   = num(g(r, 'conv_proc_delta_pp'));\n\n  const uHoy  = num(g(r, 'usuarios_unicos_hoy'));\n  const uAyer = num(g(r, 'usuarios_unicos_ayer'));\n  const uOkHoy = num(g(r, 'usuarios_exitosos_hoy'));\n  const uOkAyer = num(g(r, 'usuarios_exitosos_ayer'));\n  const cvuHoy = num(g(r, 'conversion_usuario_hoy_pct'));\n  const cvuAyer = num(g(r, 'conversion_usuario_ayer_pct'));\n  const cvuD  = num(g(r, 'conv_usuario_delta_pp'));\n\n  // Alertas (solo por flujo, no por TOTAL)\n  if (!esTotal) {\n    if (cvD !== null && cvD <= -UMBRAL_CAIDA_PP) {\n      alertas.push('🔴 ' + label + ': conversión del proceso ' + pct(cvHoy) + ' (' + ppStr(cvD) + ' vs ayer).');\n    }\n    if (pHoy === 0 && pAyer !== null && pAyer > 0) {\n      alertas.push('🔴 ' + label + ': 0 procesos iniciados hoy (ayer ' + pAyer + ') — posible flujo/URL caído.');\n    }\n  }\n\n  const L = [];\n  L.push(head);\n  L.push('Conversión del proceso: ' + pct(cvHoy) + '  (ayer ' + pct(cvAyer) + ')  ' + emojiDelta(cvD) + ' ' + ppStr(cvD));\n  L.push('  Procesos: ' + (pHoy === null ? 0 : pHoy) + ' iniciados · ' + (okHoy === null ? 0 : okHoy) +\n         ' exitosos   (ayer ' + (pAyer === null ? 0 : pAyer) + ' · ' + (okAyer === null ? 0 : okAyer) + ')');\n  L.push('Conversión por usuario único: ' + pct(cvuHoy) + '  (ayer ' + pct(cvuAyer) + ')  ' + emojiDelta(cvuD) + ' ' + ppStr(cvuD));\n  L.push('  Usuarios: ' + (uHoy === null ? 0 : uHoy) + ' únicos · ' + (uOkHoy === null ? 0 : uOkHoy) +\n         ' exitosos   (ayer ' + (uAyer === null ? 0 : uAyer) + ' · ' + (uOkAyer === null ? 0 : uOkAyer) + ')');\n\n  // Razones (solo por flujo; en TOTAL las omitimos para no duplicar)\n  if (!esTotal) {\n    const rs = razonesDe(flujoId);\n    if (rs.length === 0) {\n      L.push('Rechazos hoy: ninguno ✅');\n    } else {\n      L.push('Rechazos hoy:');\n      // ordenar por rechazos_hoy desc\n      rs.sort(function (a, b) { return (num(g(b, 'rechazos_hoy')) || 0) - (num(g(a, 'rechazos_hoy')) || 0); });\n      for (let i = 0; i < rs.length; i++) {\n        const tipo = g(rs[i], 'tipo');\n        const code = g(rs[i], 'razon');\n        const rh = num(g(rs[i], 'rechazos_hoy'));\n        const ra = num(g(rs[i], 'rechazos_ayer'));\n        if (rh === null || rh === 0) continue; // solo lo que pasó hoy\n        L.push('  • [' + tipo + '] ' + razonHumana(code) + ' — ' + rh + '  (ayer ' + (ra === null ? 0 : ra) + ')');\n      }\n    }\n  }\n\n  return L.join('\\n');\n}\n\n// ---------------- Ensamblar mensaje ----------------\nconst ahora = new Date();\nconst fecha = ahora.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'long', year: 'numeric' });\nconst hora  = ahora.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit' });\n\nconst partes = [];\npartes.push('🤖 Reporte diario DI — ' + CLIENTE_NOMBRE);\npartes.push('🗓️ ' + fecha + ' · corte ' + hora + ' (hora Bogotá)');\npartes.push('Comparación: hoy (parcial) vs ayer (día completo, D-1)');\n\n// Bloques por flujo\nconst bloquesFlujo = [];\nfor (let i = 0; i < FLUJOS.length; i++) {\n  bloquesFlujo.push(bloque(FLUJOS[i].nombre, FLUJOS[i].id, false));\n}\nconst bloqueTotal = bloque(TOTAL_KEY, TOTAL_KEY, true);\n\n// Sección de alertas arriba (si hay)\nlet header = partes.join('\\n');\nif (alertas.length > 0) {\n  header += '\\n\\n🚨 ALERTAS DEL DÍA\\n' + alertas.join('\\n');\n}\n\nlet text = header;\nfor (let i = 0; i < bloquesFlujo.length; i++) {\n  text += '\\n\\n' + SEP + '\\n\\n' + bloquesFlujo[i];\n}\ntext += '\\n\\n' + SEP + '\\n\\n' + bloqueTotal;\n\n// Link al reporte con gráficas (nivel Report Builder) + botón Descargar PDF.\n// Rango = mes a la fecha (1 del mes -> hoy), filtrado por los flujos configurados.\nconst ymd = new Intl.DateTimeFormat('en-CA', {\n  timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',\n}).format(ahora);\nconst flujosParam = FLUJOS.map(function (f) { return f.id; }).join(',');\nconst reporteUrl = REPORTE_BASE\n  + '?cliente=' + encodeURIComponent(CLIENTE_NOMBRE)\n  + '&cid=' + encodeURIComponent(CLIENT_ID)\n  + '&flujos=' + encodeURIComponent(flujosParam)\n  + '&fecha=' + ymd;\ntext += '\\n\\n' + SEP + '\\n📊 Ver gráficas y descargar PDF:\\n' + reporteUrl;\n\n// Telegram tope ~4096 chars; con 2 flujos no debería acercarse, pero recortamos por seguridad.\nif (text.length > 4000) text = text.slice(0, 3990) + '\\n…(recortado)';\n\n// ---------------- Output: un mensaje por CSM destinatario ----------------\nconst out = [];\nfor (let i = 0; i < csmRows.length; i++) {\n  const c = csmRows[i];\n  if (!c || !c.telegram_chat_id) continue;\n  out.push({\n    json: {\n      payload: {\n        chat_id: String(c.telegram_chat_id),\n        csm_nombre: c.nombre || 'CSM',\n        alert_count: alertas.length,\n        text: text,\n      },\n    },\n  });\n}\nreturn out;\n"
+      },
+      "id": "a1000000-0000-0000-0000-000000000006",
+      "name": "Armar Resumen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.payload.chat_id }}",
+        "text": "={{ $json.payload.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "a1000000-0000-0000-0000-000000000007",
+      "name": "Telegram Sebas",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1080,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule 2pm": {
+      "main": [
+        [
+          {
+            "node": "SF Conversión",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SF Razones",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get CSM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Conversión": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SF Razones": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get CSM": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Armar Resumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar Resumen": {
+      "main": [
+        [
+          {
+            "node": "Telegram Sebas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "meta": {},
+  "pinData": {}
+}

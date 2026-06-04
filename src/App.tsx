@@ -11,6 +11,7 @@ import BotiAlertas from "./pages/BotiAlertas.tsx";
 import Dashboard from "./pages/Dashboard.tsx";
 import QueriesPage from "./pages/QueriesPage.tsx";
 import Validador from "./pages/Validador.tsx";
+import ReporteDiarioDI from "./pages/ReporteDiarioDI.tsx";
 import MockCanvas from "./pages/MockCanvas.tsx";
 import MockConfiamosAbril from "./pages/MockConfiamosAbril.tsx";
 import MockCuerosBiometric from "./pages/MockCuerosBiometric.tsx";
@@ -43,6 +44,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/queries" element={<QueriesPage />} />
           <Route path="/validador" element={<Validador />} />
+          <Route path="/reporte-di-diario" element={<ReporteDiarioDI />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
