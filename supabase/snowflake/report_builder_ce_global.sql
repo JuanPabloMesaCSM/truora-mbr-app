@@ -732,7 +732,7 @@ bloque7 AS (
   GROUP BY a.OWNER, p.mes_actual_inicio
   QUALIFY ROW_NUMBER() OVER (
     ORDER BY COUNT(*) DESC
-  ) <= 5
+  ) <= 10
 ),
 
 lineas_actual AS (

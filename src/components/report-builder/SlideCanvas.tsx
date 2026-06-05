@@ -1696,10 +1696,47 @@ function Bgc4bSlide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
   const anomalies = rows.filter(r => r.col5 === "1");
   const normal    = rows.filter(r => r.col5 !== "1");
 
+  // Pass/Rejection rate por LÓGICA DE LABEL (bloque 6b_label_rates, SF).
+  // Distinto del score (BGC-3): acá rejection = checks con >=1 label High / total.
+  // Guard: si n8n aún no emite el bloque, no se renderizan los KPIs (sin romper).
+  const rateRow = (data["6b_label_rates"] || [])[0];
+  const conHigh = rateRow ? parseInt(rateRow.col1 || "0", 10) : 0;
+  const totalCompl = rateRow ? parseInt(rateRow.col2 || "0", 10) : 0;
+  const rejectionPct = rateRow ? parseFloat(rateRow.col3 || "0") : 0;
+  const passPct = rateRow ? parseFloat(rateRow.col4 || "0") : 0;
+  const hasRates = !!rateRow && totalCompl > 0;
+
   return (
     <SlideShell id="BGC-4b" theme={theme}>
       <SlideHeader title={`Alertas de riesgo alto y puntaje — ${periodLabel}`} subtitle={`Background Check · ${clientName}`} theme={theme} />
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
+        {/* KPI band: pass/rejection por lógica de label (≠ score de BGC-3) */}
+        {hasRates && (
+          <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 92 }}>
+            <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+              borderRadius: 14, padding: "12px 20px", display: "flex", flexDirection: "column", justifyContent: "center",
+              borderLeft: `3px solid ${BGC.success}` }}>
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.12em" }}>Sin alerta de riesgo alto</p>
+              <span style={{ fontSize: 32, fontWeight: 800, color: BGC.success, lineHeight: 1.1 }}>
+                {passPct.toFixed(2)}%
+              </span>
+              <p style={{ margin: 0, fontSize: 11, color: t.textMuted }}>del total de checks evaluados</p>
+            </div>
+            <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+              borderRadius: 14, padding: "12px 20px", display: "flex", flexDirection: "column", justifyContent: "center",
+              borderLeft: `3px solid ${BGC.danger}` }}>
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: t.textMuted,
+                textTransform: "uppercase", letterSpacing: "0.12em" }}>Con alerta de riesgo alto</p>
+              <span style={{ fontSize: 32, fontWeight: 800, color: BGC.danger, lineHeight: 1.1 }}>
+                {rejectionPct.toFixed(2)}%
+              </span>
+              <p style={{ margin: 0, fontSize: 11, color: t.textMuted }}>
+                {conHigh.toLocaleString("es-CO")} checks con label de riesgo alto
+              </p>
+            </div>
+          </div>
+        )}
         {/* Anomaly alert */}
         {anomalies.length > 0 && (
           <div style={{ flexShrink: 0, padding: "12px 20px", borderRadius: 10,
@@ -3365,7 +3402,7 @@ function Ce6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
 
   return (
     <SlideShell id="CE-6" theme={theme}>
-      <SlideHeader title={`Métricas por Agente — Top 5 — ${periodLabel}`} subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
+      <SlideHeader title={`Métricas por Agente — Top 10 — ${periodLabel}`} subtitle={`Customer Engagement · ${clientName}`} theme={theme} />
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
           borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
@@ -3381,7 +3418,7 @@ function Ce6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
               const medRta = parseFloat(row.col7 || "0");
               const es     = expStyle(expAgt);
               return (
-                <div key={idx} style={{ display: "flex", alignItems: "center", padding: "11px 20px",
+                <div key={idx} style={{ display: "flex", alignItems: "center", padding: "8px 20px",
                   background: idx % 2 === 1 ? t.rowAlt : "transparent",
                   borderBottom: idx < rows.length - 1 ? `1px solid ${t.footerBorder}` : "none" }}>
                   <div style={{ width: colW[0], flexShrink: 0 }}>
@@ -3424,7 +3461,7 @@ function Ce6Slide({ data, theme, clientName, periodLabel, pageNum = 6 }: {
           </div>
         </div>
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Agentes Top 5" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="CE · Agentes Top 10" />
     </SlideShell>
   );
 }

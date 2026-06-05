@@ -362,6 +362,34 @@ bloque6 AS (
   ORDER BY lf.COUNTRY, lf.label, score_value
 ),
 
+-- 6b_label_rates → pass/rejection rate por LÓGICA DE LABEL (distinto del score).
+-- Rejection = checks DISTINTOS con >= 1 label High / total completados; Pass = resto.
+-- DISTINCT obligatorio: un check con High en varios países/categorías aparece N veces
+-- en labels_flat (LATERAL FLATTEN) — sumar inflaría. Denominador billable (excluye
+-- document-validation/validation) para auto-consistencia. Validado Indrive mayo:
+-- 489 / 109.708 = 0,45% rejection / 99,55% pass.
+bloque6b AS (
+  SELECT
+    '6b_label_rates'    AS bloque,
+    p.mes_actual_inicio AS periodo,
+    (
+      SELECT COUNT(DISTINCT ca.CHECK_ID)
+      FROM checks_actual ca,
+        LATERAL FLATTEN(input => TRY_PARSE_JSON(ca.LABELS)) f
+      WHERE ca.STATUS = 'completed'
+        AND LOWER(ca.TYPE) NOT IN ('document-validation', 'validation')
+        AND ca.LABELS IS NOT NULL AND ca.LABELS != '' AND ca.LABELS != '[]'
+        AND f.value::STRING ILIKE '%High%'
+    )                   AS checks_con_high,
+    (
+      SELECT COUNT(DISTINCT ca.CHECK_ID)
+      FROM checks_actual ca
+      WHERE ca.STATUS = 'completed'
+        AND LOWER(ca.TYPE) NOT IN ('document-validation', 'validation')
+    )                   AS total_completados
+  FROM params p
+),
+
 bloque7 AS (
   SELECT
     '7_historico_3meses' AS bloque,
@@ -488,6 +516,19 @@ FROM (
     NULL AS col_extra1, NULL AS col_extra2,
     NULL AS col_extra3, NULL AS col_extra4
   FROM bloque6
+
+  UNION ALL
+
+  SELECT bloque, periodo,
+    CAST(checks_con_high AS VARCHAR)      AS col1,
+    CAST(total_completados AS VARCHAR)    AS col2,
+    CAST(ROUND(100.0 * checks_con_high / NULLIF(total_completados, 0), 2) AS VARCHAR)         AS col3,
+    CAST(ROUND(100.0 - 100.0 * checks_con_high / NULLIF(total_completados, 0), 2) AS VARCHAR) AS col4,
+    NULL AS col5, NULL AS col6, NULL AS col7, NULL AS col8,
+    NULL AS col9, NULL AS col10, NULL AS col11,
+    NULL AS col_extra1, NULL AS col_extra2,
+    NULL AS col_extra3, NULL AS col_extra4
+  FROM bloque6b
 
   UNION ALL
 

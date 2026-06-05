@@ -97,8 +97,8 @@ export const MODULES: Record<Product, { base: ModuleDef; optional: ModuleDef[] }
       { id: '5c_tendencia_mensual', label: 'Tendencia Mensual', desc: 'Barras + línea', description: 'Evolución del volumen de conversaciones por tipo (inbound, outbound, notificación) de los últimos 3-6 meses.', chart: 'bars-line' },
       { id: '5d_heatmap_lineas', label: 'Heatmap Cambios por Línea', desc: 'Tabla de calor', description: 'Actividad por línea WhatsApp en los últimos 3 meses con indicadores de líneas nuevas y detenidas.', chart: 'table' },
       { id: '6_comparativo_flujos', label: 'Comparativo entre Flujos', desc: 'Tabla comparativa', description: 'Métricas clave (enviados, recepción, fallos Meta, conversión) lado a lado para todos los flujos CE activos. Incluye % Doc y % Rostro si el flujo tiene VRF.', chart: 'table' },
-      { id: '6_agentes_general', label: 'Desempeño de Agentes', desc: 'KPIs con MoM', description: 'Mediana de tiempo de primera respuesta, % conversaciones cerradas y atendidas con comparativo MoM. Seleccioná líneas WhatsApp para filtrar (aplica también a Top 5 Agentes).', chart: 'kpi-mom', hasWabaSelector: true },
-      { id: '7_agentes_top5', label: 'Métricas por Agente Top 5', desc: 'Tabla', description: 'Tabla individual de los 5 agentes con mayor volumen: atención, cierre, expiradas y tiempos de respuesta.', chart: 'table' },
+      { id: '6_agentes_general', label: 'Desempeño de Agentes', desc: 'KPIs con MoM', description: 'Mediana de tiempo de primera respuesta, % conversaciones cerradas y atendidas con comparativo MoM. Seleccioná líneas WhatsApp para filtrar (aplica también a Top 10 Agentes).', chart: 'kpi-mom', hasWabaSelector: true },
+      { id: '7_agentes_top5', label: 'Métricas por Agente Top 10', desc: 'Tabla', description: 'Tabla individual de los 10 agentes con mayor volumen: atención, cierre, expiradas y tiempos de respuesta.', chart: 'table' },
     ],
   },
 };

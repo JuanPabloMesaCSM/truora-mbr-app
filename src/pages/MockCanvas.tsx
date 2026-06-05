@@ -137,6 +137,10 @@ const BGC_MOCK_DATA = {
       { bloque: "6_labels_high_score", col1: "Chile_document_expired",     col4: "143", col5: "0" },
       { bloque: "6_labels_high_score", col1: "Ecuador_address_mismatch",   col4: "87",  col5: "1" },
     ],
+    // 6b_label_rates: pass/rejection por lógica de label (col1=con_high, col2=total, col3=rejection%, col4=pass%)
+    "6b_label_rates": [
+      { bloque: "6b_label_rates", col1: "489", col2: "109708", col3: "0.45", col4: "99.55" },
+    ],
     "7_historico_3meses": [
       { bloque: "7_historico_3meses", periodo: "2026-01-01", col1: "12400", col4: "70.1", col5: "64.8", col6: "88.2" },
       { bloque: "7_historico_3meses", periodo: "2026-02-01", col1: "13100", col4: "71.3", col5: "66.1", col6: "89.4" },
@@ -260,6 +264,11 @@ const CE_MOCK_DATA = {
       { bloque: "7_agentes_top5", col1: "Sofía Reyes", col2: "541", col3: "93.6", col4: "80.7", col5: "5.8",  col6: "6.1",  col7: "3.9",  col8: "12.8" },
       { bloque: "7_agentes_top5", col1: "Carlos Vega", col2: "512", col3: "91.2", col4: "74.8", col5: "18.2", col6: "11.4", col7: "11.2", col8: "14.9" },
       { bloque: "7_agentes_top5", col1: "María López", col2: "494", col3: "92.7", col4: "77.2", col5: "4.3",  col6: "5.0",  col7: "4.3",  col8: "12.1" },
+      { bloque: "7_agentes_top5", col1: "Diego Pardo",  col2: "468", col3: "90.5", col4: "76.0", col5: "6.1",  col6: "7.2",  col7: "4.6",  col8: "13.0" },
+      { bloque: "7_agentes_top5", col1: "Laura Niño",   col2: "441", col3: "93.1", col4: "81.4", col5: "3.9",  col6: "4.4",  col7: "3.7",  col8: "11.6" },
+      { bloque: "7_agentes_top5", col1: "Pablo Ruiz",   col2: "419", col3: "89.7", col4: "73.5", col5: "16.8", col6: "10.2", col7: "9.8",  col8: "15.3" },
+      { bloque: "7_agentes_top5", col1: "Elena Castro", col2: "397", col3: "91.9", col4: "78.6", col5: "5.2",  col6: "5.8",  col7: "4.2",  col8: "12.4" },
+      { bloque: "7_agentes_top5", col1: "Tomás Gil",    col2: "372", col3: "90.1", col4: "75.1", col5: "8.4",  col6: "9.0",  col7: "5.1",  col8: "13.9" },
     ],
   },
   warnings: [],
@@ -357,6 +366,7 @@ const BGC_SLIDES = [
   "2_por_pais",          // BGC-2 Resultados por país
   "4_score_por_pais",    // BGC-3 Aprobados vs rechazados por país
   "5_labels",            // BGC-4 Alertas de riesgo detectadas
+  "6_labels_high_score", // BGC-4b Alertas de riesgo alto y puntaje + pass/rejection por label
   "7_historico_3meses",  // BGC-5 Tendencia de los últimos 3 meses
   "2b_pais_x_tipo",      // BGC-6 Qué se verifica en cada país
   "3_por_tipo",          // BGC-7 Tipos de verificación activos
