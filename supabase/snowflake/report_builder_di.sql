@@ -10,10 +10,10 @@
 --   4_historico_3meses         → por mes: total, exitosos, conversion, usuarios, conversion_usuario
 --   5_flujos                   → top 10 flujos: total, exitosos, fallidos, conversion + variacion_mom
 --   6_funnel                   → usuarios_inicio, usuarios_llegan_doc, usuarios_llegan_rostro + tasas
---   7_razones_doc              → top 5 motivos declinacion documento (a nivel proceso, refactor 2026-05-07)
---   8_razones_rostro           → top 5 motivos declinacion rostro (a nivel proceso, refactor 2026-05-07)
+--   7_razones_doc              → TODOS los motivos declinacion documento (nivel proceso). Front: top-N + "Otros"
+--   8_razones_rostro           → TODOS los motivos declinacion rostro (nivel proceso). Front: top-N + "Otros"
 --   9_abandono                 → top 6 motivos de expiracion/abandono
---   10_declinados              → top 6 motivos globales declinacion
+--   10_declinados              → TODOS los motivos globales declinacion (= total DI-1). Front: top-N + "Otros (N)"
 --   11_friccion_usuario        → top 8 motivos por usuarios_afectados unicos
 --
 -- Parametros n8n:
@@ -207,10 +207,24 @@ razones_doc_agg AS (
       'invalid_document_emission_date',
       'document_data_does_not_match_government_data',
       'document_image_no_text_detected',
-      'document_front_not_identified'
+      'document_front_not_identified',
+      -- Códigos agregados 2026-06-08 (descubiertos en Crediplus + Efecty).
+      -- data_not_match_with_government_database clasificado como DOC (es el dato
+      -- del documento que no matchea la base de gobierno). government_database_unavailable
+      -- queda FUERA (es infra, va a "otro" → visible solo en DI-10b).
+      'invalid_document_status',
+      'data_not_match_with_government_database',
+      'document_unregistered',
+      'missing_issue_number',
+      'invalid_qr_content',
+      'invalid_issue_date',
+      'invalid_mrz',
+      'missing_text',
+      'document_not_recognized'
     )
   GROUP BY pr.DECLINED_REASON
-  QUALIFY ROW_NUMBER() OVER (ORDER BY total DESC) <= 5
+  -- Sin cap: devolvemos TODOS los motivos doc; el frontend muestra top-N + "Otros"
+  -- para que el panel sume exacto a la familia documento (sin truncado silencioso).
 ),
 
 razones_rostro_agg AS (
@@ -233,10 +247,14 @@ razones_rostro_agg AS (
       'user_face_match_in_client_collection',
       'user_face_match_in_fraud_collection',
       'face_validation_not_started',
-      'invalid_video_file'
+      'invalid_video_file',
+      -- Códigos agregados 2026-06-08: face_not_detected es DISTINTO de
+      -- no_face_detected (ambos rostro); image_face_validation_not_passed = rostro en doc.
+      'face_not_detected',
+      'image_face_validation_not_passed'
     )
   GROUP BY pr.DECLINED_REASON
-  QUALIFY ROW_NUMBER() OVER (ORDER BY total DESC) <= 5
+  -- Sin cap: el frontend muestra top-N + "Otros" para que sume a la familia rostro.
 ),
 
 motivos_expirados_agg AS (
@@ -279,7 +297,9 @@ motivos_declinados_agg AS (
         'my_document_type_is_not_there','doesnt_redirect_me'
       ))
   GROUP BY pr.DECLINED_REASON
-  QUALIFY ROW_NUMBER() OVER (ORDER BY total DESC) <= 6
+  -- Sin cap: devolvemos TODOS los motivos declinados (universo canónico = total
+  -- declinados de DI-1). El frontend muestra top-N + "Otros (N)" para que la
+  -- suma de las barras iguale el total exacto (Crediplus 325, sin esconder cola).
 ),
 
 friccion_usuario_agg AS (

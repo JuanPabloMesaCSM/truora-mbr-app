@@ -52,6 +52,27 @@ export const RAZONES_DI: Record<string, { descripcion: string; esAlerta: boolean
   'canceled':                        { descripcion: 'El usuario canceló el proceso voluntariamente', esAlerta: false },
   'validations_failed':              { descripcion: 'Las validaciones del proceso fallaron', esAlerta: false },
   'validation_not_finished':         { descripcion: 'El usuario no completó la validación', esAlerta: false },
+
+  // ── Códigos agregados 2026-06-08 (Crediplus + Efecty) ────────────
+  // Documento — SINCRONIZADOS con la lista doc del SQL razones_doc_agg.
+  'invalid_document_status':               { descripcion: 'El estado del documento no es válido para verificar', esAlerta: false },
+  'data_not_match_with_government_database':{ descripcion: 'Los datos del documento no coinciden con la base de gobierno', esAlerta: true },
+  'document_unregistered':                 { descripcion: 'El documento no está registrado en la entidad', esAlerta: false },
+  'missing_issue_number':                  { descripcion: 'Falta el número de expedición del documento', esAlerta: false },
+  'invalid_qr_content':                    { descripcion: 'El contenido del código QR del documento es inválido', esAlerta: false },
+  'invalid_issue_date':                    { descripcion: 'La fecha de expedición del documento es inválida', esAlerta: false },
+  'invalid_mrz':                           { descripcion: 'La zona de lectura mecánica (MRZ) del documento es inválida', esAlerta: false },
+  // Rostro — SINCRONIZADOS con la lista rostro del SQL razones_rostro_agg.
+  'face_not_detected':                     { descripcion: 'No se detectó un rostro en la captura', esAlerta: false },
+  // Proceso / infraestructura — NO van en listas doc/rostro → caen en "otro" (solo DI-10b).
+  'government_database_unavailable':       { descripcion: 'La base de datos de la entidad de gobierno no estaba disponible', esAlerta: false },
+  'risk_signal_detected':                  { descripcion: 'El sistema detectó una señal de riesgo', esAlerta: true },
+  'not_enough_credits_in_electronic_signature': { descripcion: 'No había créditos suficientes de firma electrónica', esAlerta: false },
+  'max_retries_reached':                   { descripcion: 'El usuario agotó los reintentos disponibles', esAlerta: false },
+  'custom_question_max_retries_reached':   { descripcion: 'El usuario agotó los reintentos de las preguntas de seguridad', esAlerta: false },
+
+  // Bucket sintético generado por el frontend (top-N + resto agregado).
+  '__otros__':                             { descripcion: 'Otros motivos', esAlerta: false },
 };
 
 // Helper único: obtiene la descripción humana de un motivo DI.

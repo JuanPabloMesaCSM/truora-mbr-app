@@ -76,6 +76,24 @@ function formatLabel(s: string): string {
   return s.replace(/_/g, " ");
 }
 
+/** Suma el col2 (conteo) de un conjunto de filas. Usado para encabezados
+ *  tipo "N procesos rechazados por documento". */
+function sumaCol2(rows: BlockRow[]): number {
+  return rows.reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
+}
+
+/** Top-N filas por col2 (desc) + una fila sintética "__otros__" con la suma del
+ *  resto. Garantiza que lo mostrado SUME al total real, sin truncado silencioso.
+ *  Si hay <= n filas devuelve todas (sin "Otros"). Filtra filas con col1 vacío. */
+function topNConOtros(rows: BlockRow[], n: number): BlockRow[] {
+  const sorted = [...rows]
+    .filter(r => r.col1 && r.col1.trim() !== "")
+    .sort((a, b) => parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10));
+  if (sorted.length <= n) return sorted;
+  const resto = sorted.slice(n).reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
+  return [...sorted.slice(0, n), { bloque: sorted[0].bloque, col1: "__otros__", col2: String(resto) }];
+}
+
 function monthLabel(periodo: string): string {
   const d = new Date(periodo + "T12:00:00");
   return d.toLocaleDateString("es-CO", { month: "short", year: "2-digit" });
@@ -441,7 +459,10 @@ function Di2Slide({ data, theme, clientName, periodLabel, pageNum = 2 }: {
 
 function GaugeColumn({ label, pct, total, exitosas, expirados, declinados, theme }: {
   label: string; pct: number; total: number; exitosas: number;
-  expirados: number; declinados: number; theme: Theme;
+  // expirados/declinados OPCIONALES: si se omiten, el gauge muestra solo
+  // conversión (Total validaciones + Exitosas + %). DI-3 los pasa (detalle de
+  // validación); DI-7/DI-8 los omiten para no competir con el panel grano-proceso.
+  expirados?: number; declinados?: number; theme: Theme;
 }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInst = useRef<Chart | null>(null);
@@ -462,12 +483,12 @@ function GaugeColumn({ label, pct, total, exitosas, expirados, declinados, theme
     return () => { chartInst.current?.destroy(); chartInst.current = null; };
   }, [pct, t.gaugeBg]);
 
-  const rows = [
-    { label: "Total procesos",     val: total.toLocaleString("es-CO"),    color: undefined },
-    { label: "Exitosas",           val: exitosas.toLocaleString("es-CO"),  color: "#00C9A7" },
-    { label: "Expiradas",          val: expirados.toLocaleString("es-CO"), color: "#F59E0B" },
-    { label: "Declinadas",         val: declinados.toLocaleString("es-CO"),color: "#EF4444" },
+  const rows: { label: string; val: string; color?: string }[] = [
+    { label: "Total validaciones", val: total.toLocaleString("es-CO") },
+    { label: "Exitosas",           val: exitosas.toLocaleString("es-CO"), color: "#00C9A7" },
   ];
+  if (expirados != null)  rows.push({ label: "Expiradas",  val: expirados.toLocaleString("es-CO"),  color: "#F59E0B" });
+  if (declinados != null) rows.push({ label: "Declinadas", val: declinados.toLocaleString("es-CO"), color: "#EF4444" });
 
   return (
     <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
@@ -759,9 +780,13 @@ function HBarChart({ rows, theme }: { rows: BlockRow[]; theme: Theme }) {
   // Sort DESC por valor para que el embudo visual vaya de mayor (arriba) a
   // menor (abajo). El orden de SQL no es confiable acá: algunos bloques
   // devuelven por TYPE/COUNTRY antes que por count.
-  const sorted = [...rows].sort((a, b) =>
-    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
-  );
+  // "__otros__" (bucket agregado del frontend) siempre va último, sin importar
+  // su valor, para que se lea como el cierre del ranking.
+  const sorted = [...rows].sort((a, b) => {
+    if (a.col1 === "__otros__") return 1;
+    if (b.col1 === "__otros__") return -1;
+    return parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10);
+  });
 
   // Traducción al español usando el diccionario central. Si llega un código
   // sin traducción registrada, describeRazonDI hace fallback a snake_case
@@ -864,10 +889,10 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["7_razones_doc"] || [];
-  // Sort DESC por count + traducción central. SQL puede devolver desordenado.
-  const sorted = [...rows].sort((a, b) =>
-    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
-  );
+  // Grano proceso: total exacto de la familia documento + top 8 con "Otros
+  // motivos" para que el panel sume al total (sin truncado silencioso).
+  const totalDoc = sumaCol2(rows);
+  const sorted = topNConOtros(rows, 8);
   return (
     <SlideShell id="DI-7" theme={theme}>
       <SlideHeader title={`Documento — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
@@ -878,8 +903,6 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
           pct={parseFloat(b?.col3 || "0")}
           total={parseInt(b?.col1 || "0", 10)}
           exitosas={parseInt(b?.col2 || "0", 10)}
-          expirados={parseInt(b?.col11 || "0", 10)}
-          declinados={parseInt(b?.col_extra1 || "0", 10)}
           theme={theme}
         />
         {/* Right: razones de rechazo */}
@@ -890,7 +913,7 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              Procesos declinados con motivo de documento
+              {totalDoc.toLocaleString("es-CO")} procesos declinados con motivo de documento
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
@@ -925,9 +948,9 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["8_razones_rostro"] || [];
-  const sorted = [...rows].sort((a, b) =>
-    parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
-  );
+  // Grano proceso: total exacto de la familia rostro + top 8 con "Otros motivos".
+  const totalRostro = sumaCol2(rows);
+  const sorted = topNConOtros(rows, 8);
   return (
     <SlideShell id="DI-8" theme={theme}>
       <SlideHeader title={`Rostro — Métricas y Rechazos — ${periodLabel}`} subtitle={`Digital Identity · ${clientName}`} theme={theme} />
@@ -938,8 +961,6 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
           pct={parseFloat(b?.col8 || "0")}
           total={parseInt(b?.col6 || "0", 10)}
           exitosas={parseInt(b?.col7 || "0", 10)}
-          expirados={parseInt(b?.col_extra2 || "0", 10)}
-          declinados={parseInt(b?.col_extra3 || "0", 10)}
           theme={theme}
         />
         {/* Right: razones de rechazo */}
@@ -950,7 +971,7 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              Procesos declinados con motivo de rostro
+              {totalRostro.toLocaleString("es-CO")} procesos declinados con motivo de rostro
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
@@ -1194,7 +1215,11 @@ function DiDeclinadosSlide({ data, theme, clientName, periodLabel, pageNum = 10 
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
   const t = tok(theme);
-  const rows = data["10_declinados"] || [];
+  const rowsRaw = data["10_declinados"] || [];
+  // Universo canónico = total declinados de DI-1. Top 10 + "Otros (N)" para que
+  // las barras sumen al total exacto (sin esconder la cola de motivos).
+  const totalDeclinados = sumaCol2(rowsRaw);
+  const rows = topNConOtros(rowsRaw, 10);
 
   return (
     <SlideShell id="DI-10b" theme={theme}>
@@ -1207,7 +1232,7 @@ function DiDeclinadosSlide({ data, theme, clientName, periodLabel, pageNum = 10 
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.12em" }}>Top motivos de declinación</p>
             <p style={{ margin: 0, fontSize: 9.5, color: t.textMuted, fontStyle: "italic" }}>
-              Cuenta procesos declinados — uno por proceso, motivo final
+              {totalDeclinados.toLocaleString("es-CO")} procesos declinados — uno por proceso, motivo final
             </p>
           </div>
           <HBarChart rows={rows} theme={theme} />
