@@ -27,14 +27,17 @@ const DI_MOCK_DATA = {
       col6: "9200",  col7: "5100",  col8: "2800", col9: "1350",
       col10: "1.4",
     }],
+    // Gauge DI-7/DI-8: doc_declinados (col_extra1=900) y rostro_declinados
+    // (col_extra3=600) coinciden con la suma de los paneles 7/8 (grano validación).
+    // total = exitosas + expiradas + declinadas en cada familia.
     "3_validaciones_doc_rostro": [{
       bloque: "3_validaciones_doc_rostro",
-      col1: "24100", col2: "19800", col3: "82.2",
+      col1: "24100", col2: "21500", col3: "89.2",
       col4: "22300", col5: "80.1",
-      col6: "22800", col7: "18200", col8: "79.8",
+      col6: "22800", col7: "21600", col8: "94.7",
       col9: "21100", col10: "77.3",
-      col11: "1820", col_extra1: "1240",
-      col_extra2: "1560", col_extra3: "980",
+      col11: "1700", col_extra1: "900",
+      col_extra2: "600", col_extra3: "600",
     }],
     "4_historico_3meses": [
       { bloque: "4_historico_3meses", periodo: "2026-01-01", col1: "22100", col2: "16900", col3: "76.5", col4: "15800", col5: "71.5" },

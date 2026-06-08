@@ -95,6 +95,7 @@ doc_dedup AS (
     d.VALIDATION_STATUS,
     d.FAILURE_STATUS,
     d.DECLINED_REASON,
+    d.CREATION_DATE,
     ROW_NUMBER() OVER (
       PARTITION BY d.IDENTITY_PROCESS_ID, d.TYPE
       ORDER BY d.CREATION_DATE DESC
@@ -180,80 +181,52 @@ validaciones_agg AS (
   CROSS JOIN params p
 ),
 
--- REFACTOR 2026-05-07: contamos a nivel PROCESO (DECLINED_REASON de IDENTITY_PROCESSES),
--- filtrando por la lista de motivos que pertenecen a doc / rostro.
--- Listas duplicadas en src/utils/razonesDict.ts - sincronizar al agregar motivos nuevos.
+-- REESCRITO 2026-06-08 (Opcion 2): contamos a nivel VALIDACION, desde
+-- DOCUMENT_VALIDATION_HISTORY (doc_dedup, rn=1, FAILURE_STATUS='declined').
+-- Asi el panel SUMA EXACTO al gauge del slide (doc_declinados / rostro_declinados
+-- de validaciones_agg) -> cada slide DI-7/DI-8 cierra contra si mismo.
+-- Ya NO hay listas de motivos hardcoded (la familia la da el TYPE de la validacion);
+-- se elimina el problema de sincronizar listas con razonesDict.ts.
+-- DI-10b (motivos_declinados_agg) sigue a nivel PROCESO = total declinados DI-1.
 razones_doc_agg AS (
+  -- DOCUMENTO: un solo TYPE -> 1 fila por proceso (rn=1), sin doble conteo.
   SELECT
-    pr.DECLINED_REASON AS razon,
-    COUNT(DISTINCT pr.PROCESS_ID) AS total
-  FROM procesos pr
+    COALESCE(d.DECLINED_REASON, '(sin motivo)') AS razon,
+    COUNT(DISTINCT d.IDENTITY_PROCESS_ID) AS total
+  FROM doc_dedup d
+  INNER JOIN procesos pr ON d.IDENTITY_PROCESS_ID = pr.PROCESS_ID
   CROSS JOIN params p
-  WHERE pr.fecha_proceso >= p.mes_actual_inicio
-    AND LOWER(pr.STATUS) = 'failure'
-    AND (LOWER(pr.FAILURE_STATUS) LIKE '%rechazado%'
-      OR LOWER(pr.FAILURE_STATUS) = 'declined')
-    AND pr.DECLINED_REASON IS NOT NULL
-    AND LOWER(pr.DECLINED_REASON) NOT IN ('not_used', 'canceled')
-    AND LOWER(pr.DECLINED_REASON) IN (
-      'blurry_image',
-      'expired_document',
-      'document_has_expired',
-      'document_is_a_photocopy',
-      'document_is_a_photo_of_photo',
-      'document_does_not_match_account_id',
-      'document_validation_not_started',
-      'damaged_document',
-      'invalid_document_emission_date',
-      'document_data_does_not_match_government_data',
-      'document_image_no_text_detected',
-      'document_front_not_identified',
-      -- Códigos agregados 2026-06-08 (descubiertos en Crediplus + Efecty).
-      -- data_not_match_with_government_database clasificado como DOC (es el dato
-      -- del documento que no matchea la base de gobierno). government_database_unavailable
-      -- queda FUERA (es infra, va a "otro" → visible solo en DI-10b).
-      'invalid_document_status',
-      'data_not_match_with_government_database',
-      'document_unregistered',
-      'missing_issue_number',
-      'invalid_qr_content',
-      'invalid_issue_date',
-      'invalid_mrz',
-      'missing_text',
-      'document_not_recognized'
-    )
-  GROUP BY pr.DECLINED_REASON
-  -- Sin cap: devolvemos TODOS los motivos doc; el frontend muestra top-N + "Otros"
-  -- para que el panel sume exacto a la familia documento (sin truncado silencioso).
+  WHERE d.TYPE = 'document-validation'
+    AND d.FAILURE_STATUS = 'declined'
+    AND d.rn = 1
+    AND pr.fecha_proceso >= p.mes_actual_inicio
+  GROUP BY COALESCE(d.DECLINED_REASON, '(sin motivo)')
 ),
 
 razones_rostro_agg AS (
-  SELECT
-    pr.DECLINED_REASON AS razon,
-    COUNT(DISTINCT pr.PROCESS_ID) AS total
-  FROM procesos pr
-  CROSS JOIN params p
-  WHERE pr.fecha_proceso >= p.mes_actual_inicio
-    AND LOWER(pr.STATUS) = 'failure'
-    AND (LOWER(pr.FAILURE_STATUS) LIKE '%rechazado%'
-      OR LOWER(pr.FAILURE_STATUS) = 'declined')
-    AND pr.DECLINED_REASON IS NOT NULL
-    AND LOWER(pr.DECLINED_REASON) NOT IN ('not_used', 'canceled')
-    AND LOWER(pr.DECLINED_REASON) IN (
-      'no_face_detected',
-      'similarity_threshold_not_passed',
-      'risky_face_detected',
-      'passive_liveness_verification_not_passed',
-      'user_face_match_in_client_collection',
-      'user_face_match_in_fraud_collection',
-      'face_validation_not_started',
-      'invalid_video_file',
-      -- Códigos agregados 2026-06-08: face_not_detected es DISTINTO de
-      -- no_face_detected (ambos rostro); image_face_validation_not_passed = rostro en doc.
-      'face_not_detected',
-      'image_face_validation_not_passed'
-    )
-  GROUP BY pr.DECLINED_REASON
+  -- ROSTRO: 2 TYPEs (face-recognition / face-search) -> un proceso puede tener
+  -- 2 validaciones declined. Para que sume exacto a rostro_declinados (que cuenta
+  -- el proceso 1 sola vez), elegimos la validacion de rostro declined mas reciente
+  -- por proceso (rk=1) y agrupamos por su motivo.
+  SELECT razon, COUNT(*) AS total
+  FROM (
+    SELECT
+      d.IDENTITY_PROCESS_ID,
+      COALESCE(d.DECLINED_REASON, '(sin motivo)') AS razon,
+      ROW_NUMBER() OVER (
+        PARTITION BY d.IDENTITY_PROCESS_ID
+        ORDER BY d.CREATION_DATE DESC
+      ) AS rk
+    FROM doc_dedup d
+    INNER JOIN procesos pr ON d.IDENTITY_PROCESS_ID = pr.PROCESS_ID
+    CROSS JOIN params p
+    WHERE d.TYPE IN ('face-recognition','face-search')
+      AND d.FAILURE_STATUS = 'declined'
+      AND d.rn = 1
+      AND pr.fecha_proceso >= p.mes_actual_inicio
+  )
+  WHERE rk = 1
+  GROUP BY razon
   -- Sin cap: el frontend muestra top-N + "Otros" para que sume a la familia rostro.
 ),
 

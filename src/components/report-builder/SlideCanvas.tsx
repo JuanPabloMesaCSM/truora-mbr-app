@@ -889,8 +889,9 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["7_razones_doc"] || [];
-  // Grano proceso: total exacto de la familia documento + top 8 con "Otros
-  // motivos" para que el panel sume al total (sin truncado silencioso).
+  // Grano validación: razones de las validaciones de DOCUMENTO declined.
+  // Suman exacto al gauge (Declinadas) -> el slide cierra contra sí mismo.
+  // Top 8 + "Otros motivos".
   const totalDoc = sumaCol2(rows);
   const sorted = topNConOtros(rows, 8);
   return (
@@ -903,6 +904,8 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
           pct={parseFloat(b?.col3 || "0")}
           total={parseInt(b?.col1 || "0", 10)}
           exitosas={parseInt(b?.col2 || "0", 10)}
+          expirados={parseInt(b?.col11 || "0", 10)}
+          declinados={parseInt(b?.col_extra1 || "0", 10)}
           theme={theme}
         />
         {/* Right: razones de rechazo */}
@@ -913,7 +916,7 @@ function Di7Slide({ data, theme, clientName, periodLabel, pageNum = 7 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              {totalDoc.toLocaleString("es-CO")} procesos declinados con motivo de documento
+              {totalDoc.toLocaleString("es-CO")} validaciones de documento declinadas
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>
@@ -948,7 +951,10 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
   const t = tok(theme);
   const b    = data["3_validaciones_doc_rostro"]?.[0];
   const rows = data["8_razones_rostro"] || [];
-  // Grano proceso: total exacto de la familia rostro + top 8 con "Otros motivos".
+  // Grano validación: razones de las validaciones de ROSTRO declined.
+  // Suman exacto al gauge (Declinadas) -> el slide cierra contra sí mismo.
+  // Los no_face_detected sin registro de validación facial NO aparecen acá
+  // (viven en DI-10b a nivel proceso). Top 8 + "Otros motivos".
   const totalRostro = sumaCol2(rows);
   const sorted = topNConOtros(rows, 8);
   return (
@@ -961,6 +967,8 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
           pct={parseFloat(b?.col8 || "0")}
           total={parseInt(b?.col6 || "0", 10)}
           exitosas={parseInt(b?.col7 || "0", 10)}
+          expirados={parseInt(b?.col_extra2 || "0", 10)}
+          declinados={parseInt(b?.col_extra3 || "0", 10)}
           theme={theme}
         />
         {/* Right: razones de rechazo */}
@@ -971,7 +979,7 @@ function Di8Slide({ data, theme, clientName, periodLabel, pageNum = 8 }: {
             <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
               textTransform: "uppercase", letterSpacing: "0.14em" }}>Razones de rechazo</p>
             <p style={{ margin: 0, fontSize: 9, color: t.textMuted, fontStyle: "italic" }}>
-              {totalRostro.toLocaleString("es-CO")} procesos declinados con motivo de rostro
+              {totalRostro.toLocaleString("es-CO")} validaciones de rostro declinadas
             </p>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 0, overflowY: "auto" }}>

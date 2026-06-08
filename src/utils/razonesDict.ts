@@ -73,6 +73,8 @@ export const RAZONES_DI: Record<string, { descripcion: string; esAlerta: boolean
 
   // Bucket sintético generado por el frontend (top-N + resto agregado).
   '__otros__':                             { descripcion: 'Otros motivos', esAlerta: false },
+  // Validación declined sin DECLINED_REASON registrado (grano validación DI-7/DI-8).
+  '(sin motivo)':                          { descripcion: 'Sin motivo registrado', esAlerta: false },
 };
 
 // Helper único: obtiene la descripción humana de un motivo DI.
