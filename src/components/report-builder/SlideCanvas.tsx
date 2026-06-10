@@ -1604,8 +1604,10 @@ function Bgc3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 80 }}>
           {[
-            { label: "Checks exitosos global", val: globalApp + "%", color: BGC.success, sub: "puntaje > 6" },
-            { label: "Con advertencias global", val: globalRej + "%", color: BGC.danger,  sub: "puntaje ≤ 6" },
+            { label: "Checks exitosos global", val: globalApp + "%", color: BGC.success,
+              sub: `puntaje > 6 · ${totalApp.toLocaleString("es-CO")} checks` },
+            { label: "Con advertencias global", val: globalRej + "%", color: BGC.danger,
+              sub: `puntaje ≤ 6 · ${(totalAll - totalApp).toLocaleString("es-CO")} checks` },
           ].map(k => (
             <div key={k.label} style={{ flex: 1, background: t.cardBg, border: t.cardBorder,
               borderRadius: 12, padding: "12px 20px", display: "flex", alignItems: "center", gap: 16 }}>
@@ -1754,7 +1756,9 @@ function Bgc4bSlide({ data, theme, clientName, periodLabel, pageNum = 4 }: {
               <span style={{ fontSize: 32, fontWeight: 800, color: BGC.success, lineHeight: 1.1 }}>
                 {passPct.toFixed(2)}%
               </span>
-              <p style={{ margin: 0, fontSize: 11, color: t.textMuted }}>del total de checks evaluados</p>
+              <p style={{ margin: 0, fontSize: 11, color: t.textMuted }}>
+                {(totalCompl - conHigh).toLocaleString("es-CO")} checks sin label de riesgo alto
+              </p>
             </div>
             <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
               borderRadius: 14, padding: "12px 20px", display: "flex", flexDirection: "column", justifyContent: "center",
