@@ -15,7 +15,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Fingerprint, ChevronDown, Search, FileBarChart } from "lucide-react";
+import { ArrowLeft, Fingerprint, ChevronDown, Search, FileBarChart, Download, Presentation } from "lucide-react";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import {
   SlideCanvas, PortadaSlide, AgendaSlide, SeparadorSlide, UpdatesSlide, CierreSlide,
@@ -23,6 +23,7 @@ import {
 } from "@/components/report-builder/SlideCanvas";
 import { GeneratingOverlay } from "@/components/report-builder/GeneratingOverlay";
 import { generatePeriods, parsePeriod } from "@/components/report-builder/moduleDefinitions";
+import { exportPDF, exportPPTX } from "@/utils/exportPDF";
 
 /* Nombres completos de CSM (tabla `csm` de Supabase) — para no mostrar el alias del correo. */
 const CSM_NAMES: Record<string, string> = {
@@ -119,6 +120,7 @@ export default function Validador() {
   const [genStatus, setGenStatus] = useState<"generating" | "success" | "error" | null>(null);
   const [theme] = useState<Theme>("dark");
   const [mbrData, setMbrData] = useState<Record<string, any[]>>(MOCK_MBR_DATA);
+  const [exporting, setExporting] = useState<"pdf" | "pptx" | null>(null);
 
   const filtered = VALIDADOR_CLIENTS.filter(c =>
     c.nombre.toLowerCase().includes(query.toLowerCase()));
@@ -161,6 +163,13 @@ export default function Validador() {
       setGenStatus("error");
     }
   };
+
+  /* Export — reusa el mismo pipeline del Report Builder (off-screen clone de los
+     #canvas-mbr-slides). Mismos nombres de archivo MBR_<cliente>_<periodo>. */
+  const handleExportPDF = () =>
+    exportPDF(selected?.nombre || "Cliente", periodLabel, () => setExporting("pdf"), () => setExporting(null));
+  const handleExportPPTX = () =>
+    exportPPTX(selected?.nombre || "Cliente", periodLabel, () => setExporting("pptx"), () => setExporting(null));
 
   return (
     <div style={{ position: "relative", minHeight: "100vh", overflow: "hidden" }}>
@@ -308,14 +317,30 @@ export default function Validador() {
                   MBR por validación · consumo facturable (ClickHouse) + razones (Snowflake)
                 </p>
               </div>
-              <button onClick={() => setGenerated(false)} style={{
-                display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600,
-                color: S.muted, background: S.surface, border: `1px solid ${S.border}`,
-                borderRadius: 999, padding: "8px 16px", cursor: "pointer" }}>
-                <ArrowLeft size={14} /> Cambiar cliente
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button onClick={handleExportPDF} disabled={!!exporting} style={{
+                  display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+                  color: S.muted, background: S.surface, border: `1px solid ${S.border}`,
+                  borderRadius: 999, padding: "8px 14px", cursor: exporting ? "default" : "pointer",
+                  opacity: exporting ? 0.6 : 1 }}>
+                  <Download size={14} /> {exporting === "pdf" ? "Exportando…" : "PDF"}
+                </button>
+                <button onClick={handleExportPPTX} disabled={!!exporting} style={{
+                  display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600,
+                  color: S.muted, background: S.surface, border: `1px solid ${S.border}`,
+                  borderRadius: 999, padding: "8px 14px", cursor: exporting ? "default" : "pointer",
+                  opacity: exporting ? 0.6 : 1 }}>
+                  <Presentation size={14} /> {exporting === "pptx" ? "Exportando…" : "PPTX"}
+                </button>
+                <button onClick={() => setGenerated(false)} style={{
+                  display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600,
+                  color: S.muted, background: S.surface, border: `1px solid ${S.border}`,
+                  borderRadius: 999, padding: "8px 16px", cursor: "pointer" }}>
+                  <ArrowLeft size={14} /> Cambiar cliente
+                </button>
+              </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 24, overflowX: "auto" }}>
+            <div id="canvas-mbr-slides" style={{ display: "flex", flexDirection: "column", gap: 24, overflowX: "auto" }}>
               {/* Apertura (assets de marca Truora, igual que el Report Builder) */}
               <PortadaSlide clientName={selected?.nombre || "Cliente"} periodLabel={periodLabel} />
               <AgendaSlide />
