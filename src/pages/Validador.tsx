@@ -55,8 +55,9 @@ const ACCENT = "#34D399"; // teal — emparentado con DI (#00C9A7) pero distinto
    por validación pero con algunos procesos. Fuente: skill standalone-validations-mbr. ── */
 interface ValidadorClient { tci: string; nombre: string; csm: string; grado: "100%" | "alto"; }
 const VALIDADOR_CLIENTS: ValidadorClient[] = [
-  { tci: "TCIdc09a6d69109eb5d3b3fe7787783c6d5", nombre: "Confiamos",   csm: "jpmesa@truora.com",     grado: "100%" },
+  { tci: "TCIdc09a6d69109eb5d3b3fe7787783c6d5", nombre: "Confiamos",   csm: "jpmesa@truora.com",      grado: "100%" },
   { tci: "5rk9eemgdj4ngsc3ucq0l196vr",          nombre: "Trii",        csm: "nagutierrez@truora.com", grado: "100%" },
+  { tci: "TCI83d4b49da224c317d08d3c71015db4f4", nombre: "Indrive",     csm: "dtibaquira@truora.com",  grado: "100%" }, // solo Documento vía API (desde mayo 2026); RB DI estándar = 0
   { tci: "TCIc931783f045952c3ef1da79fbbdf90e4", nombre: "MejorCDT",    csm: "jpotoya@truora.com",    grado: "alto" },
   { tci: "TCIb1afd2ba9d47d0aab336955d539a7713", nombre: "Agricapital", csm: "sduran@truora.com",     grado: "alto" },
   { tci: "TCIdb1b7314c47c7d0b175640f4d1680a0c", nombre: "Ban100",      csm: "nagutierrez@truora.com", grado: "alto" },
