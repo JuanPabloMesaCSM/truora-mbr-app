@@ -38,6 +38,19 @@ export interface PortfolioMeta {
   filasOrigen:         number;        // filas crudas leídas antes de agregar
 }
 
+/** Fila cruda de `portfolio_consumption` (antes de agregar). */
+interface PortfolioConsumptionDbRow {
+  client_id:         string;
+  client_name:       string | null;
+  csm_owner:         string | null;
+  product:           string;
+  sub_product:       string | null;
+  usage:             number | string;
+  nota:              string | null;
+  periodo_mes:       string | null;
+  fecha_actualizado: string | null;
+}
+
 export function usePortfolioConsumption(periodo: PeriodoSeleccion) {
   const [rows, setRows]     = useState<PortfolioRow[]>([]);
   const [meta, setMeta]     = useState<PortfolioMeta>({ ultimaActualizacion: null, filasOrigen: 0 });
@@ -54,13 +67,36 @@ export function usePortfolioConsumption(periodo: PeriodoSeleccion) {
         const inicioMes = firstOfMonth(periodo.inicio);
         const finMes    = firstOfMonth(periodo.fin);
 
-        const { data, error: dbError } = await supabase
-          .from("portfolio_consumption")
-          .select("client_id, client_name, csm_owner, product, sub_product, usage, nota, periodo_mes, fecha_actualizado")
-          .gte("periodo_mes", inicioMes)
-          .lte("periodo_mes", finMes);
+        // Paginar: Supabase/PostgREST cortan en 1000 filas por request. Con grano
+        // sub-producto + rangos largos (ej. "Último año" ≈ 5k filas) un solo fetch
+        // dejaba clientes afuera (solo entraban los de las primeras 1000 filas).
+        // Traemos TODO en páginas de 1000, ordenando por la PK para que el
+        // paginado sea estable (sin huecos ni duplicados en los bordes de página).
+        const PAGE = 1000;
+        const raw: PortfolioConsumptionDbRow[] = [];
+        let fromIdx = 0;
+        let dbError: { message: string } | null = null;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { data, error } = await supabase
+            .from("portfolio_consumption")
+            .select("client_id, client_name, csm_owner, product, sub_product, usage, nota, periodo_mes, fecha_actualizado")
+            .gte("periodo_mes", inicioMes)
+            .lte("periodo_mes", finMes)
+            .order("periodo_mes", { ascending: true })
+            .order("client_id", { ascending: true })
+            .order("product", { ascending: true })
+            .order("sub_product", { ascending: true })
+            .range(fromIdx, fromIdx + PAGE - 1);
 
-        if (cancelled) return;
+          if (cancelled) return;
+          if (error) { dbError = error; break; }
+
+          const batch = (data ?? []) as PortfolioConsumptionDbRow[];
+          for (const b of batch) raw.push(b);
+          if (batch.length < PAGE) break;
+          fromIdx += PAGE;
+        }
 
         if (dbError) {
           setError(dbError.message);
@@ -69,8 +105,6 @@ export function usePortfolioConsumption(periodo: PeriodoSeleccion) {
           setLoading(false);
           return;
         }
-
-        const raw = data ?? [];
 
         // Agregar por (client_id, product, sub_product). Sumamos usage sobre los
         // meses del rango; para `nota` conservamos la del periodo_mes más reciente.
