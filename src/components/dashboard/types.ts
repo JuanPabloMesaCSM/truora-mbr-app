@@ -20,6 +20,13 @@ export const PROD_LIST: Producto[] = ["DI", "BGC", "CE"];
 export const DASHBOARD_DETAIL_WEBHOOK_URL =
   "https://n8n.zapsign.com.br/webhook/dashboard-metrics-detail";
 
+/** URL del webhook n8n "Portfolio Client Lookup" — consulta efímera de
+ *  CUALQUIER Client ID (aunque no esté en la cartera). Llama al endpoint CH
+ *  `69e67323` con un solo TCI, parsea y devuelve las filas SIN persistir en
+ *  Supabase. Ventana fija del query: últimos 3 meses (desde Marzo). */
+export const PORTFOLIO_LOOKUP_WEBHOOK_URL =
+  "https://n8n.zapsign.com.br/webhook/portfolio-client-lookup";
+
 /* ─────────────────────────── Response shape ─────────────────────────── */
 
 /** Una fila del output normalizado de Snowflake. Todos los valores llegan
@@ -57,6 +64,7 @@ export type PeriodoPresetId =
   | "mes_actual"
   | "mes_pasado"
   | "ult_3_meses"
+  | "ult_12_meses"
   | "ytd"
   | "anio_completo"
   | "custom";
@@ -93,6 +101,13 @@ export function buildPreset(id: PeriodoPresetId, today: Date = new Date()): Peri
     const inicio = new Date(y, m - 2, 1);
     return { preset: id, inicio: fmt(inicio), fin: fmt(today) };
   }
+  if (id === "ult_12_meses") {
+    // Coincide con la ventana del query general (date_sub(MONTH, 12, today())):
+    // primer dia del mes 12 meses atras → hoy. Cubre los 13 meses que carga el
+    // cron sub-producto (ej: jun-2025 → jun-2026).
+    const inicio = new Date(y, m - 12, 1);
+    return { preset: id, inicio: fmt(inicio), fin: fmt(today) };
+  }
   if (id === "ytd") {
     const inicio = new Date(y, 0, 1);
     return { preset: id, inicio: fmt(inicio), fin: fmt(today) };
@@ -111,6 +126,7 @@ export const PRESET_LABELS: Record<PeriodoPresetId, string> = {
   mes_actual: "Mes actual",
   mes_pasado: "Mes pasado",
   ult_3_meses: "Últimos 3 meses",
+  ult_12_meses: "Último año",
   ytd: "Año en curso (YTD)",
   anio_completo: "Año completo",
   custom: "Rango personalizado",

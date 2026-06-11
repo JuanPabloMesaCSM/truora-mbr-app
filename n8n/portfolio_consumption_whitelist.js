@@ -2,14 +2,25 @@
 //
 // Toma los rows del nodo Supabase "Get Clientes Whitelist" (cartera activa
 // con sus 3 TCIs por producto) y devuelve la lista combinada de TCIs
-// (DI U BGC U CE) en dos formatos:
+// (DI U BGC U CE).
 //
-//   tci_list_array: ["TCI...", "TCI...", ...]    <- para body JSON CH endpoint
-//   tci_list:       "'tci1','tci2',..."          <- para SQL legacy (fallback SF)
+// 2026-06-11 — BATCHING. El query general subio a 12 meses (ver
+// portfolio_subproduct_migration.sql). 95 clientes x 12 meses en UN solo
+// request al Query Endpoint CH supera el timeout de ~30s ("The service was not
+// able to process your request. Timeout error."). Por eso ahora emitimos N
+// items, uno por LOTE de ~BATCH_SIZE TCIs. El nodo HTTP corre 1 vez por item
+// (lote) => N requests chicos; "Prepare Upsert" agrega TODAS las respuestas via
+// $input.all(). El lookup (webhook portfolio-client-lookup) NO usa este node:
+// consulta 1 solo cliente, sin timeout.
 //
-// Migrado a CH 2026-05-11. El array es lo que consume el nodo HTTP Request
-// del Query Endpoint CH. El string SQL se mantiene por compatibilidad con
-// el query SF de fallback (`portfolio_consumption_sync_sf_legacy.sql`).
+// IMPORTANTE: el nodo HTTP debe leer el CSV del ITEM ACTUAL (`$json.tci_list_csv`),
+// NO `$('Build Whitelist').first()...` (eso solo tomaria el primer lote).
+//
+// Cada item de salida:
+//   tci_list_csv:   "tci1,tci2,..."   <- CSV plano para {client_id:String} (splitByChar)
+//   tci_list_array: [...]             <- por si se necesita el array
+//   tci_list:       "'tci1',..."      <- SQL-ready para el fallback SF legacy (por lote)
+//   batch_index / batch_count / clientes_en_batch / total_clientes
 //
 // Reglas n8n: nada de optional chaining, nada de fetch.
 
@@ -37,21 +48,54 @@ for (let i = 0; i < items.length; i++) {
 
 const tciArray = Array.from(tciSet);
 
-// Para el SQL legacy SF: escapamos comillas simples (defensivo) y armamos
-// el formato "'tci1','tci2',...". Si la cartera viene vacia, devolvemos "''"
-// (string SQL valido que no matchea nada) para que el nodo SF no falle con
-// "WHERE IN ()".
-const escaped = [];
-for (const t of tciArray) {
-  escaped.push("'" + String(t).replace(/'/g, "''") + "'");
-}
-const tciListSql = escaped.length > 0 ? escaped.join(',') : "''";
+// Tamano de lote. ~95 TCIs / 20 = ~5 lotes. Con 12 meses cada lote corre en
+// ~8-12s, comodo debajo del timeout de 30s. Si algun lote roza el limite (CH
+// degradado, cartera mas grande), BAJAR este numero.
+const BATCH_SIZE = 20;
 
-return [{
-  json: {
-    tci_list_array: tciArray,        // formato CH: Array(String)
-    tci_list:       tciListSql,      // formato SF legacy: string SQL-ready
-    count:          tciSet.size,
-    clientes_input: items.length
-  }
-}];
+const batches = [];
+for (let i = 0; i < tciArray.length; i += BATCH_SIZE) {
+  batches.push(tciArray.slice(i, i + BATCH_SIZE));
+}
+// Garantizar al menos 1 item para no cortar el flujo si la whitelist viene vacia.
+if (batches.length === 0) batches.push([]);
+
+const out = [];
+for (let b = 0; b < batches.length; b++) {
+  const chunk = batches[b];
+
+  // CSV plano sin comillas: "tci1,tci2,...". Si el lote viniera vacio usamos
+  // '__none__' (token que no matchea ningun cliente) en vez de '' — porque ''
+  // dispara la rama "{client_id} = '' OR ..." de la query maestra y devolveria
+  // TODA la tabla.
+  const csvRaw = chunk.join(',');
+  const csv = csvRaw.length > 0 ? csvRaw : '__none__';
+
+  // SQL-ready por lote para el fallback SF legacy.
+  const escaped = [];
+  for (const t of chunk) escaped.push("'" + String(t).replace(/'/g, "''") + "'");
+  const sql = escaped.length > 0 ? escaped.join(',') : "''";
+
+  out.push({
+    json: {
+      tci_list_csv:      csv,
+      tci_list_array:    chunk,
+      tci_list:          sql,
+      // ch_body: objeto LISTO para el HTTP node. El body del HTTP se setea como
+      // expresion `={{ $json.ch_body }}` (Body Content Type: JSON + Using JSON).
+      // Asi evitamos el inline `={{ { ... } }}` que en algunas versiones de n8n
+      // se previsualiza como "[object Object]" (memoria feedback_n8n_http_body_json_bug).
+      ch_body: {
+        queryVariables: { client_id: csv },
+        format: 'JSONEachRow'
+      },
+      batch_index:       b,
+      batch_count:       batches.length,
+      batch_size:        BATCH_SIZE,
+      clientes_en_batch: chunk.length,
+      total_clientes:    tciArray.length
+    }
+  });
+}
+
+return out;

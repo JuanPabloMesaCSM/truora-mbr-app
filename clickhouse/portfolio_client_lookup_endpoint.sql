@@ -1,0 +1,18 @@
+-- Lookup "Portfolio Client Lookup" — NO TIENE ENDPOINT PROPIO
+-- ===========================================================
+-- Decision 2026-06-11 (JP): en vez de crear un endpoint CH dedicado para el
+-- lookup de 12 meses, se subio el QUERY GENERAL del cron de cartera
+-- (`portfolio_subproduct_migration.sql`, endpoint 69e67323) de 3 a 12 meses.
+--
+-- Resultado:
+--   - El cron Portfolio Sync (L/M/V) ahora calcula y guarda el AÑO COMPLETO en
+--     la cartera (`portfolio_consumption`). La vista default sigue en "ultimos 3
+--     meses"; los presets YTD / Año / custom ganan histórico real.
+--   - El lookup (webhook portfolio-client-lookup, 1 cliente fuera de cartera)
+--     pega al MISMO endpoint 69e67323 → hereda los 12 meses sin nada aparte.
+--
+-- => El SQL vivo es uno solo: `portfolio_subproduct_migration.sql` (linea ~56
+--    con `date_sub(MONTH, 12, today())`). Este archivo queda solo como nota de
+--    la decision; no hay query separada que mantener.
+--
+-- Ver: n8n/portfolio_client_lookup_README.md · skill dashboard-cartera.md.

@@ -202,3 +202,123 @@ Tiempo estimado de rollback: ~10 minutos.
 | `usage` queda string en la fila final | El Code ya hace `Number(usageRaw)`. Si pasa, revisar que CH no este devolviendo notacion cientifica para volumenes grandes. |
 | Numeros menores que SF para abril/mayo | NO es bug — SF tenia lag. CH tiene el numero real. Confirmar con cliente o equipo facturacion. |
 | Numeros del ultimo mes ajustan dia 1-4 | Truora reconcilia CH internamente entre 1-4 de cada mes. Esperar al dia 4 para reportes definitivos. |
+
+---
+
+## ACTUALIZACION 2026-06-11 — grano SUB-PRODUCTO (product identifier)
+
+La tabla pasa de 3 buckets planos (`validations`/`checks`/`truconnect`) a desglose
+por **sub-producto**, adoptando la query maestra oficial de counters de Truora.
+SQL del endpoint: `clickhouse/portfolio_subproduct_migration.sql`.
+
+> ⚠️ **El endpoint `69e67323` fue REESCRITO in-place** (JP, 2026-06-11) con la query
+> sub-producto. La URL/UUID del nodo HTTP NO cambia — cambia el BODY (param) y el
+> output (mas columnas). **Pausar el cron hasta aplicar TODOS los cambios de abajo**,
+> si no el upsert con la PK vieja corrompe los totales (muchas filas por
+> `(cliente, producto)` colapsan a una sola).
+
+**Cambios necesarios (en orden):**
+
+1. **Schema Supabase** — aplicar `supabase/migrations/20260611120000_portfolio_consumption_subproduct.sql`
+   (agrega `sub_product` + `nota`, TRUNCATE, nueva PK `(periodo_mes, client_id, product, sub_product)`).
+
+2. **Code "Build Whitelist"** — ya emite `json.tci_list_csv` (CSV plano sin comillas)
+   ademas de los formatos viejos. Re-pegar `n8n/portfolio_consumption_whitelist.js`.
+
+3. **HTTP Request "CH Portfolio Endpoint"** — cambiar SOLO el body. El nuevo endpoint
+   usa el param `{client_id:String}` (CSV) en vez de `{tci_list:Array(String)}`.
+   ⚠️ Con el batching (ver "Ventana subida a 12 meses" abajo) el body lee el CSV del
+   **item actual** (`$json.tci_list_csv`), NO `.first()`:
+   ```
+   ={{ { queryVariables: { client_id: $json.tci_list_csv }, format: 'JSONEachRow' } }}
+   ```
+   (URL, auth y headers `x-clickhouse-endpoint-version: 2` quedan igual.)
+
+4. **Code "Prepare Upsert"** — re-pegar `n8n/portfolio_consumption_sync.js`. Ahora
+   parsea `sub_product` + `nota` y **descarta las filas-total** `'checks completos'`
+   e `'interacciones'` (duplican la suma del detalle; el total por producto lo calcula
+   el frontend). Output incluye `descartadas_total` para auditar.
+
+5. **HTTP Request "Upsert"** — sin cambios (`={{ $json.rows }}`). Las filas ahora
+   cargan `sub_product` + `nota`; PostgREST los acepta tras la migracion (schema cache
+   se refresca solo, ~1 min).
+
+**Nuevo shape de cada fila CH:**
+```json
+{ "periodo_mes": "2026-04-01", "client_id": "TCI...", "product": "validations",
+  "sub_product": "passive liveness", "usage": "59635", "nota": "face - manual review: 0" }
+```
+
+**Productos / sub-productos posibles** (de la query maestra):
+- `validations` → document validation · comprobante domicilio · passive liveness · active liveness · speech_match · truface · email verification · phone verification
+- `checks` → por **pais** (co/cl/mx/pe/...) · ~~checks completos~~ (total, descartado)
+- `premium checks` → por **pais** (NOTA = base premium: IMSS / PEP FIMPE / ...). Excluye base bundled `DBI386340b…`.
+- `continuous Checks` → por pais
+- `truconnect` → inbound · outbound · notification · ~~interacciones~~ (total, descartado)
+- `zapsign` → electronic signature
+- `document recognition` → ocr
+- `forms` → forms
+
+**Decisiones (ver memoria `project_dashboard_subproduct`):**
+- **Manual Review NO se cuenta** como fila (solo va en `nota`), matchea el Excel de facturacion Truora. Temporal — si facturacion confirma que es cargo aparte, re-agregar bloque `VALIDATIONS_MR` en el SQL.
+- **declined_reason SI se cuenta** (regla 2026-06-06).
+- **Premium excluye `DBI386340b…`** (bundled, enFront:false).
+
+**Verificacion post-corrida (nuevo grano):**
+```sql
+SELECT product, sub_product, SUM(usage) AS total
+FROM public.portfolio_consumption
+WHERE periodo_mes = '2026-04-01'
+  AND client_id = 'TCI83d4b49da224c317d08d3c71015db4f4'  -- Indrive
+GROUP BY product, sub_product ORDER BY product, total DESC;
+-- Esperado: checks por pais sumando 181.784; premium checks IMSS 9.114 + PEP FIMPE 14.
+```
+
+### Ventana subida a 12 meses (2026-06-11)
+
+El query del endpoint `69e67323` paso de 3 a 12 meses (linea ~56 del SQL:
+`date_sub(MONTH, 12, today())`). Implicaciones:
+- El cron ahora **calcula y guarda el año completo** cada corrida (L/M/V). La
+  tabla crece de ~1.900 a ~6-8k filas (trivial para Postgres). Meses cerrados son
+  estables → recalcularlos da el mismo numero.
+- La vista default de cartera **no cambia** (preset "ultimos 3 meses"); los presets
+  YTD / Año completo / custom ahora tienen data real.
+- **Motivo**: que el lookup de clientes fuera de cartera (webhook
+  `portfolio-client-lookup`, comparte este endpoint) traiga el año sin endpoint
+  aparte. Ver `n8n/portfolio_client_lookup_README.md`.
+- ⚠️ Recordar: editar el SQL en el editor CH **no** actualiza el endpoint — hay que
+  **Save** la query (memoria `feedback_ch_endpoint_editor_vs_saved`).
+
+#### Batching obligatorio (el timeout se confirmo, 2026-06-11)
+
+Con 12 meses, **95 clientes en UN solo request al Query Endpoint CH supera el
+timeout de ~30s** → el nodo "CH Portfolio Endpoint" devuelve *"The service was not
+able to process your request. Timeout error."*. (El lookup NO sufre esto: es 1
+cliente, ~2-6s.)
+
+**Fix — fragmentar la whitelist en lotes:**
+1. **Code "Build Whitelist"** — re-pegar `n8n/portfolio_consumption_whitelist.js`
+   (version 2026-06-11): ya NO emite 1 item con todos los TCIs, sino **N items,
+   uno por lote** de `BATCH_SIZE` (default 20 → ~5 lotes para ~95 TCIs). Cada item
+   trae su `tci_list_csv` (CSV del lote).
+2. **HTTP Request "CH Portfolio Endpoint"** — el body debe leer el CSV del **item
+   actual**, NO `.first()`:
+   ```
+   ={{ { queryVariables: { client_id: $json.tci_list_csv }, format: 'JSONEachRow' } }}
+   ```
+   El nodo HTTP corre 1 vez por item (lote) → N requests chicos (~10s c/u, debajo
+   del timeout). Asegurate de que "Execute Once" este **OFF** en el HTTP node.
+3. **Code "Prepare Upsert"** — sin cambios. Ya hace `$input.all()` sobre los N
+   items de respuesta y agrega todo + dedup por PK. Como los lotes son conjuntos
+   de clientes DISJUNTOS, no hay colision de PK entre lotes.
+4. **Upsert** — sin cambios (`={{ $json.rows }}`). Una sola llamada PostgREST con
+   las ~6-8k filas del año (todas las respuestas ya agregadas en 1 item).
+
+Si algun lote sigue rozando el timeout (cartera mas grande, CH degradado), bajar
+`BATCH_SIZE` en el Code "Build Whitelist".
+
+> Tradeoff vs alternativa: se descarto el endpoint dedicado de 12 meses (JP no
+> queria un 2do endpoint) y parametrizar `{months_back}` (la cartera perderia el
+> año). El batching mantiene UN solo query general a 12 meses sirviendo cron +
+> lookup, a costo de ~5 requests por corrida del cron (wall-clock ~50-60s, sin
+> usuario esperando).

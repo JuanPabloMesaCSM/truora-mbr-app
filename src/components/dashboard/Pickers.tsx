@@ -262,6 +262,7 @@ const PRESET_ORDER: PeriodoPresetId[] = [
   "mes_actual",
   "mes_pasado",
   "ult_3_meses",
+  "ult_12_meses",
   "ytd",
   "anio_completo",
   "custom",

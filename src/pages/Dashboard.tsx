@@ -13,16 +13,27 @@ import {
 } from "@/components/dashboard/Pickers";
 import ClienteView from "@/components/dashboard/ClienteView";
 import PortfolioTable from "@/components/dashboard/PortfolioTable";
+import ClientLookupBar from "@/components/dashboard/ClientLookupBar";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePortfolioConsumption } from "@/hooks/usePortfolioConsumption";
+import { useClientLookup } from "@/hooks/useClientLookup";
 import { exportDashboardPDF } from "@/utils/exportDashboardPDF";
 import {
   buildPreset,
+  fmtMonthShort,
   type ClienteRow,
   type Producto,
   type PeriodoSeleccion,
   type TipoFallo,
 } from "@/components/dashboard/types";
+
+// DEV ONLY: saltar el gate de login en local (mismo patrón que Index.tsx).
+// En este modo el cliente Supabase usa service_role (ver supabaseClient.ts),
+// así que clientes / portfolio_consumption cargan sin sesión. Gated a DEV.
+const DEV_BYPASS_LOGIN =
+  import.meta.env.DEV && String(import.meta.env.VITE_DEV_BYPASS_LOGIN).toLowerCase() === "true";
+const DEV_USER_EMAIL =
+  (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined)?.trim() || "jpmesa@truora.com";
 
 /**
  * Página /dashboard — Dashboard de Cartera.
@@ -63,12 +74,18 @@ export default function Dashboard() {
   /* ── auth + fetch initial ─────────────────────────────────────── */
   useEffect(() => {
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.email) {
-        navigate("/login");
-        return;
+      let email: string | null = null;
+      if (DEV_BYPASS_LOGIN) {
+        email = DEV_USER_EMAIL;
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.email) {
+          navigate("/login");
+          return;
+        }
+        email = session.user.email;
       }
-      setUserEmail(session.user.email);
+      setUserEmail(email);
       setAuthChecked(true);
 
       const [clientesRes, csmRes] = await Promise.all([
@@ -135,6 +152,20 @@ export default function Dashboard() {
   /* ── portfolio (panel principal sin cliente) ──────────────────── */
   const portfolio = usePortfolioConsumption(periodo);
 
+  /* ── lookup efímero de cualquier Client ID (fuera de cartera) ──── */
+  const lookup = useClientLookup();
+
+  // Best-effort: si el TCI consultado SÍ está en algún cliente local, mostramos
+  // su nombre canónico. Si no, es un TCI externo y mostramos el TCI crudo.
+  const lookupName = useMemo(() => {
+    const id = lookup.clientId;
+    if (!id) return null;
+    const c = clientes.find(
+      (x) => x.client_id_di === id || x.client_id_bgc === id || x.client_id_ce === id
+    );
+    return c?.nombre ?? null;
+  }, [lookup.clientId, clientes]);
+
   /* ── export PDF ───────────────────────────────────────────────── */
   const [exporting, setExporting] = useState(false);
 
@@ -186,23 +217,77 @@ export default function Dashboard() {
         />
 
         <main style={{ maxWidth: 1320, margin: "0 auto", padding: "92px 28px 60px" }}>
-          {/* Sin cliente: tabla portfolio */}
+          {/* Sin cliente: barra de lookup + (resultado lookup | tabla portfolio) */}
           {!hasSelection && (
             clientesLoading ? (
               <div style={emptyCardStyle}>Cargando clientes…</div>
             ) : clientesError ? (
               <div style={errorBoxStyle}>Error al cargar clientes: {clientesError}</div>
             ) : (
-              <PortfolioTable
-                rows={portfolio.rows}
-                meta={portfolio.meta}
-                loading={portfolio.loading}
-                error={portfolio.error}
-                clientes={clientes}
-                csmNombres={csmNombres}
-                periodo={periodo}
-                onClickCliente={setSelectedCliente}
-              />
+              <>
+                <ClientLookupBar
+                  onSearch={lookup.query}
+                  onClear={lookup.clear}
+                  loading={lookup.loading}
+                  active={lookup.active}
+                />
+
+                {lookup.active ? (
+                  lookup.loading ? (
+                    <LookupLoadingCard tci={lookup.clientId!} />
+                  ) : lookup.error ? (
+                    <div style={errorBoxStyle}>
+                      Error al consultar {lookup.clientId}: {lookup.error}
+                      <div style={{ fontSize: 11, marginTop: 8, color: S.muted }}>
+                        Verificá que el webhook "Portfolio Client Lookup" esté activo en n8n.
+                      </div>
+                    </div>
+                  ) : lookup.notFound ? (
+                    <LookupEmptyCard tci={lookup.clientId!} />
+                  ) : (
+                    <PortfolioTable
+                      rows={lookup.rows}
+                      meta={{ ultimaActualizacion: null, filasOrigen: 0 }}
+                      loading={false}
+                      error={null}
+                      clientes={clientes}
+                      csmNombres={csmNombres}
+                      periodo={periodo}
+                      disableDrilldown
+                      dimUnassigned={false}
+                      titleOverride={`Consulta: ${lookupName ?? lookup.clientId}`}
+                      subtitleOverride={
+                        <>
+                          Consumo facturable ·{" "}
+                          {lookup.coveredFrom && lookup.coveredTo
+                            ? `${fmtMonthShort(lookup.coveredFrom)} → ${fmtMonthShort(lookup.coveredTo)}`
+                            : "últimos 3 meses"}
+                          {lookupName
+                            ? " · cliente en CSM Center"
+                            : " · fuera de tu cartera"}
+                        </>
+                      }
+                      footerOverride={
+                        <>
+                          ▸ expandí una fila para ver el desglose por sub-producto. Trae todo el
+                          rango disponible (último año).
+                        </>
+                      }
+                    />
+                  )
+                ) : (
+                  <PortfolioTable
+                    rows={portfolio.rows}
+                    meta={portfolio.meta}
+                    loading={portfolio.loading}
+                    error={portfolio.error}
+                    clientes={clientes}
+                    csmNombres={csmNombres}
+                    periodo={periodo}
+                    onClickCliente={setSelectedCliente}
+                  />
+                )}
+              </>
             )
           )}
 
@@ -390,6 +475,46 @@ function LoadingCard({ cliente, periodo }: { cliente: string; periodo: PeriodoSe
       </div>
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </motion.div>
+  );
+}
+
+function LookupLoadingCard({ tci }: { tci: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      style={{
+        background: S.surface,
+        border: `1px solid ${S.border}`,
+        borderRadius: 14,
+        padding: "44px 30px",
+        textAlign: "center",
+      }}
+    >
+      <Loader2 size={26} style={{ color: "#7C4DFF", animation: "spin 1s linear infinite" }} />
+      <div style={{ marginTop: 14, fontSize: 14, color: S.text, fontWeight: 600 }}>
+        Consultando consumo de{" "}
+        <code style={{ fontSize: 12, color: S.muted }}>{tci}</code>…
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, color: S.muted }}>
+        Consulta directa a ClickHouse (últimos 3 meses). Toma unos segundos.
+      </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </motion.div>
+  );
+}
+
+function LookupEmptyCard({ tci }: { tci: string }) {
+  return (
+    <div style={emptyCardStyle}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: S.text, marginBottom: 6 }}>
+        Sin consumo para este Client ID.
+      </div>
+      <div style={{ fontSize: 12 }}>
+        <code style={{ fontSize: 11, color: S.muted }}>{tci}</code> no registró consumo en el
+        último año. Verificá que el TCI sea correcto.
+      </div>
+    </div>
   );
 }
 

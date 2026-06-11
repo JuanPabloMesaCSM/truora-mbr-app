@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from "lucide-react";
+import {
+  Search, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw,
+  ChevronRight, ChevronDown, Info,
+} from "lucide-react";
 import { S, fmtNum, ADMIN_EMAILS } from "@/components/botialertas/types";
 import type { ClienteRow, PeriodoSeleccion } from "./types";
 import type { PortfolioRow, PortfolioMeta } from "@/hooks/usePortfolioConsumption";
@@ -8,20 +11,33 @@ import type { PortfolioRow, PortfolioMeta } from "@/hooks/usePortfolioConsumptio
 /**
  * Vista panorámica de la cartera CSM en el panel principal del Dashboard.
  *
- * Una fila por (cliente, producto) con la suma de `usage` dentro del rango
- * elegido (selector "Periodo" del header). Sort por consumo desc default.
+ * Desde 2026-06-11 el grano es SUB-PRODUCTO: cada fila-header es un
+ * (cliente, producto) con el total del rango, y se EXPANDE para ver el
+ * desglose por sub-producto (document validation / passive liveness / truface /
+ * ocr / país en checks / inbound-outbound-notif en CE / forms / ...).
+ * El total del producto = suma de sus sub-productos (las filas-total
+ * 'checks completos'/'interacciones' no se persisten).
  *
- * Las filas cuyo `client_id` (TCI) matchea con un cliente de Supabase.clientes
- * son clickeables → entran al drill-down (vista cliente con los 4 charts).
- * Las que no matchean (clientes "huérfanos" en SF, sin CSM Truora asignado)
- * se muestran de forma tenue y sin click.
+ * Filtros: Producto y Sub-producto (multi-select) + búsqueda libre.
  *
- * El refresh es por el cron LMV 6AM Bogotá. Se muestra `meta.ultimaActualizacion`
- * para que el CSM sepa qué tan reciente es lo que ve.
+ * Click en la fila-header (no en el chevron) → drill-down del cliente.
+ * Las filas cuyo TCI no matchea un cliente de Supabase se muestran tenues
+ * y sin click.
  */
 
 type SortField = "client_name" | "csm_owner" | "product" | "usage";
 type SortDir = "asc" | "desc";
+
+/** Un (cliente, producto) con su total del rango y el detalle por sub-producto. */
+interface GroupRow {
+  key: string;          // `${client_id}|${product}`
+  client_id: string;
+  client_name: string | null;
+  csm_owner: string | null;
+  product: string;
+  total: number;
+  subRows: PortfolioRow[];
+}
 
 export default function PortfolioTable({
   rows,
@@ -32,27 +48,43 @@ export default function PortfolioTable({
   csmNombres,
   periodo,
   onClickCliente,
+  titleOverride,
+  subtitleOverride,
+  footerOverride,
+  disableDrilldown = false,
+  dimUnassigned = true,
 }: {
   rows: PortfolioRow[];
   meta: PortfolioMeta;
   loading: boolean;
   error: string | null;
   clientes: ClienteRow[];
-  /** Mapeo email → nombre legible (ej: "dtibaquira@truora.com" → "Daniela Tibaquirá").
-   *  Cargado desde la tabla `csm` de Supabase en Dashboard.tsx. */
+  /** Mapeo email → nombre legible. Cargado desde la tabla `csm` en Dashboard.tsx. */
   csmNombres: Map<string, string>;
   periodo: PeriodoSeleccion;
-  onClickCliente: (c: ClienteRow) => void;
+  onClickCliente?: (c: ClienteRow) => void;
+  /** Modo lookup (consulta efímera de un TCI externo): overrides cosméticos
+   *  para reusar la misma tabla sin la semántica de cartera. */
+  titleOverride?: string;
+  subtitleOverride?: React.ReactNode;
+  footerOverride?: React.ReactNode;
+  /** Desactiva el drill-down al click (lookup externo no tiene cliente local). */
+  disableDrilldown?: boolean;
+  /** Atenúa filas cuyo TCI no matchea un cliente local. En lookup = false. */
+  dimUnassigned?: boolean;
 }) {
   const [filter, setFilter] = useState("");
   const [sortField, setSortField] = useState<SortField>("usage");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // TCI → ClienteRow para resolver clickability + datos de display.
-  // Filtramos admins (Ana Marquez, JD) ANTES del map: tienen los mismos TCIs
-  // que el CSM real (RLS pattern, no son CSMs reales). Sin filtro, el .set()
-  // sobreescribiría al CSM real con el admin y la columna mostraría "jdiaz" en
-  // vez de "Daniela Tibaquirá". Ver memoria feedback_admin_duplicate_pattern.md.
+  // Filtros multi-select (default: todos seleccionados = sin filtro).
+  const [prodSel, setProdSel] = useState<Set<string> | null>(null);
+  const [subSel, setSubSel] = useState<Set<string> | null>(null);
+
+  // TCI → ClienteRow para clickability + datos de display. Filtramos admins
+  // (Ana, JD) ANTES del map: comparten TCIs con el CSM real (RLS pattern) y el
+  // .set() los sobreescribiría. Ver feedback_admin_duplicate_pattern.md.
   const tciToCliente = useMemo(() => {
     const m = new Map<string, ClienteRow>();
     const realCsms = clientes.filter((c) => !ADMIN_EMAILS.has((c.csm_email ?? "").toLowerCase()));
@@ -64,44 +96,90 @@ export default function PortfolioTable({
     return m;
   }, [clientes]);
 
-  const filtered = useMemo(() => {
+  // Universo de productos y sub-productos presentes (para los dropdowns).
+  const allProducts = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.product))).sort(),
+    [rows]
+  );
+  const allSubProducts = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.sub_product))).sort(),
+    [rows]
+  );
+
+  // Resuelve nombre y CSM visibles de un TCI (canonical desde Supabase).
+  const visibleName = (r: PortfolioRow): string =>
+    tciToCliente.get(r.client_id)?.nombre ?? r.client_name ?? "";
+  const visibleCsm = (r: PortfolioRow): string => {
+    const email = tciToCliente.get(r.client_id)?.csm_email ?? "";
+    if (email) return csmNombres.get(email) ?? email;
+    return r.csm_owner ?? "";
+  };
+
+  // 1) Filtrar filas planas por producto + sub-producto + búsqueda.
+  const filteredRows = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return rows;
     return rows.filter((r) => {
-      // El filtro busca contra LO QUE EL USUARIO VE: nombre canonical de
-      // Supabase (cliente.nombre) y nombre legible del CSM (csmNombres),
-      // no solo lo que viene de SF crudo. Caso real: SF guarda "Adelantos"
-      // pero Supabase tiene "PayJoy Colombia" — buscar "PayJoy" no encontraba
-      // nada con el filtro antiguo aunque la columna mostraba "PayJoy Colombia".
-      const cliente = tciToCliente.get(r.client_id);
-      const nombreVisible = cliente?.nombre ?? r.client_name ?? "";
-      const csmEmail = cliente?.csm_email ?? "";
-      const csmNombreVisible = csmEmail ? (csmNombres.get(csmEmail) ?? csmEmail) : (r.csm_owner ?? "");
+      if (prodSel && !prodSel.has(r.product)) return false;
+      if (subSel && !subSel.has(r.sub_product)) return false;
+      if (!q) return true;
+      const nombre = visibleName(r).toLowerCase();
+      const csm = visibleCsm(r).toLowerCase();
       return (
         r.client_id.toLowerCase().includes(q) ||
-        nombreVisible.toLowerCase().includes(q) ||
-        (r.client_name ?? "").toLowerCase().includes(q) ||  // fallback al SF crudo
-        csmNombreVisible.toLowerCase().includes(q) ||
-        csmEmail.toLowerCase().includes(q) ||
-        r.product.toLowerCase().includes(q)
+        nombre.includes(q) ||
+        (r.client_name ?? "").toLowerCase().includes(q) ||
+        csm.includes(q) ||
+        r.product.toLowerCase().includes(q) ||
+        r.sub_product.toLowerCase().includes(q)
       );
     });
-  }, [rows, filter, tciToCliente, csmNombres]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, filter, prodSel, subSel, tciToCliente, csmNombres]);
 
+  // 2) Agrupar por (cliente, producto). Total = suma de sub-productos mostrados.
+  const groups = useMemo(() => {
+    const m = new Map<string, GroupRow>();
+    for (const r of filteredRows) {
+      const key = `${r.client_id}|${r.product}`;
+      const g = m.get(key);
+      if (g) {
+        g.total += r.usage;
+        g.subRows.push(r);
+      } else {
+        m.set(key, {
+          key,
+          client_id: r.client_id,
+          client_name: r.client_name,
+          csm_owner: r.csm_owner,
+          product: r.product,
+          total: r.usage,
+          subRows: [r],
+        });
+      }
+    }
+    for (const g of m.values()) g.subRows.sort((a, b) => b.usage - a.usage);
+    return Array.from(m.values());
+  }, [filteredRows]);
+
+  // 3) Ordenar grupos.
   const sorted = useMemo(() => {
-    const arr = filtered.slice();
+    const arr = groups.slice();
     arr.sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case "usage":
-          cmp = a.usage - b.usage;
+          cmp = a.total - b.total;
           break;
         case "client_name":
-          cmp = (a.client_name ?? "").localeCompare(b.client_name ?? "");
+          cmp = (tciToCliente.get(a.client_id)?.nombre ?? a.client_name ?? "")
+            .localeCompare(tciToCliente.get(b.client_id)?.nombre ?? b.client_name ?? "");
           break;
-        case "csm_owner":
-          cmp = (a.csm_owner ?? "").localeCompare(b.csm_owner ?? "");
+        case "csm_owner": {
+          const ca = visibleCsm(a.subRows[0]);
+          const cb = visibleCsm(b.subRows[0]);
+          cmp = ca.localeCompare(cb);
           break;
+        }
         case "product":
           cmp = a.product.localeCompare(b.product);
           break;
@@ -109,7 +187,8 @@ export default function PortfolioTable({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return arr;
-  }, [filtered, sortField, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, sortField, sortDir, tciToCliente, csmNombres]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -118,6 +197,15 @@ export default function PortfolioTable({
       setSortField(field);
       setSortDir(field === "usage" ? "desc" : "asc");
     }
+  };
+
+  const toggleExpand = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   if (loading) {
@@ -174,22 +262,26 @@ export default function PortfolioTable({
             alignItems: "center",
             justifyContent: "space-between",
             gap: 16,
-            marginBottom: 14,
+            marginBottom: 12,
             flexWrap: "wrap",
           }}
         >
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: S.text }}>
-              Consumo de cartera
+              {titleOverride ?? "Consumo de cartera"}
             </div>
             <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
-              {sorted.length} de {rows.length} {rows.length === 1 ? "fila" : "filas"} ·
-              {" "}suma del rango {periodo.inicio} → {periodo.fin}
-              {meta.ultimaActualizacion && (
+              {subtitleOverride ?? (
                 <>
-                  {" · "}
-                  <RefreshCw size={10} style={{ display: "inline", marginRight: 3 }} />
-                  Actualizado {fmtRelTime(meta.ultimaActualizacion)}
+                  {sorted.length} {sorted.length === 1 ? "línea" : "líneas"} (cliente × producto) ·
+                  {" "}suma del rango {periodo.inicio} → {periodo.fin}
+                  {meta.ultimaActualizacion && (
+                    <>
+                      {" · "}
+                      <RefreshCw size={10} style={{ display: "inline", marginRight: 3 }} />
+                      Actualizado {fmtRelTime(meta.ultimaActualizacion)}
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -209,7 +301,7 @@ export default function PortfolioTable({
             />
             <input
               type="text"
-              placeholder="Filtrar por nombre, TCI, CSM o producto…"
+              placeholder="Filtrar por nombre, TCI, CSM, producto o sub-producto…"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               style={{
@@ -227,114 +319,151 @@ export default function PortfolioTable({
           </div>
         </div>
 
+        {/* Filtros multi-select Producto / Sub-producto */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <MultiSelectDropdown
+            label="Producto"
+            options={allProducts}
+            selected={prodSel}
+            onChange={setProdSel}
+            renderOption={(p) => productConfig(p).label}
+          />
+          <MultiSelectDropdown
+            label="Sub-producto"
+            options={allSubProducts}
+            selected={subSel}
+            onChange={setSubSel}
+            renderOption={fmtSubProduct}
+          />
+        </div>
+
         {/* Tabla scroll vertical */}
         <div style={{ overflow: "auto", maxHeight: 580, borderRadius: 8 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ position: "sticky", top: 0, background: S.surface, zIndex: 1 }}>
-                <Th align="left" width={250}>Client ID</Th>
-                <Th
-                  align="left"
-                  sortable
-                  active={sortField === "client_name"}
-                  dir={sortDir}
-                  onClick={() => handleSort("client_name")}
-                >
-                  Cliente
-                </Th>
-                <Th
-                  align="left"
-                  sortable
-                  active={sortField === "csm_owner"}
-                  dir={sortDir}
-                  onClick={() => handleSort("csm_owner")}
-                >
-                  CSM
-                </Th>
-                <Th
-                  align="left"
-                  sortable
-                  active={sortField === "product"}
-                  dir={sortDir}
-                  onClick={() => handleSort("product")}
-                >
-                  Producto
-                </Th>
-                <Th
-                  align="right"
-                  sortable
-                  active={sortField === "usage"}
-                  dir={sortDir}
-                  onClick={() => handleSort("usage")}
-                >
-                  Consumo
-                </Th>
+                <Th align="left" width={28} />
+                <Th align="left" width={230}>Client ID</Th>
+                <Th align="left" sortable active={sortField === "client_name"} dir={sortDir}
+                  onClick={() => handleSort("client_name")}>Cliente</Th>
+                <Th align="left" sortable active={sortField === "csm_owner"} dir={sortDir}
+                  onClick={() => handleSort("csm_owner")}>CSM</Th>
+                <Th align="left" sortable active={sortField === "product"} dir={sortDir}
+                  onClick={() => handleSort("product")}>Producto</Th>
+                <Th align="right" sortable active={sortField === "usage"} dir={sortDir}
+                  onClick={() => handleSort("usage")}>Consumo</Th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r, i) => {
-                const cliente = tciToCliente.get(r.client_id);
-                const isClickable = !!cliente;
+              {sorted.map((g) => {
+                const cliente = tciToCliente.get(g.client_id);
+                const isClickable = !disableDrilldown && !!cliente;
+                const isDim = dimUnassigned && !cliente;
+                const goCliente = () => { if (isClickable && cliente) onClickCliente?.(cliente); };
+                const isOpen = expanded.has(g.key);
+                const cfg = productConfig(g.product);
                 return (
-                  <tr
-                    key={`${r.client_id}|${r.product}|${i}`}
-                    onClick={() => cliente && onClickCliente(cliente)}
-                    style={{
-                      borderTop: `1px solid ${S.border}`,
-                      cursor: isClickable ? "pointer" : "default",
-                      opacity: isClickable ? 1 : 0.5,
-                      transition: "background-color 120ms ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (isClickable) e.currentTarget.style.background = "rgba(124,77,255,0.08)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    <Td>
-                      <code style={{
-                        fontSize: 10,
-                        color: S.muted,
-                        fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                      }}>
-                        {r.client_id}
-                      </code>
-                    </Td>
-                    <Td>
-                      <span style={{ color: S.text, fontWeight: 600 }}>
-                        {/* Preferir el nombre de Supabase (canonical, lo que mantiene
-                            el equipo CSM). El CLIENT_NAME_DYNAMODB_TABLE de SF
-                            puede tener nombres tecnicos / stale (ej "Adelantos"
-                            cuando en Supabase es "PayJoy Colombia"). */}
-                        {cliente?.nombre ?? r.client_name ?? <em style={{ color: S.dim }}>—</em>}
-                      </span>
-                    </Td>
-                    <Td>
-                      <span style={{ color: S.muted }}>
-                        {/* Preferimos: nombre legible del csm (lookup email→nombre
-                            en tabla `csm`), sino fallback al email, sino al
-                            csm_owner de SF (que ya viene NULL post-2026-05-06,
-                            queda solo por defensa), sino guion. */}
-                        {(() => {
-                          const email = cliente?.csm_email ?? null;
-                          const nombre = email ? csmNombres.get(email) : null;
-                          if (nombre) return nombre;
-                          if (email)  return email;
-                          if (r.csm_owner) return r.csm_owner;
-                          return <em style={{ color: S.dim }}>—</em>;
-                        })()}
-                      </span>
-                    </Td>
-                    <Td>
-                      <ProductPill product={r.product} />
-                    </Td>
-                    <Td align="right">
-                      <span style={{ color: S.text, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                        {fmtNum(r.usage)}
-                      </span>
-                    </Td>
-                  </tr>
+                  <FragmentGroup key={g.key}>
+                    {/* Fila-header (cliente, producto) */}
+                    <tr
+                      style={{
+                        borderTop: `1px solid ${S.border}`,
+                        cursor: isClickable ? "pointer" : "default",
+                        opacity: isDim ? 0.5 : 1,
+                        transition: "background-color 120ms ease",
+                        background: isOpen ? "rgba(124,77,255,0.05)" : "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (isClickable && !isOpen) e.currentTarget.style.background = "rgba(124,77,255,0.08)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = isOpen ? "rgba(124,77,255,0.05)" : "transparent";
+                      }}
+                    >
+                      {/* Chevron expand — stopPropagation para no disparar el drill-down */}
+                      <Td>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(g.key); }}
+                          title={isOpen ? "Colapsar sub-productos" : "Ver sub-productos"}
+                          style={{
+                            background: "transparent", border: "none", cursor: "pointer",
+                            color: S.muted, padding: 2, display: "inline-flex", alignItems: "center",
+                          }}
+                        >
+                          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      </Td>
+                      <Td onClick={goCliente}>
+                        <code style={{ fontSize: 10, color: S.muted, fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                          {g.client_id}
+                        </code>
+                      </Td>
+                      <Td onClick={goCliente}>
+                        <span style={{ color: S.text, fontWeight: 600 }}>
+                          {cliente?.nombre ?? g.client_name ?? <em style={{ color: S.dim }}>—</em>}
+                        </span>
+                      </Td>
+                      <Td onClick={goCliente}>
+                        <span style={{ color: S.muted }}>
+                          {(() => {
+                            const email = cliente?.csm_email ?? null;
+                            const nombre = email ? csmNombres.get(email) : null;
+                            if (nombre) return nombre;
+                            if (email) return email;
+                            if (g.csm_owner) return g.csm_owner;
+                            return <em style={{ color: S.dim }}>—</em>;
+                          })()}
+                        </span>
+                      </Td>
+                      <Td onClick={goCliente}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <ProductPill product={g.product} />
+                          <span style={{ fontSize: 10, color: S.dim }}>
+                            {g.subRows.length} {g.subRows.length === 1 ? "sub" : "subs"}
+                          </span>
+                        </span>
+                      </Td>
+                      <Td align="right" onClick={goCliente}>
+                        <span style={{ color: S.text, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                          {fmtNum(g.total)}
+                        </span>
+                      </Td>
+                    </tr>
+
+                    {/* Sub-filas (sub-productos) */}
+                    {isOpen && g.subRows.map((sr, j) => {
+                      const nota = (sr.nota ?? "").trim();
+                      return (
+                        <tr key={`${g.key}|${sr.sub_product}|${j}`} style={{ background: "rgba(255,255,255,0.015)" }}>
+                          <Td />
+                          <Td />
+                          <Td>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, paddingLeft: 8 }}>
+                              <span style={{ width: 3, height: 14, borderRadius: 2, background: `${cfg.color}88` }} />
+                              <span style={{ color: S.text, fontSize: 12 }}>{fmtSubProduct(sr.sub_product)}</span>
+                              {nota && (
+                                <span title={nota} style={{ display: "inline-flex", color: S.dim, cursor: "help" }}>
+                                  <Info size={12} />
+                                </span>
+                              )}
+                            </span>
+                          </Td>
+                          <Td colSpan={2}>
+                            {nota && (
+                              <span style={{ color: S.dim, fontSize: 10.5, whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+                                {nota.replace(/\n/g, "  ·  ")}
+                              </span>
+                            )}
+                          </Td>
+                          <Td align="right">
+                            <span style={{ color: S.muted, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                              {fmtNum(sr.usage)}
+                            </span>
+                          </Td>
+                        </tr>
+                      );
+                    })}
+                  </FragmentGroup>
                 );
               })}
             </tbody>
@@ -343,8 +472,14 @@ export default function PortfolioTable({
 
         {/* Footer info */}
         <div style={{ fontSize: 11, color: S.dim, marginTop: 10, lineHeight: 1.5 }}>
-          Click en una fila → drill-down con los 4 charts del cliente. Las filas atenuadas
-          son TCIs sin cliente asignado en CSM Center (no clickeables).
+          {footerOverride ?? (
+            <>
+              ▸ expandí una fila para ver el desglose por sub-producto · click en la fila → drill-down del cliente.
+              La <Info size={10} style={{ display: "inline", verticalAlign: "middle" }} /> NOTA muestra el detalle
+              fino (revisión manual, categoría de mensaje, tipo de check por país) del mes más reciente del rango.
+              Filas atenuadas = TCIs sin cliente asignado en CSM Center.
+            </>
+          )}
         </div>
       </Card>
     </motion.div>
@@ -353,31 +488,23 @@ export default function PortfolioTable({
 
 /* ─────────────────────────── Subcomponentes ─────────────────────────── */
 
+/** Wrapper para devolver múltiples <tr> sin nodo extra en el DOM de la tabla. */
+function FragmentGroup({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        background: S.surface,
-        border: `1px solid ${S.border}`,
-        borderRadius: 14,
-        padding: "16px 18px 14px",
-      }}
-    >
+    <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 14, padding: "16px 18px 14px" }}>
       {children}
     </div>
   );
 }
 
 function Th({
-  children,
-  align = "left",
-  sortable = false,
-  active = false,
-  dir,
-  onClick,
-  width,
+  children, align = "left", sortable = false, active = false, dir, onClick, width,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   align?: "left" | "right";
   sortable?: boolean;
   active?: boolean;
@@ -389,47 +516,30 @@ function Th({
     <th
       onClick={onClick}
       style={{
-        textAlign: align,
-        padding: "10px 12px",
-        fontSize: 11,
-        fontWeight: 700,
-        color: active ? S.text : S.muted,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
-        cursor: sortable ? "pointer" : "default",
-        userSelect: "none",
-        borderBottom: `1px solid ${S.border}`,
-        whiteSpace: "nowrap",
-        width,
+        textAlign: align, padding: "10px 12px", fontSize: 11, fontWeight: 700,
+        color: active ? S.text : S.muted, letterSpacing: "0.04em", textTransform: "uppercase",
+        cursor: sortable ? "pointer" : "default", userSelect: "none",
+        borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap", width,
       }}
     >
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         {children}
-        {sortable && (
-          active
-            ? (dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />)
-            : <ArrowUpDown size={10} style={{ opacity: 0.5 }} />
-        )}
+        {sortable && (active ? (dir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={10} style={{ opacity: 0.5 }} />)}
       </span>
     </th>
   );
 }
 
 function Td({
-  children,
-  align = "left",
+  children, align = "left", onClick, colSpan,
 }: {
-  children: React.ReactNode;
+  children?: React.ReactNode;
   align?: "left" | "right";
+  onClick?: () => void;
+  colSpan?: number;
 }) {
   return (
-    <td
-      style={{
-        padding: "9px 12px",
-        textAlign: align,
-        verticalAlign: "middle",
-      }}
-    >
+    <td onClick={onClick} colSpan={colSpan} style={{ padding: "9px 12px", textAlign: align, verticalAlign: "middle" }}>
       {children}
     </td>
   );
@@ -440,16 +550,9 @@ function ProductPill({ product }: { product: string }) {
   return (
     <span
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        padding: "3px 9px",
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 600,
-        background: `${cfg.color}18`,
-        color: cfg.color,
-        border: `1px solid ${cfg.color}30`,
+        display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 9px",
+        borderRadius: 999, fontSize: 11, fontWeight: 600,
+        background: `${cfg.color}18`, color: cfg.color, border: `1px solid ${cfg.color}30`,
         whiteSpace: "nowrap",
       }}
     >
@@ -458,19 +561,132 @@ function ProductPill({ product }: { product: string }) {
   );
 }
 
-/** Mapeo PRODUCT (de SHARED_COUNTERS_DYNAMO) → label legible + color del producto raíz. */
+/** Dropdown custom multi-select (estilo shell: pill + ChevronDown + panel absolute
+ *  con checkboxes + Todos/Ninguno, click-outside y ESC). `selected = null` = todos. */
+function MultiSelectDropdown({
+  label, options, selected, onChange, renderOption,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string> | null;
+  onChange: (s: Set<string> | null) => void;
+  renderOption: (o: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const count = selected === null ? options.length : selected.size;
+  const activeFilter = selected !== null && selected.size !== options.length;
+
+  const toggle = (o: string) => {
+    const base = selected === null ? new Set(options) : new Set(selected);
+    if (base.has(o)) base.delete(o);
+    else base.add(o);
+    // Si quedan todos → volver a null (sin filtro).
+    onChange(base.size === options.length ? null : base);
+  };
+
+  const color = "#7C4DFF";
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 600,
+          background: activeFilter ? `${color}18` : "transparent",
+          color: activeFilter ? color : S.muted,
+          border: `1px solid ${activeFilter ? `${color}50` : S.border}`,
+          cursor: "pointer",
+        }}
+      >
+        {label} {activeFilter ? `(${count}/${options.length})` : "(Todos)"}
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.12 }}
+          style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20,
+            minWidth: 220, maxHeight: 320, overflow: "auto",
+            background: S.surfaceHi ?? "#1B2F4D", border: `1px solid ${S.border}`,
+            borderRadius: 12, padding: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.4)",
+          }}
+        >
+          <div style={{ display: "flex", gap: 8, padding: "4px 6px 8px", borderBottom: `1px solid ${S.border}`, marginBottom: 6 }}>
+            <button onClick={() => onChange(null)} style={miniBtn(color)}>Todos</button>
+            <button onClick={() => onChange(new Set())} style={miniBtn(S.muted)}>Ninguno</button>
+          </div>
+          {options.map((o) => {
+            const checked = selected === null || selected.has(o);
+            return (
+              <label
+                key={o}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "6px 6px",
+                  fontSize: 12, color: S.text, cursor: "pointer", borderRadius: 8,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                <input type="checkbox" checked={checked} onChange={() => toggle(o)} style={{ accentColor: color, cursor: "pointer" }} />
+                {renderOption(o)}
+              </label>
+            );
+          })}
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+function miniBtn(color: string): React.CSSProperties {
+  return {
+    background: "transparent", border: `1px solid ${color}40`, color,
+    borderRadius: 999, fontSize: 11, fontWeight: 600, padding: "3px 10px", cursor: "pointer",
+  };
+}
+
+/** Mapeo PRODUCT → label legible + color del producto raíz. */
 function productConfig(p: string): { label: string; color: string } {
   const slug = p.toLowerCase();
-  if (slug === "validations")  return { label: "Validaciones",          color: "#00C9A7" };
-  if (slug === "checks")       return { label: "Checks",                color: "#6C3FC5" };
-  if (slug === "outbound")     return { label: "Mensajes salientes",    color: "#0891B2" };
+  if (slug === "validations")          return { label: "Validations",         color: "#00C9A7" };
+  if (slug === "checks")               return { label: "Checks",              color: "#6C3FC5" };
+  if (slug === "premium checks")       return { label: "Premium checks",      color: "#A855F7" };
+  if (slug === "continuous checks")    return { label: "Continuous checks",   color: "#8B5CF6" };
+  if (slug === "truconnect")           return { label: "Truconnect",          color: "#0891B2" };
+  if (slug === "zapsign")              return { label: "Zapsign",             color: "#F59E0B" };
+  if (slug === "document recognition") return { label: "Document recognition", color: "#38BDF8" };
+  if (slug === "forms")                return { label: "Forms",               color: "#EC4899" };
+  // legacy buckets (validations/checks/outbound/inbound/notification) por si quedan filas viejas
+  if (slug === "outbound")     return { label: "Mensajes salientes",      color: "#0891B2" };
   if (slug === "inbound")      return { label: "Conversaciones entrantes", color: "#22C55E" };
-  if (slug === "notification") return { label: "Notificaciones",        color: "#94A3B8" };
-  // fallback: title-case
-  return {
-    label: p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(),
-    color: "#7C4DFF",
-  };
+  if (slug === "notification") return { label: "Notificaciones",          color: "#94A3B8" };
+  return { label: p.charAt(0).toUpperCase() + p.slice(1).toLowerCase(), color: "#7C4DFF" };
+}
+
+/** Formato del sub-producto: códigos de país (2-3 letras) en MAYÚSCULA, resto
+ *  con capitalización suave. Ej: "co" → "CO", "passive liveness" → "Passive liveness". */
+function fmtSubProduct(s: string): string {
+  if (!s) return "—";
+  if (s.length <= 3 && /^[a-z]+$/.test(s)) return s.toUpperCase(); // país: co, mx, all
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** "hace 4 horas" / "hace 2 días". Para el meta del header. */

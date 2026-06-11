@@ -321,8 +321,11 @@ ORDER BY periodo_mes DESC, producto_root, product_identifier;
 -- UUID:         69e67323-9847-4dc4-8759-a244f09d6e9e
 -- Uso:          alimenta la tabla cacheada portfolio_consumption en Supabase
 --               (cron L/M/V 6 AM BOG) para que /dashboard sea instantaneo.
--- Recibe lista de TCIs, devuelve consumo de los ultimos 3 meses por bucket.
--- Buckets: validations, checks, truconnect (suma outbound + notif + inbound).
+--
+-- ⚠️ STALE (2026-06-11): este endpoint fue REESCRITO in-place a grano SUB-PRODUCTO
+--    (query maestra de counters de Truora, param {client_id:String} CSV, 8 productos).
+--    La fuente VIVA es `clickhouse/portfolio_subproduct_migration.sql`. El SQL de abajo
+--    es el histórico de 3 buckets (validations/checks/truconnect) — ya no es el productivo.
 -- ════════════════════════════════════════════════════════════
 WITH base AS (
   SELECT

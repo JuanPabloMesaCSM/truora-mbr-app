@@ -4,11 +4,21 @@ import type { PeriodoSeleccion } from "@/components/dashboard/types";
 
 /**
  * Lee public.portfolio_consumption (snapshot escrito por el cron LMV 6AM
- * "Portfolio Consumption Sync") y agrega por (client_id, product) sumando
- * el `usage` de todos los meses dentro del rango elegido.
+ * "Portfolio Consumption Sync") y agrega por (client_id, product, sub_product)
+ * sumando el `usage` de todos los meses dentro del rango elegido.
  *
- * Resultado: una fila por (cliente, producto) con el consumo total del rango.
- * Sin charts: sirve la vista panorámica del Dashboard de Cartera.
+ * Desde 2026-06-11 la tabla tiene grano SUB-PRODUCTO (product identifier):
+ * cada fila es (mes, cliente, producto, sub_product). El hook devuelve filas
+ * agregadas al grano (cliente, producto, sub_product); PortfolioTable las
+ * agrupa por (cliente, producto) para la fila-header expandible.
+ *
+ * El total por producto = suma de sus sub-productos (las filas-total
+ * 'checks completos'/'interacciones' NO se persisten — se descartan en el
+ * Code node n8n para no doble-contar).
+ *
+ * `nota` se conserva del mes MÁS RECIENTE del rango (best-effort): es un
+ * desglose fino por mes (manual review / message_category / check_type por
+ * país) que no se puede sumar entre meses de forma limpia.
  *
  * RLS team-wide: cualquier email en `public.csm` puede leer la tabla.
  */
@@ -17,7 +27,10 @@ export interface PortfolioRow {
   client_name: string | null;
   csm_owner:   string | null;
   product:     string;
+  sub_product: string;
   usage:       number;
+  /** NOTA del mes más reciente del rango (desglose fino, best-effort). */
+  nota:        string | null;
 }
 
 export interface PortfolioMeta {
@@ -43,7 +56,7 @@ export function usePortfolioConsumption(periodo: PeriodoSeleccion) {
 
         const { data, error: dbError } = await supabase
           .from("portfolio_consumption")
-          .select("client_id, client_name, csm_owner, product, usage, periodo_mes, fecha_actualizado")
+          .select("client_id, client_name, csm_owner, product, sub_product, usage, nota, periodo_mes, fecha_actualizado")
           .gte("periodo_mes", inicioMes)
           .lte("periodo_mes", finMes);
 
@@ -59,32 +72,45 @@ export function usePortfolioConsumption(periodo: PeriodoSeleccion) {
 
         const raw = data ?? [];
 
-        // Agregar por (client_id, product). Usamos client_name más reciente
-        // (el cron lo refresca igual cada corrida; en práctica no varía dentro
-        // del mismo cliente para el mismo rango).
-        const aggMap = new Map<string, PortfolioRow>();
+        // Agregar por (client_id, product, sub_product). Sumamos usage sobre los
+        // meses del rango; para `nota` conservamos la del periodo_mes más reciente.
+        type Acc = PortfolioRow & { _notaMes: string };
+        const aggMap = new Map<string, Acc>();
         let ultActISO: string | null = null;
 
         for (const r of raw) {
-          const key = `${r.client_id}|${r.product}`;
+          const subProduct = (r.sub_product ?? "") as string;
+          const key = `${r.client_id}|${r.product}|${subProduct}`;
+          const periodoMes = (r.periodo_mes ?? "") as string;
           const existing = aggMap.get(key);
           if (existing) {
             existing.usage += Number(r.usage);
+            // nota del mes más reciente
+            if (periodoMes > existing._notaMes) {
+              existing.nota = (r.nota ?? null) as string | null;
+              existing._notaMes = periodoMes;
+            }
           } else {
             aggMap.set(key, {
-              client_id:   r.client_id,
-              client_name: r.client_name,
-              csm_owner:   r.csm_owner,
-              product:     r.product,
+              client_id:   r.client_id as string,
+              client_name: (r.client_name ?? null) as string | null,
+              csm_owner:   (r.csm_owner ?? null) as string | null,
+              product:     r.product as string,
+              sub_product: subProduct,
               usage:       Number(r.usage),
+              nota:        (r.nota ?? null) as string | null,
+              _notaMes:    periodoMes,
             });
           }
           if (r.fecha_actualizado && (!ultActISO || r.fecha_actualizado > ultActISO)) {
-            ultActISO = r.fecha_actualizado;
+            ultActISO = r.fecha_actualizado as string;
           }
         }
 
-        const aggRows = Array.from(aggMap.values()).sort((a, b) => b.usage - a.usage);
+        const aggRows: PortfolioRow[] = Array.from(aggMap.values())
+          .map(({ _notaMes, ...rest }) => rest)
+          .sort((a, b) => b.usage - a.usage);
+
         setRows(aggRows);
         setMeta({ ultimaActualizacion: ultActISO, filasOrigen: raw.length });
         setLoading(false);
