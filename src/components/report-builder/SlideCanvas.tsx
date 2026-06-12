@@ -279,10 +279,6 @@ function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1, convTotal
   const usuariosUnicos   = b2 ? parseInt(b2.col1 || "0", 10) : null;
   const convUsuarioPct   = b2?.col3;
   const pctFallo         = totalProcesos > 0 ? (100 - convPct).toFixed(1) : "0.0";
-  // Consumo facturable (CH, bloque aditivo): validaciones que el cliente ve en su
-  // consola/factura. NO es lo mismo que procesos (1 proceso → 0..N validaciones).
-  const cfRows           = data["consumo_facturable"] || [];
-  const billableTotal    = cfRows.reduce((s, r) => s + parseInt(r.col2 || "0", 10), 0);
 
   useEffect(() => {
     if (!chartRef.current || totalProcesos === 0) return;
@@ -314,18 +310,6 @@ function Di1Slide({ data, theme, clientName, periodLabel, pageNum = 1, convTotal
       <div style={bodyStyle}>
         <div style={{ width: "36%", display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
           <KpiCard label="Procesos iniciados" value={num(b1?.col1)} delta={variacion} theme={theme} />
-          {billableTotal > 0 && (
-            <div style={{ padding: "8px 14px", borderRadius: 12, background: "rgba(0,201,167,0.10)",
-              border: "1px solid rgba(0,201,167,0.35)", display: "flex", alignItems: "center",
-              justifyContent: "space-between", gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
-                Consumo facturable
-              </span>
-              <span style={{ fontSize: 15, fontWeight: 800, color: "#00C9A7", whiteSpace: "nowrap" }}>
-                {billableTotal.toLocaleString("es-CO")} validaciones
-              </span>
-            </div>
-          )}
           <KpiCard label="Tasa de conversión" value={`${num(b1?.col8, 1)}%`} valueColor="#00C9A7" footnote={`Anterior: ${convPrev.toFixed(1)}%`} theme={theme} />
           <KpiCard label="Usuarios únicos" value={usuariosUnicos !== null ? usuariosUnicos.toLocaleString("es-CO") : "—"}
             footnote={convUsuarioPct ? `${num(convUsuarioPct, 1)}% conversión por usuario` : undefined} theme={theme} />
@@ -639,7 +623,10 @@ function Di5Slide({ data, theme, clientName, periodLabel, pageNum = 5 }: {
   clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
 }) {
   const t = tok(theme);
-  const flujos = data["5_flujos"] || [];
+  // Orden garantizado descendente por TOTAL (col2): el SQL no garantiza el orden de salida.
+  const flujos = [...(data["5_flujos"] || [])].sort(
+    (a, b) => parseInt(b.col2 || "0", 10) - parseInt(a.col2 || "0", 10)
+  );
   const cols = ["Flujo", "Total", "Exitosos", "Fallidos", "Conversión", "MoM"];
   const colW  = ["36%", "13%", "13%", "13%", "15%", "10%"];
 
@@ -1634,6 +1621,139 @@ function Bgc3Slide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
 }
 
 /* ════════════════════════════════════════════════════════════
+   BGC-3b | Matriz Score × País (pivot completo 0-10)
+   Reusa el bloque 4_score_por_pais (el mismo de BGC-3). Filas = score 0-10,
+   columnas = país (n.º checks + % dentro del país) + "Total general"
+   (n.º checks + % sobre el total). Fila Total abajo. Pedido por clientes que
+   arman este pivot en Excel. Cero cambio de datos: el bloque ya llega completo.
+══════════════════════════════════════════════════════════════ */
+function BgcScoreMatrizSlide({ data, theme, clientName, periodLabel, pageNum = 3 }: {
+  data: Record<string, BlockRow[]>; theme: Theme;
+  clientName: string; periodLabel: string; pageNum?: number; totalPages?: number;
+}) {
+  const t = tok(theme);
+  const rows = data["4_score_por_pais"] || [];
+
+  // Pivot: country -> score(0-10) -> count. (col1=country, col2=score, col3=count)
+  const cell: Record<string, Record<number, number>> = {};
+  const totByCountry: Record<string, number> = {};
+  for (const r of rows) {
+    const c = r.col1 || "—";
+    const s = parseInt(r.col2 || "0", 10);
+    const n = parseInt(r.col3 || "0", 10);
+    if (s < 0 || s > 10) continue;
+    if (!cell[c]) cell[c] = {};
+    cell[c][s] = (cell[c][s] || 0) + n;
+    totByCountry[c] = (totByCountry[c] || 0) + n;
+  }
+  let countries = Object.keys(totByCountry).sort((a, b) => totByCountry[b] - totByCountry[a]);
+
+  // Cap a 8 países visibles para que entre/imprima; el resto se agrega en "Otros"
+  // (NO se trunca: la columna Otros suma los países restantes).
+  const MAX = 8;
+  if (countries.length > MAX) {
+    const rest = countries.slice(MAX);
+    cell["Otros"] = {};
+    let tot = 0;
+    for (const c of rest) {
+      for (let s = 0; s <= 10; s++) if (cell[c][s]) cell["Otros"][s] = (cell["Otros"][s] || 0) + cell[c][s];
+      tot += totByCountry[c];
+    }
+    totByCountry["Otros"] = tot;
+    countries = [...countries.slice(0, MAX), "Otros"];
+  }
+
+  const grandTotal = countries.reduce((a, c) => a + totByCountry[c], 0);
+  const totByScore: Record<number, number> = {};
+  for (let s = 0; s <= 10; s++) totByScore[s] = countries.reduce((a, c) => a + (cell[c][s] || 0), 0);
+
+  const bandColor = (s: number) => (s <= 6 ? BGC.danger : BGC.success);
+  const fmt = (n: number) => n.toLocaleString("es-CO");
+  const pct = (n: number, d: number) => (d > 0 ? (n / d * 100).toFixed(1) : "0.0");
+
+  return (
+    <SlideShell id="BGC-3b" theme={theme}>
+      <SlideHeader title={`Detalle de score por país — ${periodLabel}`}
+        subtitle={`Background Check · ${clientName}`} theme={theme} />
+      <div style={{ ...bodyStyle, flexDirection: "column", gap: 8 }}>
+        {rows.length === 0 ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+            background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow, borderRadius: 14 }}>
+            <p style={{ fontSize: 15, color: t.textMuted }}>Sin checks con score en el período.</p>
+          </div>
+        ) : (
+          <>
+            <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
+              borderRadius: 14, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", background: BGC.primary, padding: "8px 12px", flexShrink: 0 }}>
+                <div style={{ width: 50, flexShrink: 0, fontSize: 10, fontWeight: 800, color: "#FFFFFF",
+                  textTransform: "uppercase", letterSpacing: "0.1em" }}>Score</div>
+                {countries.map(c => (
+                  <div key={c} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 10, fontWeight: 700,
+                    color: "#FFFFFF", textTransform: "uppercase", letterSpacing: "0.05em",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", padding: "0 2px" }}>{c}</div>
+                ))}
+                <div style={{ flex: 1.25, minWidth: 0, textAlign: "center", fontSize: 10, fontWeight: 800,
+                  color: "#FFFFFF", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total general</div>
+              </div>
+              {/* Score rows 0..10 */}
+              {Array.from({ length: 11 }, (_, s) => s).map(s => (
+                <div key={s} style={{ display: "flex", alignItems: "center", flex: 1, padding: "0 12px",
+                  background: s % 2 === 1 ? t.rowAlt : "transparent",
+                  borderBottom: `1px solid ${t.footerBorder}` }}>
+                  <div style={{ width: 50, flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 3, height: 18, borderRadius: 2, background: bandColor(s) }} />
+                    <span style={{ fontSize: 15, fontWeight: 800, color: bandColor(s) }}>{s}</span>
+                  </div>
+                  {countries.map(c => {
+                    const n = cell[c][s] || 0;
+                    return (
+                      <div key={c} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                        {n > 0 ? (
+                          <>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, lineHeight: 1.1 }}>{fmt(n)}</div>
+                            <div style={{ fontSize: 9, color: t.textMuted, lineHeight: 1.1 }}>{pct(n, totByCountry[c])}%</div>
+                          </>
+                        ) : <span style={{ fontSize: 12, color: t.footerBorder }}>·</span>}
+                      </div>
+                    );
+                  })}
+                  <div style={{ flex: 1.25, minWidth: 0, textAlign: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: bandColor(s), lineHeight: 1.1 }}>{fmt(totByScore[s])}</div>
+                    <div style={{ fontSize: 9, color: t.textMuted, lineHeight: 1.1 }}>{pct(totByScore[s], grandTotal)}%</div>
+                  </div>
+                </div>
+              ))}
+              {/* Total row */}
+              <div style={{ display: "flex", alignItems: "center", padding: "0 12px", height: 42, flexShrink: 0,
+                background: t.rowAlt, borderTop: `2px solid ${t.footerBorder}` }}>
+                <div style={{ width: 50, flexShrink: 0, fontSize: 11, fontWeight: 800, color: t.textPrimary,
+                  textTransform: "uppercase" }}>Total</div>
+                {countries.map(c => (
+                  <div key={c} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, lineHeight: 1.1 }}>{fmt(totByCountry[c])}</div>
+                    <div style={{ fontSize: 9, color: t.textMuted, lineHeight: 1.1 }}>100%</div>
+                  </div>
+                ))}
+                <div style={{ flex: 1.25, minWidth: 0, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, lineHeight: 1.1 }}>{fmt(grandTotal)}</div>
+                  <div style={{ fontSize: 9, color: t.textMuted, lineHeight: 1.1 }}>100%</div>
+                </div>
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 10, color: t.textMuted, flexShrink: 0 }}>
+              Cada celda: n.º de checks y su % sobre el total del país. <span style={{ color: BGC.danger, fontWeight: 700 }}>Score 0-6</span> = con advertencias · <span style={{ color: BGC.success, fontWeight: 700 }}>7-10</span> = exitosos.
+            </p>
+          </>
+        )}
+      </div>
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="BGC · Score por país (detalle)" />
+    </SlideShell>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════
    BGC-4 | Análisis de Labels de Riesgo
 ══════════════════════════════════════════════════════════════ */
 
@@ -2518,14 +2638,14 @@ function DiConsumoFacturableSlide({ data, theme, clientName, periodLabel, pageNu
 
   return (
     <SlideShell id="DI-CF" theme={theme}>
-      <SlideHeader title={`Consumo facturable — ${periodLabel}`}
+      <SlideHeader title={`Consumo por Validador — ${periodLabel}`}
         subtitle={`Digital Identity · ${clientName}`} theme={theme} />
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         {rows.length === 0 ? (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
             background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow, borderRadius: 14 }}>
             <p style={{ fontSize: 15, color: t.textMuted, textAlign: "center", maxWidth: 440 }}>
-              Este cliente no registró validaciones facturables en el periodo.
+              Este cliente no registró validaciones en el periodo.
             </p>
           </div>
         ) : (
@@ -2535,7 +2655,7 @@ function DiConsumoFacturableSlide({ data, theme, clientName, periodLabel, pageNu
               <div style={{ flex: 2, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
                 borderRadius: 14, padding: "14px 22px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
                 <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
-                  textTransform: "uppercase", letterSpacing: "0.12em" }}>Total validaciones facturables</p>
+                  textTransform: "uppercase", letterSpacing: "0.12em" }}>Total de validaciones</p>
                 <span style={{ fontSize: 40, fontWeight: 800, color: "#00C9A7", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
                   {totalGeneral.toLocaleString("es-CO")}
                 </span>
@@ -2598,7 +2718,7 @@ function DiConsumoFacturableSlide({ data, theme, clientName, periodLabel, pageNu
                 <div style={{ display: "flex", alignItems: "center", padding: "10px 20px",
                   borderTop: `2px solid ${t.footerBorder}`, background: t.rowAlt, flexShrink: 0 }}>
                   <div style={{ width: tColW[0], flexShrink: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>TOTAL FACTURABLE</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>TOTAL VALIDACIONES</span>
                   </div>
                   <div style={{ width: tColW[1], flexShrink: 0 }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: "#00C9A7" }}>
@@ -2614,7 +2734,7 @@ function DiConsumoFacturableSlide({ data, theme, clientName, periodLabel, pageNu
           </>
         )}
       </div>
-      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Consumo facturable" />
+      <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Consumo por Validador" />
     </SlideShell>
   );
 }
@@ -5070,6 +5190,7 @@ export function SlideCanvas({ slideId, product, data, ceFlows, meta, theme, clie
         case "1_resumen_general":    return <Bgc1Slide {...p} />;
         case "2_por_pais":          return <Bgc2Slide {...p} />;
         case "4_score_por_pais":    return <Bgc3Slide {...p} />;
+        case "4b_score_matriz":     return <BgcScoreMatrizSlide {...p} />;
         case "5_labels":            return <Bgc4Slide {...p} />;
         case "6_labels_high_score": return <Bgc4bSlide {...p} />;
         case "7_historico_3meses":  return <Bgc5Slide {...p} />;

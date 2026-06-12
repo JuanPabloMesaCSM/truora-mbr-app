@@ -212,7 +212,7 @@ export default function Validador() {
             <p style={{ fontSize: 14, color: S.muted, lineHeight: 1.5, maxWidth: 720, margin: "0 0 28px" }}>
               Estos clientes consumen por validación: generan validaciones que no se atan a un proceso de
               identidad, por eso el Report Builder DI estándar les da 0. Su MBR se arma desde ClickHouse con
-              lo que aplica a una medición por validador: consumo facturable por tipo, razones de rechazo e
+              lo que aplica a una medición por validador: consumo por tipo de validación, razones de rechazo e
               histórico — sin embudo ni conversión por proceso.
             </p>
 
@@ -315,7 +315,7 @@ export default function Validador() {
                   {selected?.nombre} · {periodLabel}
                 </h2>
                 <p style={{ fontSize: 12, color: S.muted, margin: "4px 0 0" }}>
-                  MBR por validación · consumo facturable (ClickHouse) + razones (Snowflake)
+                  MBR por validación · consumo por validador (ClickHouse) + razones (Snowflake)
                 </p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

@@ -513,6 +513,16 @@ const Index = ({ source = 'regular' }: IndexProps) => {
           if (Array.isArray(raw)) raw = raw[0] ?? {};
           console.log('Response:', raw);
           if (raw.status === 'success' && raw.data) {
+            // Fix 3 (UX): el slide "Rendimiento por Flujos" muestra el nombre, no el FLOW_ID.
+            // El bloque 5_flujos llega con col1=FLOW_ID y col_extra2=null; resolvemos el nombre
+            // desde diFlows (mismo map del selector) hacia col_extra2 (Di5Slide ya lee col_extra2 || col1).
+            if (product === 'DI' && Array.isArray(raw.data['5_flujos']) && diFlows.length > 0) {
+              const flowName: Record<string, string> = {};
+              diFlows.forEach(f => { if (f.FLOW_NAME) flowName[f.FLOW_ID] = f.FLOW_NAME; });
+              raw.data['5_flujos'] = raw.data['5_flujos'].map((r: any) => ({
+                ...r, col_extra2: flowName[r.col1] || r.col_extra2 || null,
+              }));
+            }
             setReportData(raw);
             setOverlayStatus('success');
           } else {
