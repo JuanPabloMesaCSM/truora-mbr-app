@@ -48,10 +48,13 @@ for (let i = 0; i < items.length; i++) {
 
 const tciArray = Array.from(tciSet);
 
-// Tamano de lote. ~95 TCIs / 20 = ~5 lotes. Con 12 meses cada lote corre en
-// ~8-12s, comodo debajo del timeout de 30s. Si algun lote roza el limite (CH
-// degradado, cartera mas grande), BAJAR este numero.
-const BATCH_SIZE = 20;
+// Tamano de lote. ~95 TCIs / 10 = ~10 lotes. BAJADO de 20 a 10 el 2026-06-13:
+// el bloque VALIDATIONS_MR (revision manual) agrego una pasada mas sobre
+// base_data y un lote de 20 TCIs x 12 meses se pasaba del timeout ~30s del
+// Query Endpoint /run ("Timeout error" en el nodo HTTP, item 0). Con 10 TCIs
+// cada lote corre comodo (~mitad del trabajo). Si algun lote AUN roza el limite
+// (CH degradado, cliente muy pesado en el lote), bajar a 8 o 5.
+const BATCH_SIZE = 10;
 
 const batches = [];
 for (let i = 0; i < tciArray.length; i += BATCH_SIZE) {

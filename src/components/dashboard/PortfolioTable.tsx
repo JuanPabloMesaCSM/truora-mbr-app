@@ -53,6 +53,9 @@ export default function PortfolioTable({
   footerOverride,
   disableDrilldown = false,
   dimUnassigned = true,
+  filter: filterProp,
+  onFilterChange,
+  hideSearch = false,
 }: {
   rows: PortfolioRow[];
   meta: PortfolioMeta;
@@ -72,8 +75,17 @@ export default function PortfolioTable({
   disableDrilldown?: boolean;
   /** Atenúa filas cuyo TCI no matchea un cliente local. En lookup = false. */
   dimUnassigned?: boolean;
+  /** Filtro controlado desde fuera (tarjeta "Mi cartera"). Si se omite, usa estado interno. */
+  filter?: string;
+  onFilterChange?: (v: string) => void;
+  /** Oculta el input de búsqueda interno (cuando la tarjeta externa lo maneja). */
+  hideSearch?: boolean;
 }) {
-  const [filter, setFilter] = useState("");
+  // Filtro: controlado desde Dashboard (tarjeta "Mi cartera") o estado interno
+  // como fallback (modo lookup u otros usos).
+  const [filterInternal, setFilterInternal] = useState("");
+  const filter = filterProp !== undefined ? filterProp : filterInternal;
+  const setFilter = onFilterChange ?? setFilterInternal;
   const [sortField, setSortField] = useState<SortField>("usage");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -287,6 +299,7 @@ export default function PortfolioTable({
             </div>
           </div>
 
+          {!hideSearch && (
           <div style={{ position: "relative", minWidth: 280 }}>
             <Search
               size={13}
@@ -317,6 +330,7 @@ export default function PortfolioTable({
               }}
             />
           </div>
+          )}
         </div>
 
         {/* Filtros multi-select Producto / Sub-producto */}
@@ -664,7 +678,7 @@ function miniBtn(color: string): React.CSSProperties {
 }
 
 /** Mapeo PRODUCT → label legible + color del producto raíz. */
-function productConfig(p: string): { label: string; color: string } {
+export function productConfig(p: string): { label: string; color: string } {
   const slug = p.toLowerCase();
   if (slug === "validations")          return { label: "Validations",         color: "#00C9A7" };
   if (slug === "checks")               return { label: "Checks",              color: "#6C3FC5" };

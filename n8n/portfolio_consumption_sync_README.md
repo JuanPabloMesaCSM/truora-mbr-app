@@ -249,20 +249,22 @@ SQL del endpoint: `clickhouse/portfolio_subproduct_migration.sql`.
   "sub_product": "passive liveness", "usage": "59635", "nota": "face - manual review: 0" }
 ```
 
-**Productos / sub-productos posibles** (de la query maestra):
-- `validations` → document validation · comprobante domicilio · passive liveness · active liveness · speech_match · truface · email verification · phone verification
+**Productos / sub-productos emitidos hoy** (de la query maestra):
+- `validations` → document validation · comprobante domicilio · passive liveness · active liveness · speech_match · truface · email verification · phone verification · **electronic signature** (firma) · **document manual review** · **face manual review**
 - `checks` → por **pais** (co/cl/mx/pe/...) · ~~checks completos~~ (total, descartado)
-- `premium checks` → por **pais** (NOTA = base premium: IMSS / PEP FIMPE / ...). Excluye base bundled `DBI386340b…`.
+- `premium checks` → por **pais** (NOTA = base premium: IMSS / PEP FIMPE / ...). Excluye base bundled `DBI386340b…`. **INFORMATIVO**: no se suma al facturable, el cobro premium ya está dentro de `checks` ("por tipo de consulta"). Ver memoria `feedback_bgc_premium_collector_gap`.
 - `continuous Checks` → por pais
 - `truconnect` → inbound · outbound · notification · ~~interacciones~~ (total, descartado)
-- `zapsign` → electronic signature
-- `document recognition` → ocr
 - `forms` → forms
+- ~~`zapsign` → electronic signature~~ → **RETIRADO 2026-06-13**: la firma se foldeó dentro de `validations` (sub_product `electronic signature`).
+- ~~`document recognition` → ocr~~ → **RETIRADO 2026-06-12**: `document_recognition_ocr` YA está contado dentro de `validations_document_validation` (doble conteo). Bloque `DOC_RECOGNITION` sacado del UNION (queda inerte). Filas viejas borradas con DELETE.
 
 **Decisiones (ver memoria `project_dashboard_subproduct`):**
-- **Manual Review NO se cuenta** como fila (solo va en `nota`), matchea el Excel de facturacion Truora. Temporal — si facturacion confirma que es cargo aparte, re-agregar bloque `VALIDATIONS_MR` en el SQL.
+- **Manual Review SÍ se cuenta** (⚠️ REVERTIDO 2026-06-13, opción A de JP — antes solo iba en `nota`): bloque `VALIDATIONS_MR` emite `document manual review` / `face manual review` como sub-productos de `validations`. El front cobra la validación automática Y la revisión humana como líneas separadas (NO doble conteo; validado Mi Banco + Gobierno El Salvador vs front).
+- **Firma electrónica** dentro de `validations` (sub_product `electronic signature`), no producto `zapsign` aparte.
+- **OCR excluido** (ya está dentro de document validation).
 - **declined_reason SI se cuenta** (regla 2026-06-06).
-- **Premium excluye `DBI386340b…`** (bundled, enFront:false).
+- **Premium excluye `DBI386340b…`** (bundled, enFront:false); el premium es informativo, no se suma al facturable.
 
 **Verificacion post-corrida (nuevo grano):**
 ```sql

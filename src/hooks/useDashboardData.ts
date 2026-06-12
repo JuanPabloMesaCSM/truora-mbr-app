@@ -21,6 +21,11 @@ import {
  *   // params puede ser null cuando todavía no hay cliente seleccionado.
  */
 
+/** Timeout duro del fetch del drill-down. El backend suele responder en
+ *  12-60s (3 queries SF en paralelo); pasado este límite asumimos que algo
+ *  se colgó y lo surfaceamos como error en vez de spinner infinito. */
+const TIMEOUT_MS = 180_000;
+
 export interface DashboardParams {
   clientIdDi: string | null;
   clientIdBgc: string | null;
@@ -57,7 +62,24 @@ export function useDashboardData(params: DashboardParams | null) {
     abortRef.current = ac;
     const myId = ++reqIdRef.current;
 
+    // Timeout duro: si el webhook no responde en TIMEOUT_MS, abortamos y
+    // mostramos un error accionable en vez de dejar el spinner colgado para
+    // siempre. Distinguimos el abort por timeout del abort por "fetch
+    // superado" (cambio de cliente/rango) con el flag `timedOut`.
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, TIMEOUT_MS);
+
     setState({ data: null, loading: true, error: null });
+    const t0 = (typeof performance !== "undefined" ? performance.now() : Date.now());
+    // eslint-disable-next-line no-console
+    console.info("[dashboard-detail] → request", {
+      productos: p.productos,
+      di: p.clientIdDi, bgc: p.clientIdBgc, ce: p.clientIdCe,
+      rango: [p.fechaInicio, p.fechaFin],
+    });
 
     try {
       const res = await fetch(DASHBOARD_DETAIL_WEBHOOK_URL, {
@@ -89,16 +111,36 @@ export function useDashboardData(params: DashboardParams | null) {
         throw new Error("El backend respondió ok=false");
       }
 
+      const ms = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - t0);
+      // eslint-disable-next-line no-console
+      console.info("[dashboard-detail] ✓ ok en", ms, "ms");
       setState({ data: json, loading: false, error: null });
     } catch (e) {
       if (myId !== reqIdRef.current) return;
-      // Aborts no son errores reales — los ignoramos en silencio.
-      if ((e as Error).name === "AbortError") return;
+      // Abort por fetch superado (cambio de cliente/rango): ignorar en silencio.
+      // Abort por timeout: SÍ surfacear como error accionable.
+      if ((e as Error).name === "AbortError") {
+        if (timedOut) {
+          // eslint-disable-next-line no-console
+          console.error("[dashboard-detail] ✕ timeout tras", TIMEOUT_MS, "ms");
+          setState({
+            data: null,
+            loading: false,
+            error: `La consulta tardó más de ${Math.round(TIMEOUT_MS / 1000)}s y se canceló. ` +
+              `El cliente puede tener mucho volumen para el rango elegido — probá un rango más corto.`,
+          });
+        }
+        return;
+      }
+      // eslint-disable-next-line no-console
+      console.error("[dashboard-detail] ✕ error:", e);
       setState({
         data: null,
         loading: false,
         error: (e as Error).message ?? "Error desconocido",
       });
+    } finally {
+      clearTimeout(timer);
     }
   }, []);
 

@@ -10,11 +10,17 @@
 --      Portfolio Sync le pasa el tci_list de la cartera. Vacío = toda la base.
 --   2) VENTANA RODANTE baked (últimos 3 meses) en lugar de fecha_ini/fecha_fin,
 --      para que el cron no tenga que calcular fechas (igual que el endpoint 7 viejo).
---   3) MANUAL REVIEW como SUB-PRODUCTO PROPIO + contado (bloque VALIDATIONS_MR).
---      La maestra solo lo anota en NOTA y NO lo suma — eso SUB-factura el cargo de
---      revisión humana (en facturación Truora `face_manual_review`/`document_manual_review`
---      son counters aparte). Acá lo emitimos como fila propia (se suma al consumo)
---      Y la maestra sigue anotándolo en la NOTA de la validación. Decisión JP 2026-06-11.
+--   3) MANUAL REVIEW contado como sub-producto propio de `validations`
+--      ('document manual review' / 'face manual review', bloque VALIDATIONS_MR).
+--      El front cobra la revisión humana como línea APARTE de la validación
+--      automática (Mi Banco mayo: doc 2.548 + doc revisión manual 173). NO es
+--      doble conteo: son 2 cargos distintos. Validado vs front Mi Banco →
+--      validations = 8.289 exacto. La maestra original solo lo anotaba en NOTA y
+--      subfacturaba la revisión humana. Decisión JP 2026-06-13.
+--   4) FIRMA ELECTRÓNICA dentro de `validations` (sub_product 'electronic
+--      signature'), NO como producto 'zapsign' aparte. El front agrupa la firma
+--      bajo "Validaciones". Decisión JP 2026-06-13 (opción A). El bloque ZAPSIGN
+--      sigue existiendo pero ahora emite product='validations'.
 --
 -- NOTA declined_reason (2026-06-06): la maestra YA cuenta las validaciones
 --   declinadas por no_face_detected/front_document_not_found/document_not_recognized
@@ -355,17 +361,60 @@ VALIDATIONS AS (
 ),
 
 -- ==========================================
--- MANUAL REVIEW — NO se cuenta como fila (decisión JP 2026-06-11).
---   La fuente de facturación (Excel/maestra Truora) NO suma MR como counter
---   aparte; solo lo anota en la NOTA de la validación (ej "doc - manual review: 117").
---   Por eso NO emitimos filas document/face manual review: matcheamos el Excel.
---   ⚠️ Si facturación confirma que MR ES cargo aparte, re-agregar un bloque
---   VALIDATIONS_MR (multiIf product → 'document manual review'/'face manual review',
---   WHERE manual_review_status='performed') y sumarlo al UNION final.
+-- 6b. VALIDATIONS — REVISIÓN MANUAL (counter aparte, decisión JP 2026-06-13)
+--   El front cobra la revisión manual como línea separada de la validación
+--   automática (Mi Banco mayo: "Validación de Documento" 2.548 + "...Revisión
+--   Manual" 173, "Rostro - Revisión Manual" 142). NO es doble conteo. Con este
+--   bloque, validations de Mi Banco mayo = 8.289 = front exacto.
+--   doc → 'document manual review' · face → 'face manual review'.
+--   Misma semántica que el manual_review_counters que ya alimentaba la NOTA
+--   (product list de validations + system_error excluido), sin filtro de retry.
 -- ==========================================
+VALIDATIONS_MR_BASE AS (
+    SELECT
+        period, client_id,
+        CASE
+            WHEN product = 'validations_document_validation' THEN 'document manual review'
+            WHEN product LIKE '%face%'                       THEN 'face manual review'
+            ELSE 'manual review'
+        END AS sub_product,
+        country,
+        count(DISTINCT record_id) AS mr_counters
+    FROM base_data
+    WHERE product IN (
+        'validations_document_validation',
+        'validations_face_recognition_passive_liveness',
+        'validations_face_recognition_facematch_or_active_liveness',
+        'validations_face_recognition_speech_match',
+        'validations_face_search',
+        'validations_email_verification',
+        'validations_phone_verification'
+    )
+    AND validation_failure_status != 'system_error'
+    AND manual_review_status = 'performed'
+    GROUP BY period, client_id, sub_product, country
+),
+VALIDATIONS_MR AS (
+    SELECT
+        period, client_id,
+        'validations' AS product,
+        sub_product,
+        sum(mr_counters) AS counters,
+        if(
+            sumIf(mr_counters, country != '') > 0,
+            arrayStringConcat(groupArrayIf(concat('  - ', country, ': ', toString(mr_counters)), country != ''), '\n'),
+            ''
+        ) AS NOTA
+    FROM VALIDATIONS_MR_BASE
+    GROUP BY period, client_id, sub_product
+),
 
 -- ==========================================
--- 7. ZAPSIGN  (electronic signature como producto propio)
+-- 7. FIRMA ELECTRÓNICA  (electronic signature)
+--   Decisión JP 2026-06-13 (opción A): la firma va DENTRO de `validations`
+--   como sub_product 'electronic signature' (el front la agrupa bajo
+--   "Validaciones"), NO como producto 'zapsign' aparte. Solo cambia el product
+--   de salida; la lógica de conteo (retry + system_error excluidos) se mantiene.
 -- ==========================================
 ZAPSIGN_BASE AS (
     SELECT
@@ -380,7 +429,7 @@ ZAPSIGN_BASE AS (
 ZAPSIGN AS (
     SELECT
         period, client_id,
-        'zapsign' AS product,
+        'validations' AS product,
         'electronic signature' AS sub_product,
         sum(country_counters) AS counters,
         if(
@@ -433,8 +482,16 @@ FROM (
     UNION ALL SELECT * FROM CHECKS_CONTINUOUS
     UNION ALL SELECT * FROM CHECKS
     UNION ALL SELECT * FROM VALIDATIONS
+    UNION ALL SELECT * FROM VALIDATIONS_MR
     UNION ALL SELECT * FROM ZAPSIGN
-    UNION ALL SELECT * FROM DOC_RECOGNITION
+    -- ⚠️ OCR (DOC_RECOGNITION) EXCLUIDO 2026-06-12: el counter
+    -- document_recognition_ocr YA ESTÁ contado dentro de
+    -- validations_document_validation (es un sub-paso de la validación de
+    -- documento) → emitirlo como producto aparte = doble conteo. Verificado:
+    -- 0 clientes con OCR standalone (OCR>0 sin document validation) en toda la
+    -- tabla. Las CTEs DOC_RECOGNITION_BASE / DOC_RECOGNITION quedan definidas
+    -- pero SIN usar (inertes) — NO re-agregar este UNION.
+    -- UNION ALL SELECT * FROM DOC_RECOGNITION
 ) AS reporte_maestro
 WHERE sub_product IS NOT NULL
   AND usage > 0
