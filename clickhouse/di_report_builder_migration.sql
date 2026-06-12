@@ -26,16 +26,22 @@
 --   · RAZONES de rechazo NO salen de CH (validation_declined_reason ~97% vacío) →
 --     vienen de Snowflake DOCUMENT_VALIDATION_HISTORY (ver query al final). Solo scope B.
 --
--- Regla billable validations (VALIDADA 1:1 vs consola, 3 perfiles abril 2026):
+-- Regla billable validations (ACTUALIZADA 2026-06-12 — ver feedback_validations_declined_reason_now_billable):
 --   product LIKE 'validations_%' AND status IN ('success','failure')
 --   AND is_validation_retry = false AND validation_failure_status != 'system_error'
---   AND validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized')
 --   + FINAL + count(DISTINCT record_id) (uniqExact) + TZ UTC (toDate(date_counted)).
+--   ⚠️ CAMBIO 2026-06-06: YA NO se excluye validation_declined_reason. Las validaciones declinadas
+--      por no_face_detected / front_document_not_found / document_not_recognized AHORA SE COBRAN
+--      (confirmado JP 2026-06-11; la query maestra de counters de Truora ya las cuenta). Antes se
+--      excluían — por eso este endpoint sube para clientes con muchas declinadas de ese tipo.
 --
 -- VALIDADO Cueros abril: CUR_TOTAL=1.571 (=consola), PREV_TOTAL=1.385, POR_TIPO=
 --   [(document_validation,911,316,595),(face_recognition_passive_liveness,337,242,95),(face_search,323,323,0)].
 --   Nota: face_search siempre exitosas=total (búsqueda que se cobra al ejecutarse, no pass/fail).
 -- ESPERADO Confiamos abril: CUR_TOTAL=5.357 (doc 3.184 + passive 1.091 + face_search 1.082); SF Report Builder DI = 0.
+-- ⚠️ Las 3 cifras de arriba se VALIDARON PRE-2026-06-12 (con el filtro declined_reason). Tras quitarlo
+--    pueden subir levemente si el cliente tiene declinadas no_face/front_not_found/doc_not_recognized.
+--    Re-validar contra el front al publicar (en cartera Oppy Ene-May el impacto global es ~0,12%).
 --
 -- RAZONES: para análisis de rechazo (scope B) NO se aplican exclusiones billable
 --   (el cliente quiere ver TODAS las razones, incluido no_face_detected) — solo se
@@ -69,7 +75,7 @@ SELECT
         AND status IN ('success','failure')
         AND is_validation_retry = false
         AND validation_failure_status != 'system_error'
-        AND validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized')
+        -- 2026-06-12: declined_reason ya NO se excluye (no_face/front_not_found/doc_not_recognized se cobran)
         AND toDate(date_counted) >= toDate({from:Date})
         AND toDate(date_counted) <= toDate({to:Date})
       GROUP BY product
@@ -93,7 +99,7 @@ SELECT
         AND status IN ('success','failure')
         AND is_validation_retry = false
         AND validation_failure_status != 'system_error'
-        AND validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized')
+        -- 2026-06-12: declined_reason ya NO se excluye (no_face/front_not_found/doc_not_recognized se cobran)
         AND toStartOfMonth(date_counted) >= toStartOfMonth(toDate({from:Date}) - INTERVAL 3 MONTH)
         AND toStartOfMonth(date_counted) <= toStartOfMonth(toDate({from:Date}))
       GROUP BY mes
@@ -109,7 +115,7 @@ FROM (
     AND status IN ('success','failure')
     AND is_validation_retry = false
     AND validation_failure_status != 'system_error'
-    AND validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized')
+    -- 2026-06-12: declined_reason ya NO se excluye (no_face/front_not_found/doc_not_recognized se cobran)
     AND toDate(date_counted) >= toStartOfMonth(toDate({from:Date}) - INTERVAL 1 MONTH)
     AND toDate(date_counted) <= toDate({to:Date})
 );
