@@ -1,7 +1,9 @@
 -- ============================================================
 -- REPORT BUILDER CE POR FLUJO — Query Snowflake productivo
--- Workflow n8n: "CE por Flujos y VRF" (`96t8Xl3WGpIaKCLb`)
--- Snapshot guardado: 2026-05-19 PM (incluye vrf_doc_expira)
+-- ⚠️ UBICACIÓN REAL (verificado 2026-06-12 contra los JSON exportados): este query vive en
+--    el nodo **`Snowflake por Flujo`** del workflow **`Report Builder CE`** (NO en "CE por
+--    Flujos y VRF" `96t8Xl3WGpIaKCLb`, que solo tiene los selectores Get CE Flows / Get CE WABAs).
+-- Snapshot guardado: 2026-05-19 PM (incluye vrf_doc_expira) + filtro STEP_TYPE 2026-06-12.
 -- ============================================================
 -- Bloques que retorna (UNION-ed, 3 filas o mas por flujo):
 --   funnel_otb        → embudo del flujo: enviados, fallan_meta, recepcion, no_respondidos, iniciados_otb/inb, total_procesos
@@ -105,6 +107,13 @@ steps_actual AS (
     AND cs.STEP_NAME NOT ILIKE 'confir_%'
     AND LENGTH(cs.STEP_NAME) > 2
     AND cs.STEP_NAME NOT ILIKE 'VRF%'
+    -- 2026-06-12 (decisión equipo CE): el funnel muestra solo BLOQUES del flujo, no
+    -- sub-capturas auto-generadas del motor. STEP_TYPE='enter_document_type' es el
+    -- selector de país / tipo de documento (STEP_NAME suele ser 'country') que NO es
+    -- un bloque arrastrable del constructor. Filtrar por STEP_TYPE (no por nombre)
+    -- generaliza a cualquier cliente. Resto de tipos (enter_response/enter_email/
+    -- enter_phone/enter_face_verification/enter_*_verification_code) SÍ son bloques.
+    AND (cs.STEP_TYPE IS NULL OR cs.STEP_TYPE <> 'enter_document_type')
 ),
 
 -- VRF: VALIDACIONES EMBEBIDAS EN EL FLUJO
