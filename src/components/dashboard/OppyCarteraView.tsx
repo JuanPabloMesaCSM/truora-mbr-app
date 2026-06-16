@@ -104,7 +104,7 @@ export default function OppyCarteraView({
             Sin consumos en el rango.
           </div>
           <div style={{ fontSize: 12 }}>
-            {periodo.inicio} → {periodo.fin}. Probá ampliar el rango o esperar la próxima corrida del
+            {periodo.inicio} → {periodo.fin}. Prueba ampliar el rango o esperar la próxima corrida del
             cron (L/M/V 6 AM BOG).
           </div>
         </div>

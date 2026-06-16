@@ -302,7 +302,7 @@ export default function Validador() {
                   color: canGenerate ? "#062A24" : S.dim, border: "none",
                   fontSize: 13, fontWeight: 700, cursor: canGenerate ? "pointer" : "not-allowed" }}>
                 <FileBarChart size={16} />
-                {selected ? `Generar MBR — ${selected.nombre}` : "Seleccioná un cliente"}
+                {selected ? `Generar MBR — ${selected.nombre}` : "Selecciona un cliente"}
               </button>
             </div>
           </motion.div>

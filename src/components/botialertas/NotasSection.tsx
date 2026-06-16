@@ -101,7 +101,7 @@ export default function NotasSection({
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, MAX_LEN))}
-            placeholder="Escribí el motivo de la variación, una acción tomada o contexto relevante…"
+            placeholder="Escribe el motivo de la variación, una acción tomada o contexto relevante…"
             rows={3}
             disabled={submitting}
             onKeyDown={(e) => {

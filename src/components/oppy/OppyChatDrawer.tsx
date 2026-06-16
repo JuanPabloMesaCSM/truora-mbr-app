@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, Sparkles, RotateCcw } from "lucide-react";
+import { X, Send, RotateCcw, BotMessageSquare as OppyIcon } from "lucide-react";
 import { useOppyChat } from "@/hooks/useOppyChat";
 import { MessageBubble } from "./MessageBubble";
 import { OPPY_COLORS, SHELL } from "./types";
@@ -42,6 +42,14 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
     }
   }, [messages, loading]);
 
+  // Auto-grow del textarea según el contenido (hasta un tope)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
+
   const onSubmit = () => {
     if (!input.trim() || loading) return;
     send(input);
@@ -49,10 +57,10 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
   };
 
   const SUGGESTIONS = [
-    "tenés una query del funnel DI?",
-    "muéstrame el SQL de sf_di_funnel",
-    "cómo calculo consumo facturable",
-    "queries BGC del Report Builder",
+    "¿Tienes una query del funnel DI?",
+    "Quiero ver el SQL de sf_di_funnel",
+    "¿Cómo calculo el consumo facturable?",
+    "Queries BGC del Report Builder",
   ];
 
   return (
@@ -82,7 +90,8 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
             transition={{ duration: 0.22, ease: "easeOut" }}
             style={{
               position: "fixed", top: 0, right: 0, bottom: 0,
-              width: "min(520px, 90vw)",
+              width: "clamp(440px, 50vw, 920px)",
+              maxWidth: "96vw",
               background: "linear-gradient(180deg, #0E1830 0%, #0A1226 100%)",
               borderLeft: `1px solid ${SHELL.border}`,
               boxShadow: `0 0 60px ${OPPY_COLORS.glow}`,
@@ -106,7 +115,7 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                   display: "flex", alignItems: "center", justifyContent: "center",
                   boxShadow: `0 4px 12px ${OPPY_COLORS.glow}`,
                 }}>
-                  <Sparkles size={16} color="#FFFFFF" />
+                  <OppyIcon size={16} color="#FFFFFF" />
                 </div>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -214,7 +223,7 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                       onSubmit();
                     }
                   }}
-                  placeholder="Preguntale a Oppy sobre el catalogo..."
+                  placeholder="Escribe tu pregunta sobre el catálogo..."
                   rows={1}
                   style={{
                     flex: 1,
@@ -222,7 +231,8 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                     color: SHELL.text, fontSize: 13.5, lineHeight: 1.4,
                     resize: "none",
                     fontFamily: "inherit",
-                    maxHeight: 120,
+                    maxHeight: 200,
+                    overflowY: "auto",
                   }}
                 />
                 <button
@@ -265,7 +275,7 @@ function EmptyState({ suggestions, onPick }: { suggestions: string[]; onPick: (s
         boxShadow: `0 10px 30px ${OPPY_COLORS.glow}`,
         marginBottom: 14,
       }}>
-        <Sparkles size={22} color="#FFFFFF" />
+        <OppyIcon size={22} color="#FFFFFF" />
       </div>
       <div style={{ fontSize: 16, fontWeight: 700, color: SHELL.text, marginBottom: 6 }}>
         ¿En qué te ayudo?
@@ -314,7 +324,7 @@ function TypingIndicator() {
         background: `linear-gradient(135deg, ${OPPY_COLORS.primary}, ${OPPY_COLORS.accent})`,
         color: "#FFFFFF",
       }}>
-        <Sparkles size={14} />
+        <OppyIcon size={14} />
       </div>
       <div style={{
         padding: "12px 14px",
