@@ -2831,48 +2831,60 @@ function DiRazonesValidacionSlide({ data, theme, clientName, periodLabel, pageNu
    por validador. Cero cambio de capa de datos: lee 2 bloques que el flujo ya devuelve.
 ══════════════════════════════════════════════════════════════ */
 
-// Tarjeta de desempeño por tipo: total + barra éxito/fallo + % de éxito.
-function DesempenoTipoCard({ titulo, total, exitosas, fallidas, accent, theme }: {
-  titulo: string; total: number; exitosas: number; fallidas: number; accent: string; theme: Theme;
+// Tarjeta de desempeño por tipo: total + barra de 3 segmentos
+// (exitosas / rechazadas / expiradas) + % de éxito. Separar las EXPIRADAS
+// (validación que el usuario nunca completó, TTL) de las RECHAZADAS (rechazo
+// real con motivo) es clave: meterlas juntas en "fallidas" infla la tasa de
+// fallo. Ver feedback_di_validador_expiradas_vs_rechazadas.
+function DesempenoTipoCard({ titulo, total, exitosas, rechazadas, expiradas, accent, theme }: {
+  titulo: string; total: number; exitosas: number; rechazadas: number; expiradas: number;
+  accent: string; theme: Theme;
 }) {
   const t = tok(theme);
-  const pct = total > 0 ? (exitosas / total) * 100 : 0;
+  const REJ = "#EF4444", EXP = "#F59E0B";
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+  const pctEx = pct(exitosas), pctRe = pct(rechazadas), pctExp = pct(expiradas);
+  const fmt = (n: number) => n.toLocaleString("es-CO");
   return (
     <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
       borderRadius: 14, padding: "16px 22px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
         <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: t.textMuted,
           textTransform: "uppercase", letterSpacing: "0.14em" }}>{titulo}</p>
-        <span style={{ fontSize: 13, fontWeight: 800, color: accent }}>{pct.toFixed(1)}% éxito</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: accent }}>{pctEx.toFixed(1)}% éxito</span>
       </div>
       <span style={{ fontSize: 32, fontWeight: 800, color: t.textPrimary, lineHeight: 1, letterSpacing: "-0.02em" }}>
-        {total.toLocaleString("es-CO")}
+        {fmt(total)}
       </span>
       <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: t.rowAlt }}>
-        <div style={{ width: `${pct}%`, background: accent }} />
-        <div style={{ width: `${100 - pct}%`, background: "#EF4444" }} />
+        <div style={{ width: `${pctEx}%`, background: accent }} />
+        <div style={{ width: `${pctRe}%`, background: REJ }} />
+        <div style={{ width: `${pctExp}%`, background: EXP }} />
       </div>
-      <div style={{ display: "flex", gap: 18, fontSize: 11, color: t.textMuted }}>
-        <span><span style={{ color: accent, fontWeight: 800 }}>●</span> {exitosas.toLocaleString("es-CO")} exitosas</span>
-        <span><span style={{ color: "#EF4444", fontWeight: 800 }}>●</span> {fallidas.toLocaleString("es-CO")} fallidas</span>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 14px", fontSize: 11, color: t.textMuted }}>
+        <span><span style={{ color: accent, fontWeight: 800 }}>●</span> {fmt(exitosas)} exitosas ({pctEx.toFixed(0)}%)</span>
+        <span><span style={{ color: REJ, fontWeight: 800 }}>●</span> {fmt(rechazadas)} rechazadas ({pctRe.toFixed(0)}%)</span>
+        <span><span style={{ color: EXP, fontWeight: 800 }}>●</span> {fmt(expiradas)} expiradas ({pctExp.toFixed(0)}%)</span>
       </div>
     </div>
   );
 }
 
 // Lista top-5 de razones de rechazo como barras proporcionales (HTML, sin Chart.js).
-function RazonesBarList({ titulo, rows, accent, theme }: {
-  titulo: string; rows: { codigo: string; count: number }[]; accent: string; theme: Theme;
+// `residual` = rechazadas que no están en el top-5 → barra "Otras razones de rechazo"
+// para que las barras sumen exactamente el bucket de RECHAZADAS de la tarjeta.
+function RazonesBarList({ titulo, rows, residual = 0, accent, theme }: {
+  titulo: string; rows: { codigo: string; count: number }[]; residual?: number; accent: string; theme: Theme;
 }) {
   const t = tok(theme);
   const top = rows.slice(0, 5);
-  const max = Math.max(1, ...top.map(r => r.count));
+  const max = Math.max(1, ...top.map(r => r.count), residual);
   return (
     <div style={{ flex: 1, background: t.cardBg, border: t.cardBorder, boxShadow: t.cardShadow,
       borderRadius: 14, padding: "16px 20px", display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
       <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 700, color: t.textMuted,
         textTransform: "uppercase", letterSpacing: "0.14em" }}>{titulo}</p>
-      {top.length === 0 ? (
+      {top.length === 0 && residual <= 0 ? (
         <p style={{ fontSize: 13, color: t.textMuted, margin: "auto", textAlign: "center" }}>
           Sin rechazos en el periodo
         </p>
@@ -2899,6 +2911,21 @@ function RazonesBarList({ titulo, rows, accent, theme }: {
               </div>
             );
           })}
+          {residual > 0 && (
+            <div key="__residual__">
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, lineHeight: 1.25, fontStyle: "italic" }}>
+                  Otras razones de rechazo
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 800, color: t.textMuted, flexShrink: 0 }}>
+                  {residual.toLocaleString("es-CO")}
+                </span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: t.rowAlt, overflow: "hidden" }}>
+                <div style={{ width: `${(residual / max) * 100}%`, height: "100%", background: t.textMuted, borderRadius: 999, opacity: 0.5 }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2933,7 +2960,23 @@ function DiDesempenoValidacionSlide({ data, theme, clientName, periodLabel, page
   }
   const toSorted = (m: Record<string, number>) =>
     Object.entries(m).map(([codigo, count]) => ({ codigo, count }))
-      .sort((a, b) => b.count - a.count).slice(0, 5);
+      .sort((a, b) => b.count - a.count);
+  const sumMap = (m: Record<string, number>) => Object.values(m).reduce((s, n) => s + n, 0);
+
+  // RECHAZADAS = rechazos reales con motivo (= suma de razones SF, misma fuente que
+  // las barras → reconcilian exacto). EXPIRADAS = fallidas (CH) − rechazadas: validaciones
+  // que el usuario nunca completó (TTL). Clamp para que ex+rech+exp == total siempre.
+  const buckets = (cat: "doc" | "rostro", m: Record<string, number>) => {
+    const rech = Math.min(sumMap(m), agg[cat].fa);
+    return { rechazadas: rech, expiradas: Math.max(0, agg[cat].fa - rech) };
+  };
+  const bDoc = buckets("doc", docMap);
+  const bRos = buckets("rostro", rosMap);
+  const docTop = toSorted(docMap).slice(0, 5);
+  const rosTop = toSorted(rosMap).slice(0, 5);
+  const sumTop = (rows: { count: number }[]) => rows.reduce((s, r) => s + r.count, 0);
+  const docResid = Math.max(0, bDoc.rechazadas - sumTop(docTop));
+  const rosResid = Math.max(0, bRos.rechazadas - sumTop(rosTop));
 
   return (
     <SlideShell id="DI-DV" theme={theme}>
@@ -2942,13 +2985,13 @@ function DiDesempenoValidacionSlide({ data, theme, clientName, periodLabel, page
       <div style={{ ...bodyStyle, flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", gap: 12, flexShrink: 0, height: 148 }}>
           <DesempenoTipoCard titulo="Documento" total={agg.doc.total} exitosas={agg.doc.ex}
-            fallidas={agg.doc.fa} accent="#00C9A7" theme={theme} />
+            rechazadas={bDoc.rechazadas} expiradas={bDoc.expiradas} accent="#00C9A7" theme={theme} />
           <DesempenoTipoCard titulo="Rostro" total={agg.rostro.total} exitosas={agg.rostro.ex}
-            fallidas={agg.rostro.fa} accent="#00C9A7" theme={theme} />
+            rechazadas={bRos.rechazadas} expiradas={bRos.expiradas} accent="#00C9A7" theme={theme} />
         </div>
         <div style={{ flex: 1, display: "flex", gap: 12, minHeight: 0 }}>
-          <RazonesBarList titulo="Top 5 rechazos — Documento" rows={toSorted(docMap)} accent="#F59E0B" theme={theme} />
-          <RazonesBarList titulo="Top 5 rechazos — Rostro" rows={toSorted(rosMap)} accent="#F59E0B" theme={theme} />
+          <RazonesBarList titulo="Top 5 motivos de rechazo — Documento" rows={docTop} residual={docResid} accent="#F59E0B" theme={theme} />
+          <RazonesBarList titulo="Top 5 motivos de rechazo — Rostro" rows={rosTop} residual={rosResid} accent="#F59E0B" theme={theme} />
         </div>
       </div>
       <SlideFooter theme={theme} pageNum={pageNum} slideLabel="DI · Desempeño de validaciones" />
