@@ -4776,44 +4776,45 @@ function InsightsFinalesSlide({
   );
 }
 
-/* ── Updates Novedades — 2 cards editables ── */
-type UpdateCard = { imageUrl: string | null; text: string };
+/* ── Updates de Producto — cards data-driven (Telegram→Supabase), Light Mode Truora ── */
+type UpdateItem = { id: string; title: string; message_text: string; category: string };
 
-function UpdatesSlide() {
-  const [cards, setCards] = useState<UpdateCard[]>([
-    { imageUrl: null, text: "" },
-    { imageUrl: null, text: "" },
-  ]);
+const UPDATE_CAT_COLORS: Record<string, string> = {
+  DI: "#00C9A7", BGC: "#6C3FC5", CE: "#0891B2", Zapsign: "#6B4EFF", General: "#64748B",
+};
+const UPDATE_CAT_LABELS: Record<string, string> = {
+  DI: "Identidad Digital", BGC: "Background Check", CE: "Customer Engagement",
+  Zapsign: "ZapSign", General: "Plataforma",
+};
 
-  const handleImage = (idx: number, file: File | null) => {
+function UpdatesSlide({ updates = [] }: { updates?: UpdateItem[] }) {
+  const items = updates.slice(0, 4);        // MVP: hasta 4 por slide (multi-slide = fast-follow)
+  const extra = updates.length - items.length;
+  const n = items.length;
+  const cols = n <= 1 ? 1 : 2;              // 1→ancho completo · 2→lado a lado · 3-4→2×2
+
+  // Imagen opcional por novedad (efímera — el CSM la sube de su galería)
+  const [images, setImages] = useState<Record<string, string>>({});
+  const setImg = (id: string, file: File | null) => {
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    setCards(prev => prev.map((c, i) => i === idx ? { ...c, imageUrl: url } : c));
+    setImages(prev => ({ ...prev, [id]: URL.createObjectURL(file) }));
   };
+  const removeImg = (id: string) =>
+    setImages(prev => { const next = { ...prev }; delete next[id]; return next; });
 
-  const removeImage = (idx: number) => {
-    setCards(prev => prev.map((c, i) => i === idx ? { ...c, imageUrl: null } : c));
-  };
-
-  const handleText = (idx: number, val: string) => {
-    setCards(prev => prev.map((c, i) => i === idx ? { ...c, text: val } : c));
-  };
-
-  // Layout puro JSX — sin PNG de fondo para eliminar toda desalineación.
-  // La estructura visual reproduce fielmente el diseño del PNG original:
-  //   • Fondo lavanda claro  #ECEEF6
-  //   • Barra acento izq.    7px   #6B4EFF
-  //   • Título               top=0  h=80px
-  //   • 2 cards blancos      top=85 bottom=44  flex row con gap 28
-  //     – Zona imagen (gris) flexShrink:0  h=260px
-  //     – Zona texto         flex:1  → rellena el resto
-  //   • Barra pie            h=44   #6B4EFF
-  // Con flexbox column dentro de cada card NADA puede solaparse ni salirse.
+  // Escala tipográfica adaptativa (Inter): el texto es el protagonista
+  const titleSize = n <= 1 ? 36 : n === 2 ? 27 : 20;
+  const textSize  = n <= 1 ? 22 : n === 2 ? 18.5 : 15;
+  const catSize   = n <= 1 ? 15 : n === 2 ? 13 : 11.5;
+  const numSize   = n <= 1 ? 52 : n === 2 ? 42 : 32;
+  const headPad   = n <= 1 ? "16px 32px" : n === 2 ? "14px 22px" : "11px 16px";
+  const bodyPad   = n <= 1 ? "30px 44px" : n === 2 ? "24px 28px" : "16px 18px";
+  const imgMinH   = n <= 1 ? 90 : n === 2 ? 72 : 48;  // piso mínimo; la imagen crece con el espacio que sobra
 
   return (
     <div className="slide-page" style={{
       position: "relative", width: 1280, height: 720, flexShrink: 0, overflow: "hidden",
-      background: "#ECEEF6",
+      background: "#F5F5F7",
       fontFamily: "'Inter', sans-serif",
     }}>
       {/* Barra acento izquierda */}
@@ -4824,105 +4825,146 @@ function UpdatesSlide() {
 
       {/* Título */}
       <div style={{
-        position: "absolute", top: 0, left: 7, right: 0, height: 80,
-        display: "flex", alignItems: "center", paddingLeft: 36,
+        position: "absolute", top: 0, left: 7, right: 0, height: 82,
+        display: "flex", alignItems: "center", paddingLeft: 40,
       }}>
-        <h2 style={{
-          fontSize: 26, fontWeight: 700, color: "#0D1137",
-          margin: 0, letterSpacing: "-0.01em",
+        <h1 style={{
+          fontSize: 30, fontWeight: 700, color: "#0D1137",
+          margin: 0, letterSpacing: "-0.02em",
         }}>
-          Updates | Novedades y Roadmap
-        </h2>
+          Updates <span style={{ color: "#6B4EFF" }}>|</span> Novedades y Roadmap
+        </h1>
       </div>
 
-      {/* Fila de cards */}
+      {/* Área de cards — grid que llena el alto disponible */}
       <div style={{
         position: "absolute",
-        top: 85, left: 40, right: 32, bottom: 44,
-        display: "flex", gap: 28,
+        top: 92, left: 40, right: 36, bottom: 50,
+        display: "grid",
+        gridTemplateColumns: `repeat(${Math.max(cols, 1)}, 1fr)`,
+        gridAutoRows: "1fr",
+        gap: 24,
       }}>
-        {[0, 1].map(idx => (
-          <div key={idx} style={{
-            flex: 1, background: "#FFFFFF", borderRadius: 8,
-            overflow: "hidden", display: "flex", flexDirection: "column",
-            boxShadow: "0 2px 16px rgba(0,0,0,0.10)",
+        {n === 0 ? (
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: 10, textAlign: "center",
+            background: "#FFFFFF", borderRadius: 16, border: "1px dashed #CBD2E0",
           }}>
-
-            {/* Zona imagen — altura fija, nunca se desborda */}
-            <div style={{
-              height: 260, flexShrink: 0,
-              background: "#F1F2F8",
-              border: "1px solid #E2E4EF",
-              position: "relative",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              overflow: "hidden",
-            }}>
-              {cards[idx].imageUrl ? (
-                <>
-                  <img
-                    src={cards[idx].imageUrl}
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    alt=""
-                  />
-                  <button
-                    onClick={() => removeImage(idx)}
-                    style={{
-                      position: "absolute", top: 8, right: 8,
-                      width: 26, height: 26, borderRadius: "50%",
-                      background: "rgba(0,0,0,0.55)", border: "none",
-                      cursor: "pointer", color: "#fff", fontSize: 15, fontWeight: 700,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      lineHeight: 1, zIndex: 2,
-                    }}
-                  >×</button>
-                </>
-              ) : (
-                <label style={{
-                  cursor: "pointer", width: "100%", height: "100%",
-                  display: "flex", flexDirection: "column",
-                  alignItems: "center", justifyContent: "center", gap: 10,
-                }}>
-                  <input
-                    type="file" accept="image/*" style={{ display: "none" }}
-                    onChange={e => handleImage(idx, e.target.files?.[0] ?? null)}
-                  />
-                  <div style={{
-                    width: 44, height: 44, borderRadius: "50%",
-                    background: "#E2E4EF",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <span style={{ fontSize: 22, color: "#9CA3AF", lineHeight: 1 }}>+</span>
-                  </div>
-                  <span style={{
-                    fontSize: 12, fontWeight: 600, color: "#9CA3AF",
-                    letterSpacing: "0.06em", textTransform: "uppercase",
-                  }}>Subir imagen</span>
-                </label>
-              )}
-            </div>
-
-            {/* Zona texto — ocupa el espacio restante, jamás superpone la imagen */}
-            <div style={{
-              flex: 1, overflow: "hidden",
-              display: "flex", padding: "14px 16px",
-            }}>
-              <textarea
-                value={cards[idx].text}
-                onChange={e => handleText(idx, e.target.value)}
-                placeholder="Describe la novedad de producto..."
-                style={{
-                  flex: 1, resize: "none", border: "none", outline: "none",
-                  background: "transparent",
-                  padding: 0, boxSizing: "border-box",
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 15, fontWeight: 400,
-                  color: "#1E1B4B", lineHeight: 1.65, letterSpacing: "0.01em",
-                }}
-              />
-            </div>
+            <span style={{ fontSize: 18, fontWeight: 700, color: "#0D1137" }}>
+              Sin novedades seleccionadas
+            </span>
+            <span style={{ fontSize: 14, color: "#64748B", maxWidth: 440, lineHeight: 1.5 }}>
+              Activá "Updates de producto" en el panel y seleccioná las novedades del período del reporte.
+            </span>
           </div>
-        ))}
+        ) : items.map((u, i) => {
+          const c = UPDATE_CAT_COLORS[u.category] ?? "#64748B";
+          const label = UPDATE_CAT_LABELS[u.category] ?? u.category;
+          const img = images[u.id];
+          return (
+            <div key={u.id} style={{
+              background: "#FFFFFF", borderRadius: 16, overflow: "hidden",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+              border: "1px solid #E2E8F0",
+              display: "flex", flexDirection: "column",
+            }}>
+              {/* Banda de color por producto */}
+              <div style={{
+                flexShrink: 0, padding: headPad,
+                background: `linear-gradient(135deg, ${c} 0%, ${c}D9 100%)`,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <span style={{
+                  fontSize: catSize, fontWeight: 700, color: "#FFFFFF",
+                  letterSpacing: "0.06em", textTransform: "uppercase",
+                }}>{label}</span>
+                <span style={{
+                  fontSize: numSize, fontWeight: 800, color: "rgba(255,255,255,0.32)",
+                  lineHeight: 1, letterSpacing: "-0.02em",
+                }}>{String(i + 1).padStart(2, "0")}</span>
+              </div>
+
+              {/* Cuerpo: texto arriba (respeta formato) + zona de imagen abajo */}
+              <div style={{
+                flex: 1, padding: bodyPad, overflow: "hidden",
+                display: "flex", flexDirection: "column", gap: n <= 1 ? 22 : 14,
+              }}>
+                {/* Texto — toma su altura natural; la imagen absorbe lo que sobra */}
+                <div style={{ flexShrink: 0, maxWidth: n <= 1 ? 1000 : "100%" }}>
+                  <h3 style={{
+                    fontSize: titleSize, fontWeight: 700, color: "#0D1137",
+                    margin: `0 0 ${n <= 1 ? 14 : 10}px`, lineHeight: 1.2, letterSpacing: "-0.01em",
+                  }}>{u.title}</h3>
+                  <p style={{
+                    margin: 0, overflow: "hidden",
+                    fontSize: textSize, fontWeight: 400, color: "#334155",
+                    lineHeight: 1.6, letterSpacing: "0.005em",
+                    whiteSpace: "pre-line",
+                  }}>{u.message_text}</p>
+                </div>
+
+                {/* Zona de imagen — dinámica: absorbe el espacio que deja el texto */}
+                <div style={{
+                  flex: 1, minHeight: imgMinH, borderRadius: 12, overflow: "hidden",
+                  position: "relative",
+                  background: img ? "#0D1137" : "#F1F3F8",
+                  border: img ? "none" : "1px dashed #C7CEDC",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {img ? (
+                    <>
+                      <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <button
+                        onClick={() => removeImg(u.id)}
+                        style={{
+                          position: "absolute", top: 8, right: 8,
+                          width: 26, height: 26, borderRadius: "50%",
+                          background: "rgba(0,0,0,0.55)", border: "none",
+                          cursor: "pointer", color: "#fff", fontSize: 15, fontWeight: 700,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          lineHeight: 1, zIndex: 2,
+                        }}
+                      >×</button>
+                    </>
+                  ) : (
+                    <label style={{
+                      cursor: "pointer", width: "100%", height: "100%",
+                      display: "flex", flexDirection: "column",
+                      alignItems: "center", justifyContent: "center", gap: 8,
+                    }}>
+                      <input
+                        type="file" accept="image/*" style={{ display: "none" }}
+                        onChange={e => setImg(u.id, e.target.files?.[0] ?? null)}
+                      />
+                      <div style={{
+                        width: 40, height: 40, borderRadius: "50%", background: "#E4E8F1",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <span style={{ fontSize: 22, color: c, lineHeight: 1, fontWeight: 700 }}>+</span>
+                      </div>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, color: "#94A3B8",
+                        letterSpacing: "0.06em", textTransform: "uppercase",
+                      }}>Agregar imagen</span>
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Aviso si se seleccionaron más de las que caben */}
+      {extra > 0 && (
+        <div style={{
+          position: "absolute", bottom: 56, right: 40,
+          fontSize: 12, fontWeight: 600, color: "#6B4EFF",
+        }}>
+          +{extra} novedad{extra > 1 ? "es" : ""} más seleccionada{extra > 1 ? "s" : ""}
+        </div>
+      )}
 
       {/* Barra pie */}
       <div style={{

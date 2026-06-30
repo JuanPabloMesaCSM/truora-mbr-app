@@ -16,6 +16,7 @@ import {
   parsePeriod, type Product, type CsmRow, type ClienteRow, type ModuleInsight,
 } from "@/components/report-builder/moduleDefinitions";
 import type { Theme, ReportData, CeFlowData } from "@/components/report-builder/SlideCanvas";
+import { useProductUpdates } from "@/hooks/useProductUpdates";
 
 type AppStep = 'welcome' | 'config' | 'builder' | 'canvas';
 type ClientSource = 'regular' | 'oncall';
@@ -91,7 +92,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
   const [overlayStatus, setOverlayStatus] = useState<'generating' | 'success' | 'error' | null>(null);
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [theme, setTheme] = useState<Theme>('dark');
-  const [showUpdates, setShowUpdates] = useState(true);
+  const [showUpdates, setShowUpdates] = useState(false);
   const [clientIdModal, setClientIdModal] = useState<{
     product: Product; clientId: string; clientName: string;
   } | null>(null);
@@ -106,6 +107,23 @@ const Index = ({ source = 'regular' }: IndexProps) => {
   const [selectedDiFlows, setSelectedDiFlows] = useState<Set<string>>(new Set());
   const [diFlowsLoading, setDiFlowsLoading] = useState(false);
   const [diFlowsError, setDiFlowsError] = useState(false);
+
+  /* ─── Updates de Producto state (data-driven: Telegram → Supabase → webhook) ─── */
+  const {
+    updates: availableUpdates,
+    loading: updatesLoading,
+    error: updatesError,
+    fetchUpdates: fetchProductUpdates,
+    reset: resetProductUpdates,
+  } = useProductUpdates();
+  const [selectedUpdateIds, setSelectedUpdateIds] = useState<Set<string>>(new Set());
+  const toggleUpdateSelection = (id: string) =>
+    setSelectedUpdateIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  const selectedUpdates = availableUpdates.filter(u => selectedUpdateIds.has(u.id));
 
   /* ─── Derived state ─── */
   const selectedClient = clients.find(c => c.id === selectedClientId) || null;
@@ -343,6 +361,26 @@ const Index = ({ source = 'regular' }: IndexProps) => {
       .finally(() => { if (!cancelled) setCeFlowsLoading(false); });
     return () => { cancelled = true; };
   }, [product, selectedClient, periodData?.fechaInicio, periodData?.fechaFin]);
+
+  /* ─── Updates de Producto: al activar el toggle, trae del webhook según
+   *     el rango del MBR + los productos configurados del cliente (+ Zapsign).
+   *     Apagar el toggle limpia la selección y la lista. ─── */
+  useEffect(() => {
+    if (!showUpdates) {
+      resetProductUpdates();
+      setSelectedUpdateIds(new Set());
+      return;
+    }
+    if (!periodData || !selectedClient) return;
+    const products: string[] = [];
+    if (selectedClient.client_id_di)  products.push('DI');
+    if (selectedClient.client_id_bgc) products.push('BGC');
+    if (selectedClient.client_id_ce)  products.push('CE');
+    products.push('Zapsign'); // no se trackea por cliente; el CSM cura en el drill-down
+    setSelectedUpdateIds(new Set());
+    fetchProductUpdates(periodData.fechaInicio, periodData.fechaFin, products);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showUpdates, periodData?.fechaInicio, periodData?.fechaFin, selectedClient]);
 
   /* ─── Module toggle ─── */
   const toggleModule = useCallback((id: string) => {
@@ -765,6 +803,11 @@ const Index = ({ source = 'regular' }: IndexProps) => {
             diFlowsError={diFlowsError}
             showUpdates={showUpdates}
             setShowUpdates={setShowUpdates}
+            availableUpdates={availableUpdates}
+            updatesLoading={updatesLoading}
+            updatesError={updatesError}
+            selectedUpdateIds={selectedUpdateIds}
+            onToggleUpdate={toggleUpdateSelection}
             canGenerate={canGenerate}
             overlayStatus={overlayStatus}
             onGenerate={handleGenerate}
@@ -786,6 +829,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
               overlayStatus={overlayStatus}
               isCeFlowSpecific={isCeFlowSpecific}
               showUpdates={showUpdates}
+              productUpdates={selectedUpdates}
               onOverlayClose={() => setOverlayStatus(null)}
               onRetry={handleGenerate}
               onViewPresentation={handleViewPresentation}
@@ -815,6 +859,7 @@ const Index = ({ source = 'regular' }: IndexProps) => {
               selectedCeFlowsByModule={selectedCeFlowsByModule}
               isCeFlowSpecific={isCeFlowSpecific}
               showUpdates={showUpdates}
+              productUpdates={selectedUpdates}
               onOverlayClose={() => setOverlayStatus(null)}
               onNewReport={handleNewReport}
               onRetry={handleGenerate}

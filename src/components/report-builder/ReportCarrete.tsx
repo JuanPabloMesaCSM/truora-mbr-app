@@ -271,6 +271,7 @@ interface ReportCarreteProps {
   overlayStatus: 'generating' | 'success' | 'error' | null;
   isCeFlowSpecific?: boolean;
   showUpdates?: boolean;
+  productUpdates?: { id: string; title: string; message_text: string; category: string }[];
   onOverlayClose: () => void;
   onRetry: () => void;
   onViewPresentation: () => void;
@@ -297,7 +298,7 @@ export function ReportCarrete({
   product, clientName, periodLabel, csmName,
   activeModuleIds, insightsMode, moduleInsights,
   ceFlows, selectedCeFlowsByModule, theme, reportData,
-  overlayStatus, isCeFlowSpecific, showUpdates = true, onOverlayClose, onRetry,
+  overlayStatus, isCeFlowSpecific, showUpdates = true, productUpdates = [], onOverlayClose, onRetry,
   onViewPresentation, onNewReport,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: ReportCarreteProps) {
@@ -539,7 +540,7 @@ export function ReportCarrete({
       entries.push({
         key: '__updates',
         label: 'Updates',
-        render: () => <UpdatesSlide />,
+        render: () => <UpdatesSlide updates={productUpdates} />,
       });
     }
 
@@ -553,7 +554,7 @@ export function ReportCarrete({
     return entries;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    dataSlideIds.join(','), product, hasData, hasInsights, insightsMode, showUpdates,
+    dataSlideIds.join(','), product, hasData, hasInsights, insightsMode, showUpdates, productUpdates,
     effectiveClient, effectivePeriod, effectiveCsm, theme, totalSlides,
     generalInsightText, !!analisisEstrategico,
   ]);

@@ -28,6 +28,7 @@ interface CenterCanvasProps {
   selectedCeFlowsByModule?: Record<string, Set<string>>;
   isCeFlowSpecific?: boolean;
   showUpdates?: boolean;
+  productUpdates?: { id: string; title: string; message_text: string; category: string }[];
   onOverlayClose: () => void;
   onNewReport: () => void;
   onRetry: () => void;
@@ -42,7 +43,7 @@ const cardTransitionExit = { duration: 0.25, ease: "easeIn" as const };
 
 export function CenterCanvas({
   product, clientName, periodLabel, activeModuleIds, insightsMode,
-  moduleInsights = {}, overlayStatus, reportData, theme, selectedCeFlowsByModule, isCeFlowSpecific, showUpdates = true, onOverlayClose, onNewReport, onRetry, onBack,
+  moduleInsights = {}, overlayStatus, reportData, theme, selectedCeFlowsByModule, isCeFlowSpecific, showUpdates = true, productUpdates = [], onOverlayClose, onNewReport, onRetry, onBack,
   onModuleInsightChange, generalInsightText, onGeneralInsightChange,
 }: CenterCanvasProps) {
   const insightsPorMetrica: Record<string, string> = reportData?.insights_por_metrica ?? {};
@@ -231,7 +232,7 @@ export function CenterCanvas({
             {showUpdates && (
               <>
                 <SlideWrap><SeparadorSlide src="/assets/mbr/separador-updates.png" alt="Updates de producto" /></SlideWrap>
-                <SlideWrap><UpdatesSlide /></SlideWrap>
+                <SlideWrap><UpdatesSlide updates={productUpdates} /></SlideWrap>
               </>
             )}
             <SlideWrap><CierreSlide csmName={csmName} /></SlideWrap>

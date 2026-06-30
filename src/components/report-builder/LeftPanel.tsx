@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Lightbulb, ArrowLeft, Sparkles, Moon, Sun, ChevronDown, ChevronUp } from "lucide-react";
+import { Lock, Lightbulb, ArrowLeft, Sparkles, Moon, Sun, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
   MODULES, PRODUCT_COLORS, PRODUCT_LABELS,
@@ -19,6 +19,7 @@ import { DiFlowSelector, type DiFlowRow } from "./DiFlowSelector";
 import { CEFlowSelector, type CEFlowRow } from "./CEFlowSelector";
 import { CEWabaSelector, type CEWabaRow } from "./CEWabaSelector";
 import type { Theme } from "./SlideCanvas";
+import type { ProductUpdate } from "@/hooks/useProductUpdates";
 
 /* ── dark shell palette ── */
 const S = {
@@ -126,6 +127,11 @@ interface LeftPanelProps {
   diFlowsError: boolean;
   showUpdates: boolean;
   setShowUpdates: (v: boolean) => void;
+  availableUpdates: ProductUpdate[];
+  updatesLoading: boolean;
+  updatesError: boolean;
+  selectedUpdateIds: Set<string>;
+  onToggleUpdate: (id: string) => void;
   canGenerate: boolean;
   overlayStatus: 'generating' | 'success' | 'error' | null;
   onGenerate: () => void;
@@ -145,6 +151,7 @@ export function LeftPanel({
   customTypes, selectedTypes, setSelectedTypes, customTypesLoading,
   diFlows, selectedDiFlows, setSelectedDiFlows, diFlowsLoading, diFlowsError,
   showUpdates, setShowUpdates,
+  availableUpdates, updatesLoading, updatesError, selectedUpdateIds, onToggleUpdate,
   canGenerate, overlayStatus,
   onGenerate, onBack,
 }: LeftPanelProps) {
@@ -708,6 +715,85 @@ export function LeftPanel({
           </div>
           <DarkSwitch checked={showUpdates} onChange={() => setShowUpdates(!showUpdates)} />
         </div>
+
+        {/* ── Drill-down de updates (carga al activar el toggle) ── */}
+        <AnimatePresence initial={false}>
+          {showUpdates && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.2 }}
+              style={{ padding: '0 16px 10px', overflow: 'hidden' }}
+            >
+              {updatesLoading && (
+                <div style={{ fontSize: 11, color: S.muted, padding: '4px 2px' }}>Cargando novedades…</div>
+              )}
+              {updatesError && !updatesLoading && (
+                <div style={{ fontSize: 11, color: '#EF4444', padding: '4px 2px' }}>
+                  No se pudieron cargar las novedades.
+                </div>
+              )}
+              {!updatesLoading && !updatesError && availableUpdates.length === 0 && (
+                <div style={{ fontSize: 11, color: S.dim, padding: '4px 2px', lineHeight: 1.5 }}>
+                  No hay updates de producto en el período del reporte.
+                </div>
+              )}
+              {!updatesLoading && availableUpdates.length > 0 && (
+                <>
+                  <div style={{
+                    fontSize: 10, color: S.dim, margin: '2px 2px 8px',
+                    textTransform: 'uppercase', letterSpacing: '0.05em',
+                  }}>
+                    {selectedUpdateIds.size} de {availableUpdates.length} seleccionada{availableUpdates.length === 1 ? '' : 's'}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
+                    {availableUpdates.map(u => {
+                      const sel = selectedUpdateIds.has(u.id);
+                      const cc = ({ DI: '#00C9A7', BGC: '#6C3FC5', CE: '#0891B2', Zapsign: '#7C4DFF', General: '#64748B' } as Record<string, string>)[u.category] ?? S.muted;
+                      const preview = u.message_text.length > 130
+                        ? u.message_text.slice(0, 130).trimEnd() + '…'
+                        : u.message_text;
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => onToggleUpdate(u.id)}
+                          style={{
+                            textAlign: 'left', cursor: 'pointer',
+                            background: sel ? `${cc}1A` : S.surface,
+                            border: `1px solid ${sel ? cc : S.border}`,
+                            borderRadius: 10, padding: '9px 11px',
+                            display: 'flex', flexDirection: 'column', gap: 5,
+                            transition: 'all 0.15s',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{
+                              width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                              border: `1.5px solid ${sel ? cc : S.dim}`,
+                              background: sel ? cc : 'transparent',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}>
+                              {sel && <Check size={11} color="#fff" strokeWidth={3} />}
+                            </span>
+                            <span style={{
+                              fontSize: 9, fontWeight: 700, color: cc, background: `${cc}22`,
+                              borderRadius: 999, padding: '2px 7px',
+                              textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0,
+                            }}>{u.category}</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: S.text, lineHeight: 1.25 }}>{u.title}</span>
+                          </div>
+                          <p style={{ fontSize: 10.5, color: S.muted, margin: 0, lineHeight: 1.45 }}>{preview}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <Divider />
 
