@@ -124,7 +124,10 @@ export default function PortfolioTable({
   const visibleCsm = (r: PortfolioRow): string => {
     const email = tciToCliente.get(r.client_id)?.csm_email ?? "";
     if (email) return csmNombres.get(email) ?? email;
-    return r.csm_owner ?? "";
+    // Viewers @truora.com sin acceso a `clientes`: el cron llenó csm_owner con el
+    // email del CSM dueño; lo mapeamos a nombre vía la tabla `csm` (legible por todos).
+    const owner = r.csm_owner ?? "";
+    return owner ? (csmNombres.get(owner) ?? owner) : "";
   };
 
   // 1) Filtrar filas planas por producto + sub-producto + búsqueda.
@@ -424,7 +427,8 @@ export default function PortfolioTable({
                             const nombre = email ? csmNombres.get(email) : null;
                             if (nombre) return nombre;
                             if (email) return email;
-                            if (g.csm_owner) return g.csm_owner;
+                            // Viewer sin `clientes`: csm_owner trae el email del CSM (cron) → mapear a nombre.
+                            if (g.csm_owner) return csmNombres.get(g.csm_owner) ?? g.csm_owner;
                             return <em style={{ color: S.dim }}>—</em>;
                           })()}
                         </span>

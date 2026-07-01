@@ -73,6 +73,12 @@ function DataNodes() {
 
 export default function LoginPage() {
   const handleGoogleLogin = async () => {
+    // Deep-link: el OAuth siempre redirige a `/` (origin). Si el usuario llegó a
+    // /login con ?next=<ruta> (ej. un viewer que abrió /dashboard sin sesión),
+    // guardamos la ruta y el landing (/) hace el hop client-side tras autenticar.
+    const next = new URLSearchParams(window.location.search).get("next");
+    if (next) sessionStorage.setItem("postLoginNext", next);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {

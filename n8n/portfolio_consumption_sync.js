@@ -30,6 +30,37 @@ const httpItems = $input.all();
 const rowMap = new Map();
 const fechaActualizado = new Date().toISOString();
 
+// 2026-07-01 — poblar client_name + csm_owner desde `clientes` para que el
+// Dashboard muestre nombres a los viewers @truora.com que NO son CSM (ellos no
+// leen `clientes`, RLS owner-only). Mapa TCI -> {nombre, csm_email} desde el nodo
+// Supabase de la whitelist, SALTANDO emails admin (duplicados RLS que pisarian al
+// CSM real — mismo patron que el frontend, feedback_admin_duplicate_pattern).
+// csm_owner guarda el EMAIL; el frontend lo mapea a nombre via la tabla `csm`
+// (legible por todos). Antes ambos quedaban NULL y el frontend resolvia contra
+// `clientes` — pero un viewer no puede leer `clientes`, de ahi este cambio.
+const ADMIN_EMAILS = ['jdiaz@truora.com']; // espejo de ADMIN_EMAILS del frontend (amarquez removido, ya no trabaja en Truora)
+const tciInfo = new Map(); // tci -> { nombre, csm_email }
+function putTci(tci, nombre, csmEmail) {
+  if (tci === null || tci === undefined) return;
+  const t = String(tci).trim();
+  if (!t) return;
+  if (!tciInfo.has(t)) tciInfo.set(t, { nombre: nombre || null, csm_email: csmEmail || null });
+}
+try {
+  const clienteItems = $('Supabase Get Whitelist').all();
+  for (let i = 0; i < clienteItems.length; i++) {
+    const c = (clienteItems[i] && clienteItems[i].json) ? clienteItems[i].json : {};
+    const email = String(c.csm_email || '').toLowerCase();
+    if (ADMIN_EMAILS.indexOf(email) !== -1) continue; // saltar duplicados admin
+    putTci(c.client_id_di, c.nombre, c.csm_email);
+    putTci(c.client_id_bgc, c.nombre, c.csm_email);
+    putTci(c.client_id_ce, c.nombre, c.csm_email);
+  }
+} catch (e) {
+  // Si el nodo Supabase cambia de nombre, NO romper el cron: client_name/csm_owner
+  // quedan null y el frontend cae al fallback. Verificar el nombre del nodo.
+}
+
 // El nodo HTTP del endpoint CH puede devolver el body de dos formas segun la
 // configuracion: (a) 1 item por fila (JSONEachRow parseado item-por-item) o
 // (b) 1 item con json.data = [...] (response body parseado como JSON entero).
@@ -131,11 +162,12 @@ for (let i = 0; i < chRows.length; i++) {
     if (nota) existing.nota = existing.nota ? (existing.nota + '\n' + nota) : nota;
     mergedDups++;
   } else {
+    const info = tciInfo.get(String(clientId)) || null;   // {nombre, csm_email} desde `clientes`
     rowMap.set(key, {
       periodo_mes:        periodoMesStr,
       client_id:          String(clientId),
-      client_name:        null,                          // CH no expone client_name
-      csm_owner:          null,                          // CH no expone csm_owner
+      client_name:        info ? info.nombre : null,       // canonico desde clientes (para viewers)
+      csm_owner:          info ? info.csm_email : null,     // email del CSM; frontend lo mapea a nombre
       product:            String(product),
       sub_product:        String(subProduct),
       usage:              usageSafe,

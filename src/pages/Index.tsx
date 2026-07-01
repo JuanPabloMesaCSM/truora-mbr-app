@@ -202,6 +202,15 @@ const Index = ({ source = 'regular' }: IndexProps) => {
     }
 
     await loadSessionData(email);
+
+    // Deep-link post-login: el OAuth siempre redirige a `/`, así que si el usuario
+    // inició sesión desde otra ruta (ej. un viewer @truora.com que abrió /dashboard
+    // sin sesión → /login?next=/dashboard), volvemos ahí con un hop client-side.
+    const next = sessionStorage.getItem('postLoginNext');
+    if (next) {
+      sessionStorage.removeItem('postLoginNext');
+      if (next !== window.location.pathname) navigate(next);
+    }
   }, [loadSessionData, navigate]);
 
   /* ─── Auth guard + initial session bootstrap ─── */

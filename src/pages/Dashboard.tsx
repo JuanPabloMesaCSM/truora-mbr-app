@@ -86,10 +86,19 @@ export default function Dashboard() {
       } else {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user?.email) {
-          navigate("/login");
+          // ?next=/dashboard → tras el login, el landing (/) hace el hop de vuelta
+          // acá (importante para viewers @truora.com que abren /dashboard directo).
+          navigate("/login?next=/dashboard");
           return;
         }
         email = session.user.email;
+        // Gate de dominio (defensa; la RLS de portfolio_consumption también lo exige).
+        // El dashboard es la ÚNICA sección abierta a todos los @truora.com.
+        if (!email.endsWith("@truora.com")) {
+          await supabase.auth.signOut();
+          navigate("/login");
+          return;
+        }
       }
       setUserEmail(email);
       setAuthChecked(true);
