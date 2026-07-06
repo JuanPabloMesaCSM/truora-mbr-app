@@ -139,13 +139,6 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                     <span style={{ fontSize: 14, fontWeight: 700, color: SHELL.text }}>
                       Oppy
                     </span>
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, color: "#FBBF24",
-                      background: "rgba(251,191,36,0.15)",
-                      border: "1px solid rgba(251,191,36,0.35)",
-                      borderRadius: 999, padding: "0 6px",
-                      letterSpacing: "0.04em",
-                    }}>BETA</span>
                     {isMock && (
                       <span style={{
                         fontSize: 9, fontWeight: 700, color: "#7DD3FC",

@@ -172,7 +172,7 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
           {/* Query Repository — biblioteca de queries productivas */}
           <button
             onClick={() => navigate('/queries')}
-            title="Biblioteca de queries usadas en producción + Agente IA (próximamente)"
+            title="Biblioteca de queries usadas en producción + Agente IA Oppy"
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               fontSize: 12, fontWeight: 600,
@@ -185,14 +185,6 @@ export function WelcomeStep({ csmProfile, userEmail, onSelectProduct, onLogout, 
           >
             <BookText size={13} />
             <span>Queries</span>
-            <span style={{
-              fontSize: 9, fontWeight: 700,
-              color: '#FBBF24',
-              background: 'rgba(251,191,36,0.15)',
-              border: '1px solid rgba(251,191,36,0.35)',
-              borderRadius: 999, padding: '0 6px',
-              marginLeft: 2, letterSpacing: '0.04em',
-            }}>BETA</span>
           </button>
 
           {/* Feedback */}
