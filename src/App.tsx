@@ -16,6 +16,8 @@ import MockCanvas from "./pages/MockCanvas.tsx";
 import MockConfiamosAbril from "./pages/MockConfiamosAbril.tsx";
 import MockCuerosBiometric from "./pages/MockCuerosBiometric.tsx";
 import MockCuerosCompleto from "./pages/MockCuerosCompleto.tsx";
+import MockCerebroCueros from "./pages/MockCerebroCueros.tsx";
+import { GlobalOppy } from "./components/oppy/GlobalOppy.tsx";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +40,7 @@ const App = () => (
           <Route path="/mbr-cueros-biometric" element={<MockCuerosBiometric />} />
           <Route path="/mbr-cueros-completo" element={<MockCuerosCompleto />} />
           <Route path="/SBR/cueros-velez" element={<MockCuerosCompleto />} />
+          <Route path="/cerebro-cueros" element={<MockCerebroCueros />} />
           <Route path="/" element={<Index />} />
           <Route path="/oncall" element={<Index source="oncall" />} />
           <Route path="/botialertas" element={<BotiAlertas />} />
@@ -48,6 +51,7 @@ const App = () => (
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        <GlobalOppy />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

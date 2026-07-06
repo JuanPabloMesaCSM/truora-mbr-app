@@ -16,7 +16,6 @@ import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import QueryBrowser from "@/components/queries/QueryBrowser";
 import QueryDetailDrawer from "@/components/queries/QueryDetailDrawer";
-import { OppyButton } from "@/components/oppy/OppyButton";
 import { S, ADMIN_VIEW_EMAILS } from "@/components/queries/types";
 import type { QueryRow } from "@/components/queries/types";
 import { useQueriesRepository } from "@/hooks/useQueriesRepository";
@@ -201,8 +200,6 @@ export default function QueriesPage() {
           )}
         </main>
       </div>
-
-      {userEmail && <OppyButton userEmail={userEmail} currentRoute="/queries" />}
 
       <QueryDetailDrawer
         row={selected}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, Sparkles, User } from "lucide-react";
+import { Copy, Check, Rocket, User } from "lucide-react";
 import type { Message } from "./types";
 import { OPPY_COLORS, SHELL } from "./types";
 
@@ -32,7 +32,7 @@ export function MessageBubble({ message }: Props) {
           color: isUser ? "#C4B3FF" : "#FFFFFF",
         }}
       >
-        {isUser ? <User size={14} /> : <Sparkles size={14} />}
+        {isUser ? <User size={14} /> : <Rocket size={14} />}
       </div>
 
       {/* Bubble */}

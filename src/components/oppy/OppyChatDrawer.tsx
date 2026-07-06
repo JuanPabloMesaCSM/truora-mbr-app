@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Send, RotateCcw, BotMessageSquare as OppyIcon } from "lucide-react";
+import { X, Send, RotateCcw, Rocket as OppyIcon } from "lucide-react";
 import { useOppyChat } from "@/hooks/useOppyChat";
+import { supabase } from "@/lib/supabaseClient";
 import { MessageBubble } from "./MessageBubble";
 import { OPPY_COLORS, SHELL } from "./types";
 
@@ -15,8 +16,31 @@ interface Props {
 export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props) {
   const { messages, loading, send, reset, isMock } = useOppyChat({ userEmail, currentRoute });
   const [input, setInput] = useState("");
+  const [userName, setUserName] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Nombre del CSM (de la tabla csm) para el saludo personalizado
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!userEmail) return;
+      try {
+        const { data } = await supabase
+          .from("csm")
+          .select("nombre")
+          .eq("email", userEmail)
+          .maybeSingle();
+        const nombre = data && (data as { nombre?: string }).nombre;
+        if (!cancelled && nombre) setUserName(String(nombre).split(" ")[0]);
+      } catch {
+        /* si falla, saludo genérico */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail]);
 
   // Close on ESC
   useEffect(() => {
@@ -55,13 +79,6 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
     send(input);
     setInput("");
   };
-
-  const SUGGESTIONS = [
-    "¿Tienes una query del funnel DI?",
-    "Quiero ver el SQL de sf_di_funnel",
-    "¿Cómo calculo el consumo facturable?",
-    "Queries BGC del Report Builder",
-  ];
 
   return (
     <AnimatePresence>
@@ -140,7 +157,7 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: SHELL.muted, marginTop: 1 }}>
-                    Asistente del catálogo de queries
+                    Asistente del CSM Center
                   </div>
                 </div>
               </div>
@@ -183,9 +200,7 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                 padding: "18px 18px 8px",
               }}
             >
-              {messages.length === 0 && (
-                <EmptyState onPick={t => { setInput(t); inputRef.current?.focus(); }} suggestions={SUGGESTIONS} />
-              )}
+              {messages.length === 0 && <EmptyState userName={userName} />}
 
               {messages.map(m => <MessageBubble key={m.id} message={m} />)}
 
@@ -223,7 +238,7 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
                       onSubmit();
                     }
                   }}
-                  placeholder="Escribe tu pregunta sobre el catálogo..."
+                  placeholder="Escribe tu pregunta..."
                   rows={1}
                   style={{
                     flex: 1,
@@ -265,51 +280,25 @@ export function OppyChatDrawer({ open, onClose, userEmail, currentRoute }: Props
   );
 }
 
-function EmptyState({ suggestions, onPick }: { suggestions: string[]; onPick: (s: string) => void }) {
+function EmptyState({ userName }: { userName: string | null }) {
   return (
-    <div style={{ padding: "20px 4px", textAlign: "center" }}>
+    <div style={{ padding: "48px 16px", textAlign: "center" }}>
       <div style={{
-        width: 52, height: 52, borderRadius: 14,
+        width: 56, height: 56, borderRadius: 16,
         background: `linear-gradient(135deg, ${OPPY_COLORS.primary}, ${OPPY_COLORS.accent})`,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         boxShadow: `0 10px 30px ${OPPY_COLORS.glow}`,
-        marginBottom: 14,
+        marginBottom: 16,
       }}>
-        <OppyIcon size={22} color="#FFFFFF" />
+        <OppyIcon size={26} color="#FFFFFF" />
       </div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: SHELL.text, marginBottom: 6 }}>
-        ¿En qué te ayudo?
+      <div style={{ fontSize: 19, fontWeight: 800, color: SHELL.text, marginBottom: 8 }}>
+        ¡Hola{userName ? `, ${userName}` : ""}! 👋
       </div>
-      <div style={{ fontSize: 12.5, color: SHELL.muted, marginBottom: 18, lineHeight: 1.5 }}>
-        Busco y explico queries del catálogo (Report Builder, Dashboard,<br/>BotiAlertas y endpoints ClickHouse).
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {suggestions.map((s, i) => (
-          <button
-            key={i}
-            onClick={() => onPick(s)}
-            style={{
-              padding: "9px 12px",
-              background: SHELL.surface,
-              border: `1px solid ${SHELL.border}`,
-              borderRadius: 10,
-              fontSize: 12.5, color: SHELL.text,
-              cursor: "pointer", textAlign: "left",
-              transition: "all 0.15s",
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = "#1B2F4D";
-              e.currentTarget.style.borderColor = OPPY_COLORS.borderPill;
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = SHELL.surface;
-              e.currentTarget.style.borderColor = SHELL.border;
-            }}
-          >
-            {s}
-          </button>
-        ))}
+      <div style={{ fontSize: 13, color: SHELL.muted, lineHeight: 1.55, maxWidth: 380, margin: "0 auto" }}>
+        Soy Oppy, tu AI Agent del CSM Center. Pregúntame por queries, producto o
+        skills del proyecto.{" "}
+        <span style={{ color: SHELL.dim }}>Pronto, también las hojas de ruta de clientes.</span>
       </div>
     </div>
   );

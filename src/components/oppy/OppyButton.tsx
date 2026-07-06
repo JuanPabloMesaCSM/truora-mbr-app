@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { BotMessageSquare as OppyIcon } from "lucide-react";
+import { Rocket as OppyIcon } from "lucide-react";
 import { OppyChatDrawer } from "./OppyChatDrawer";
 import { OPPY_COLORS } from "./types";
 
