@@ -318,7 +318,7 @@ ORDER BY periodo_mes DESC, producto_root, product_identifier;
 -- ════════════════════════════════════════════════════════════
 -- ENDPOINT 7 — Portfolio consumption multi-cliente (3 meses)
 -- endpoint_id:  portfolio_consumption
--- UUID:         69e67323-9847-4dc4-8759-a244f09d6e9e
+-- UUID:         81ef4b77-ef25-49bb-9610-66ba7ef01e16
 -- Uso:          alimenta la tabla cacheada portfolio_consumption en Supabase
 --               (cron L/M/V 6 AM BOG) para que /dashboard sea instantaneo.
 --

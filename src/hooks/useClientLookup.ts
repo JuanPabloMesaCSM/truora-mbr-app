@@ -7,7 +7,7 @@ import type { PortfolioRow } from "./usePortfolioConsumption";
  * del CSM. A diferencia de usePortfolioConsumption (que lee el snapshot
  * `portfolio_consumption` de Supabase escrito por el cron), este hook hace
  * una llamada on-demand al webhook n8n "Portfolio Client Lookup", que a su vez
- * pega al endpoint CH `69e67323` (query maestra de counters) con un solo
+ * pega al endpoint CH `81ef4b77` (query maestra de counters) con un solo
  * client_id y devuelve las filas SIN persistir nada.
  *
  * Finalidad: cuando preguntan por un cliente fuera de cartera, ver rápido qué

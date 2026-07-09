@@ -12,8 +12,15 @@
 -- Reglas billable aplicadas (replicando motor de facturacion Truora):
 --   * FINAL para dedupe version=1 + version=2 del mismo record_id.
 --   * Validations: status IN ('success','failure'), is_validation_retry=false,
---     validation_failure_status != 'system_error',
---     validation_declined_reason NOT IN ('no_face_detected','front_document_not_found','document_not_recognized').
+--     validation_failure_status != 'system_error'.
+--     ⚠️ CAMBIO 2026-07-08: se QUITO el filtro validation_declined_reason NOT IN
+--     ('no_face_detected','front_document_not_found','document_not_recognized').
+--     Motivo doble: (1) desde 2026-06-06 los declinados SI se facturan (la query
+--     maestra de Truora ya no los excluye — feedback_validations_declined_reason_now_billable);
+--     (2) la plataforma ELIMINO la columna validation_declined_reason de
+--     client_usage_records → referenciarla daba "Unknown expression identifier
+--     validation_declined_reason in scope base". Este endpoint era el ultimo
+--     straggler que aun la usaba (DI Report Builder e0425fdf ya se habia limpiado).
 --   * Checks: status='completed' AND check_type NOT IN ('document-validation','validation').
 --   * TruConnect (outbound + notification): status IN ('success','delivered','read'),
 --     waba_phone_number != '+17547045206' (linea demo).
@@ -45,7 +52,6 @@ WITH base AS (
     check_type,
     is_validation_retry,
     validation_failure_status,
-    validation_declined_reason,
     manual_review_status,
     channel_type,
     waba_phone_number,
@@ -87,11 +93,8 @@ mapped AS (
     AND status IN ('success', 'failure')
     AND is_validation_retry = false
     AND validation_failure_status != 'system_error'
-    AND validation_declined_reason NOT IN (
-      'no_face_detected',
-      'front_document_not_found',
-      'document_not_recognized'
-    )
+    -- Declinados (no_face_detected / front_document_not_found / document_not_recognized)
+    -- YA NO se excluyen: facturables desde 2026-06-06 + columna eliminada del schema.
 
   UNION ALL
 

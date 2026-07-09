@@ -211,7 +211,7 @@ La tabla pasa de 3 buckets planos (`validations`/`checks`/`truconnect`) a desglo
 por **sub-producto**, adoptando la query maestra oficial de counters de Truora.
 SQL del endpoint: `clickhouse/portfolio_subproduct_migration.sql`.
 
-> ⚠️ **El endpoint `69e67323` fue REESCRITO in-place** (JP, 2026-06-11) con la query
+> ⚠️ **El endpoint `81ef4b77` fue REESCRITO in-place** (JP, 2026-06-11) con la query
 > sub-producto. La URL/UUID del nodo HTTP NO cambia — cambia el BODY (param) y el
 > output (mas columnas). **Pausar el cron hasta aplicar TODOS los cambios de abajo**,
 > si no el upsert con la PK vieja corrompe los totales (muchas filas por
@@ -278,7 +278,7 @@ GROUP BY product, sub_product ORDER BY product, total DESC;
 
 ### Ventana subida a 12 meses (2026-06-11)
 
-El query del endpoint `69e67323` paso de 3 a 12 meses (linea ~56 del SQL:
+El query del endpoint `81ef4b77` paso de 3 a 12 meses (linea ~56 del SQL:
 `date_sub(MONTH, 12, today())`). Implicaciones:
 - El cron ahora **calcula y guarda el año completo** cada corrida (L/M/V). La
   tabla crece de ~1.900 a ~6-8k filas (trivial para Postgres). Meses cerrados son

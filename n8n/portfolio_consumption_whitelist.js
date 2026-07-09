@@ -48,13 +48,15 @@ for (let i = 0; i < items.length; i++) {
 
 const tciArray = Array.from(tciSet);
 
-// Tamano de lote. ~95 TCIs / 10 = ~10 lotes. BAJADO de 20 a 10 el 2026-06-13:
-// el bloque VALIDATIONS_MR (revision manual) agrego una pasada mas sobre
-// base_data y un lote de 20 TCIs x 12 meses se pasaba del timeout ~30s del
-// Query Endpoint /run ("Timeout error" en el nodo HTTP, item 0). Con 10 TCIs
-// cada lote corre comodo (~mitad del trabajo). Si algun lote AUN roza el limite
-// (CH degradado, cliente muy pesado en el lote), bajar a 8 o 5.
-const BATCH_SIZE = 10;
+// Tamano de lote. ~95 TCIs / 5 = ~19 lotes. Historial: 20 (inicial) → 10
+// (2026-06-13, el bloque VALIDATIONS_MR agrego una pasada mas sobre base_data) →
+// 5 (2026-07-09). El 2026-07-09, al recrear el endpoint CH (81ef4b77 → 81ef4b77
+// tras eliminarse validation_declined_reason del schema), un lote de 10 TCIs x
+// 12 meses volvio a pasarse del timeout ~30s ("The service was not able to
+// process your request / Internal server error", item 0). Con 5 corre verde.
+// NO afecta cobertura: los lotes son disjuntos y "Prepare Upsert" agrega TODAS
+// las respuestas via $input.all(). Si vuelve a rozar, bajar a 3.
+const BATCH_SIZE = 5;
 
 const batches = [];
 for (let i = 0; i < tciArray.length; i += BATCH_SIZE) {

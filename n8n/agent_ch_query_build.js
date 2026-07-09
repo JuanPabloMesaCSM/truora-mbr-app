@@ -119,7 +119,7 @@ const ENDPOINTS = {
   // ⚠️ Si el HTTP Request del workflow está fijo en GET, debe bifurcarse con IF method='POST'.
 
   portfolio_consumption: {
-    uuid: '69e67323-9847-4dc4-8759-a244f09d6e9e',
+    uuid: '81ef4b77-ef25-49bb-9610-66ba7ef01e16',
     post: true,
     // body: { tci_list: ['TCI...', 'TCI...'] }
     // Devuelve consumo 3 meses multi-cliente. Diseñado para Portfolio Sync, no consultas ad-hoc.

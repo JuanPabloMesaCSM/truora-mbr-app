@@ -28,7 +28,7 @@ pega a este webhook n8n, que tiene las credenciales del lado servidor.
 [Code: Build CH Body]                -- extrae client_id -> CSV para el param
    |
    v
-[HTTP Request: CH Endpoint 69e67323] -- MISMO endpoint del cron (ya a 12 meses)
+[HTTP Request: CH Endpoint 81ef4b77] -- MISMO endpoint del cron (ya a 12 meses)
    |
    v
 [Code: Prepare Rows]                  -- REUSA portfolio_consumption_sync.js
@@ -60,9 +60,9 @@ URL resultante: `https://n8n.zapsign.com.br/webhook/portfolio-client-lookup`
 - Codigo: pegar `n8n/portfolio_client_lookup_build_body.js`
 - Output: 1 item con `json.client_id_csv` (un solo TCI, o `'__none__'` si vino vacio).
 
-### 3. HTTP Request: CH Endpoint (el MISMO del cron, 69e67323 — ahora 12 meses)
+### 3. HTTP Request: CH Endpoint (el MISMO del cron, 81ef4b77 — ahora 12 meses)
 
-> El lookup usa el **mismo endpoint que el cron Portfolio Sync** (`69e67323`).
+> El lookup usa el **mismo endpoint que el cron Portfolio Sync** (`81ef4b77`).
 > Decision 2026-06-11: en vez de crear un endpoint aparte, se subio el query
 > general de 3 a 12 meses (1 linea: `date_sub(MONTH, 12, today())`). Asi el cron
 > guarda el año completo en la cartera Y el lookup (1 cliente) lo hereda gratis.
@@ -71,7 +71,7 @@ URL resultante: `https://n8n.zapsign.com.br/webhook/portfolio-client-lookup`
 > memoria `feedback_ch_endpoint_editor_vs_saved`).
 
 - **Method**: POST
-- **URL**: `https://console-api.clickhouse.cloud/.api/query-endpoints/69e67323-9847-4dc4-8759-a244f09d6e9e/run`
+- **URL**: `https://console-api.clickhouse.cloud/.api/query-endpoints/81ef4b77-ef25-49bb-9610-66ba7ef01e16/run`
 - **Authentication**: Generic Credential Type -> Basic Auth (key `Automatización Oppy permanente`)
   - o reusar el mismo credential del cron Portfolio Sync.
 - **Send Headers**:
@@ -140,7 +140,7 @@ cubierto por la data (`coveredFrom -> coveredTo`).
 
 - **Efimero**: este flujo NO escribe en `portfolio_consumption`. Es solo
   CH -> Code -> Respond. Nada se persiste.
-- **Ventana = ultimo año (12 meses)**: el query general (`69e67323`) trae
+- **Ventana = ultimo año (12 meses)**: el query general (`81ef4b77`) trae
   `date_sub(MONTH, 12, today())` (desde junio 2025 con la fecha actual). El cron
   de cartera Y el lookup comparten ESE endpoint — un solo query, sin duplicado.
 - **Mismo endpoint que el cron**: si la query general cambia (reglas billable,
@@ -155,6 +155,6 @@ cubierto por la data (`coveredFrom -> coveredTo`).
 | Front: "El webhook respondio HTTP 404" | El webhook no esta activo o el path no es `portfolio-client-lookup`. Activar el workflow. |
 | Front: CORS error en consola | Falta `Access-Control-Allow-Origin: *` en el Webhook node (CORS) y/o en Respond to Webhook. |
 | Respuesta `{ rows: [] }` para un TCI valido | El TCI no consumio en el ultimo año, o el param llego como `'__none__'` (body sin client_id). Revisar el Code "Build CH Body" input. |
-| Solo trae 3 meses (no 12) | El HTTP node sigue apuntando a `69e67323` (el del cron). Cambiar la URL al UUID del endpoint dedicado `portfolio_client_lookup_12m`. |
+| Solo trae 3 meses (no 12) | El HTTP node sigue apuntando a `81ef4b77` (el del cron). Cambiar la URL al UUID del endpoint dedicado `portfolio_client_lookup_12m`. |
 | `[object Object]` en la respuesta | Respond to Webhook mal configurado: usar "First Incoming Item", no expresion objeto. |
 | 0 filas siempre | El HTTP devolvio el body en otro formato. El parser maneja `data` string / `.data` array / item-por-fila; revisar Response Format = JSON en el HTTP node. |

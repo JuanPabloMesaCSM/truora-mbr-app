@@ -22,7 +22,7 @@ export const DASHBOARD_DETAIL_WEBHOOK_URL =
 
 /** URL del webhook n8n "Portfolio Client Lookup" — consulta efímera de
  *  CUALQUIER Client ID (aunque no esté en la cartera). Llama al endpoint CH
- *  `69e67323` con un solo TCI, parsea y devuelve las filas SIN persistir en
+ *  `81ef4b77` con un solo TCI, parsea y devuelve las filas SIN persistir en
  *  Supabase. Ventana fija del query: últimos 3 meses (desde Marzo). */
 export const PORTFOLIO_LOOKUP_WEBHOOK_URL =
   "https://n8n.zapsign.com.br/webhook/portfolio-client-lookup";

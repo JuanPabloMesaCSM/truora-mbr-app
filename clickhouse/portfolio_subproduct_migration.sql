@@ -34,7 +34,7 @@
 --   → COMPANY_NAME y CSM NO salen de acá: el frontend los resuelve canónicos
 --     desde Supabase (clientes.nombre + tabla csm). En CH vienen vacíos/stale.
 --
--- Endpoint CH a crear (Query Endpoint nuevo, NO pisar el 69e67323 hasta validar):
+-- Endpoint CH a crear (Query Endpoint nuevo, NO pisar el 81ef4b77 hasta validar):
 --   Param: {client_id: String}  (CSV de TCIs, '' = todos)
 --   Auth Basic + header x-clickhouse-endpoint-version: 2 (POST JSONEachRow)
 --   ⚠️ Recordá GUARDAR la query del endpoint (correr en editor no actualiza el endpoint).
@@ -55,14 +55,17 @@ WITH base_data AS (
         document_type,
         manual_review_status,
         validation_failure_status,
-        is_validation_retry,
-        validation_declined_reason
+        is_validation_retry
+        -- validation_declined_reason ELIMINADA del schema CH (verificado 2026-07-08:
+        -- la plataforma la quitó tras el cambio 2026-06-06 que hace facturables los
+        -- declinados). Era columna muerta acá (se seleccionaba pero no se filtraba).
+        -- Referenciarla daba "Unknown expression identifier validation_declined_reason".
     FROM client_usage_records FINAL
     PREWHERE ( {client_id:String} = '' OR client_id IN splitByChar(',', {client_id:String}) )
     -- Ventana = ULTIMO AÑO (12 meses). Subido de 3 a 12 el 2026-06-11: el cron de
     -- cartera (L/M/V) ahora calcula y guarda el año completo, y el lookup de
     -- clientes fuera de cartera (webhook portfolio-client-lookup, comparte ESTE
-    -- mismo endpoint 69e67323) hereda los 12 meses sin endpoint aparte.
+    -- mismo endpoint 81ef4b77) hereda los 12 meses sin endpoint aparte.
     WHERE date_counted >= toStartOfMonth(date_sub(MONTH, 12, today()))
         AND waba_phone_number != '+17547045206'
 ),

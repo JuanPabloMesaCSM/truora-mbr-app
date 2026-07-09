@@ -2,7 +2,7 @@
 //
 // Lookup EFIMERO: consulta de CUALQUIER Client ID (aunque no este en la cartera)
 // para ver su consumo por sub-producto SIN guardar nada en Supabase. Reusa el
-// mismo endpoint CH `69e67323` que el cron Portfolio Sync (query maestra de
+// mismo endpoint CH `81ef4b77` que el cron Portfolio Sync (query maestra de
 // counters), pero con un solo TCI.
 //
 // Lee el client_id del Webhook (acepta $json.body.client_id de POST JSON,
