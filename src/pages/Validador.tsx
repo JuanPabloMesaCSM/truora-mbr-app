@@ -61,6 +61,7 @@ const VALIDADOR_CLIENTS: ValidadorClient[] = [
   { tci: "TCI83d4b49da224c317d08d3c71015db4f4", nombre: "Indrive",     csm: "dtibaquira@truora.com",  grado: "100%" }, // solo Documento vía API (desde mayo 2026); RB DI estándar = 0
   { tci: "TCIefe7d18036f5a8be4016ce1df2553957", nombre: "Sicrea",      csm: "varango@truora.com",     grado: "100%" }, // DI vía API (rostro + doc + e-signature); RB DI estándar = 0
   { tci: "TCI0f333dc93c0363e571438ac582e77956", nombre: "Addi",        csm: "varango@truora.com",     grado: "100%" }, // doc + rostro (pasiva + TruFace) vía API; RB DI estándar = 0. Validado jun 2026 (CH↔SF 1:1)
+  { tci: "TCIbe3bf13eb4c7562a39887cabad6e1895", nombre: "Federación Nacional de Cafeteros", csm: "jpmesa@truora.com", grado: "100%" }, // consume por validación (doc+pasiva+TruFace). NO está en `clientes` — CSM=JP por defecto (corregir si tiene dueño). Validado jun 2026: 4.479 (salto ~8x desde may)
   { tci: "TCIc931783f045952c3ef1da79fbbdf90e4", nombre: "MejorCDT",    csm: "jpotoya@truora.com",    grado: "alto" },
   { tci: "TCIb1afd2ba9d47d0aab336955d539a7713", nombre: "Agricapital", csm: "sduran@truora.com",     grado: "alto" },
   { tci: "TCIdb1b7314c47c7d0b175640f4d1680a0c", nombre: "Ban100",      csm: "nagutierrez@truora.com", grado: "alto" },
