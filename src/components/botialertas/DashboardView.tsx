@@ -19,6 +19,22 @@ interface Props {
   weekFin: string;          // YYYY-MM-DD de la semana seleccionada
   scope: "all" | "mine";    // para el botón "copiar resumen"
   userEmail: string | null; // email del usuario logueado, para auth de notas
+  /** Override del título del Pulse. Default (undefined) = "Semana del {weekFin}".
+   *  Lo usa la vista "Consolidado mensual" para poner el rango. */
+  periodTitle?: string;
+  /** Etiquetas de los rangos en el Pulse. Default "Actual"/"Anterior".
+   *  Consolidado los pone como "Último mes"/"Primer mes". */
+  periodActualLabel?: string;
+  periodAnteriorLabel?: string;
+  /** Cobertura del rango (solo consolidado): clientes con consumo en el período
+   *  actual vs el anterior. Contextualiza el crecimiento (cartera nueva ≠ orgánico). */
+  coverage?: { inicioLabel: string; finLabel: string; inicioCount: number; finCount: number };
+  /** Etiquetas de período (solo consolidado): reemplazan los nombres de mes suelto
+   *  de las columnas/rangos por el rango ("Ene–Jun 2026" / "Jul–Dic 2025"). */
+  rangeLabels?: { actual: string; anterior: string };
+  /** true = el período no tiene uno anterior comparable → mostrar SOLO totales
+   *  (sin "vs 0 · +X" ni % de crecimiento). */
+  noComparison?: boolean;
 }
 
 type KpiKey = "riesgo" | "creciendo" | "estables" | "total";
@@ -26,7 +42,7 @@ type KpiKey = "riesgo" | "creciendo" | "estables" | "total";
 /* ========================================================================
    DashboardView — vista de embudo
    ======================================================================== */
-export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin, scope, userEmail }: Props) {
+export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin, scope, userEmail, periodTitle, periodActualLabel, periodAnteriorLabel, coverage, rangeLabels, noComparison }: Props) {
   const [expandedProduct, setExpandedProduct] = useState<Producto | null>(null);
   const [expandedKpi, setExpandedKpi] = useState<KpiKey | null>(null);
   const [tableOpen, setTableOpen] = useState(false);
@@ -173,10 +189,12 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
 
   /* ─── helpers para encabezados de fechas ───────────────────────── */
   const sample = rows[0];
-  const mesActualLabel = sample ? fmtMonthLong(sample.periodo_actual_fin) : "—";
-  const mesPrevLabel   = sample ? fmtMonthLong(sample.periodo_anterior_fin) : "—";
-  const rangoActual    = sample ? fmtRangeHumano(sample.periodo_actual_inicio, sample.periodo_actual_fin) : "—";
-  const rangoPrev      = sample ? fmtRangeHumano(sample.periodo_anterior_inicio, sample.periodo_anterior_fin) : "—";
+  // En consolidado, rangeLabels reemplaza los nombres de mes suelto por el rango
+  // ("Ene–Jun 2026"), tanto en columnas como en el Pulse.
+  const mesActualLabel = rangeLabels?.actual ?? (sample ? fmtMonthLong(sample.periodo_actual_fin) : "—");
+  const mesPrevLabel   = rangeLabels?.anterior ?? (sample ? fmtMonthLong(sample.periodo_anterior_fin) : "—");
+  const rangoActual    = rangeLabels?.actual ?? (sample ? fmtRangeHumano(sample.periodo_actual_inicio, sample.periodo_actual_fin) : "—");
+  const rangoPrev      = rangeLabels?.anterior ?? (sample ? fmtRangeHumano(sample.periodo_anterior_inicio, sample.periodo_anterior_fin) : "—");
 
   /* ─── render ───────────────────────────────────────────────────── */
 
@@ -196,9 +214,18 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
 
   return (
     <>
-      <Pulse weekFin={weekFin} totalClientes={portfolioCounts.total.size} rangoActual={rangoActual} rangoPrev={rangoPrev} />
+      <Pulse
+        weekFin={weekFin}
+        totalClientes={portfolioCounts.total.size}
+        rangoActual={rangoActual}
+        rangoPrev={rangoPrev}
+        titleOverride={periodTitle}
+        actualLabel={periodActualLabel}
+        anteriorLabel={periodAnteriorLabel}
+        coverage={coverage}
+      />
 
-      <OppyHero totalActual={oppyTotal.actual} totalAnterior={oppyTotal.anterior} />
+      <OppyHero totalActual={oppyTotal.actual} totalAnterior={oppyTotal.anterior} noComparison={noComparison} periodLabel={rangeLabels?.actual} />
 
       <KpiBanner
         counts={portfolioCounts}
@@ -226,6 +253,7 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         onClickClient={(id) => setDrawerClient(id)}
         mesActualLabel={mesActualLabel}
         mesPrevLabel={mesPrevLabel}
+        noComparison={noComparison}
       />
 
       <TableSection
@@ -240,14 +268,16 @@ export default function DashboardView({ rows, allWeeksRows, csmByEmail, weekFin,
         mesPrevLabel={mesPrevLabel}
       />
 
-      <GlobalSummary
-        riesgo={globalRiesgo}
-        crecimiento={globalCrecimiento}
-        csmByEmail={csmByEmail}
-        onClickClient={(id) => setDrawerClient(id)}
-        mesActualLabel={mesActualLabel}
-        mesPrevLabel={mesPrevLabel}
-      />
+      {!noComparison && (
+        <GlobalSummary
+          riesgo={globalRiesgo}
+          crecimiento={globalCrecimiento}
+          csmByEmail={csmByEmail}
+          onClickClient={(id) => setDrawerClient(id)}
+          mesActualLabel={mesActualLabel}
+          mesPrevLabel={mesPrevLabel}
+        />
+      )}
 
       <AnimatePresence>
         {drawerData && (
@@ -291,11 +321,16 @@ function severityScore(cells: Partial<Record<Producto, Alerta>>): number {
    PULSE — header con periodo y rangos REALES
    ========================================================================= */
 function Pulse({
-  weekFin, totalClientes, rangoActual, rangoPrev,
-}: { weekFin: string; totalClientes: number; rangoActual: string; rangoPrev: string }) {
+  weekFin, totalClientes, rangoActual, rangoPrev, titleOverride, actualLabel, anteriorLabel, coverage,
+}: {
+  weekFin: string; totalClientes: number; rangoActual: string; rangoPrev: string;
+  titleOverride?: string; actualLabel?: string; anteriorLabel?: string;
+  coverage?: { inicioLabel: string; finLabel: string; inicioCount: number; finCount: number };
+}) {
   const fechaTitulo = new Date(weekFin).toLocaleDateString("es-CO", {
     day: "numeric", month: "long", year: "numeric",
   });
+  const titulo = titleOverride ?? `Semana del ${fechaTitulo}`;
 
   return (
     <motion.div
@@ -318,19 +353,46 @@ function Pulse({
         lineHeight: 1.1, letterSpacing: "-0.02em",
         margin: 0, marginBottom: 12,
       }}>
-        Semana del {fechaTitulo}
+        {titulo}
       </h1>
+
+      {coverage && (
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+          background: "rgba(125,211,252,0.08)", border: "1px solid rgba(125,211,252,0.22)",
+          borderRadius: 10, padding: "8px 12px", marginBottom: 14,
+          fontSize: 12, color: S.muted,
+        }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: "#7DD3FC", letterSpacing: "0.10em", textTransform: "uppercase" }}>
+            Cartera con datos
+          </span>
+          <span>
+            {coverage.inicioLabel}: <span style={{ color: S.text, fontWeight: 700 }}>{coverage.inicioCount}</span> clientes
+          </span>
+          <span style={{ color: S.dim }}>→</span>
+          <span>
+            {coverage.finLabel}: <span style={{ color: S.text, fontWeight: 700 }}>{coverage.finCount}</span> clientes
+          </span>
+          {coverage.finCount !== coverage.inicioCount && (
+            <span style={{
+              fontWeight: 700,
+              color: coverage.finCount > coverage.inicioCount ? "#10B981" : "#F59E0B",
+            }}>
+              ({coverage.finCount > coverage.inicioCount ? "+" : ""}{coverage.finCount - coverage.inicioCount})
+            </span>
+          )}
+        </div>)}
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
         <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.5 }}>
           <span style={{ color: S.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginRight: 6 }}>
-            Actual
+            {actualLabel ?? "Actual"}
           </span>
           <span style={{ color: S.text, fontWeight: 600 }}>{rangoActual}</span>
         </div>
         <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.5 }}>
           <span style={{ color: S.dim, fontSize: 10.5, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginRight: 6 }}>
-            Anterior
+            {anteriorLabel ?? "Anterior"}
           </span>
           <span style={{ color: S.text, fontWeight: 600 }}>{rangoPrev}</span>
         </div>
@@ -351,11 +413,11 @@ function Pulse({
    Las unidades difieren (validaciones / checks / conversaciones) — interpretarse
    como "ritmo combinado del consumo del equipo", no como una unidad única.
    ========================================================================= */
-function OppyHero({ totalActual, totalAnterior }: { totalActual: number; totalAnterior: number }) {
+function OppyHero({ totalActual, totalAnterior, noComparison, periodLabel }: { totalActual: number; totalAnterior: number; noComparison?: boolean; periodLabel?: string }) {
   const delta = totalActual - totalAnterior;
   const pct = pctDelta(totalActual, totalAnterior);
   const isUp = (pct ?? 0) >= 0;
-  const color = pct == null ? S.muted : isUp ? "#10B981" : "#EF4444";
+  const color = noComparison ? "#7DD3FC" : pct == null ? S.muted : isUp ? "#10B981" : "#EF4444";
   const verb = isUp ? "creció" : "decreció";
   const TrendIcon = isUp ? TrendingUp : TrendingDown;
 
@@ -400,30 +462,46 @@ function OppyHero({ totalActual, totalAnterior }: { totalActual: number; totalAn
         gap: 14, flexWrap: "wrap", justifyContent: "center",
         marginBottom: 6,
       }}>
-        <span style={{
-          fontSize: 22, color: S.text, fontWeight: 700,
-          letterSpacing: "-0.01em",
-        }}>
-          Oppy <span style={{ color }}>{verb}</span>
-        </span>
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 8,
-          fontSize: 44, fontWeight: 800, color,
-          letterSpacing: "-0.03em", lineHeight: 1,
-        }}>
-          <TrendIcon size={32} strokeWidth={2.6} />
-          {fmtPct(pct)}
-        </span>
+        {noComparison ? (
+          <>
+            <span style={{ fontSize: 22, color: S.text, fontWeight: 700, letterSpacing: "-0.01em" }}>
+              Consumo total
+            </span>
+            <span style={{ fontSize: 44, fontWeight: 800, color, letterSpacing: "-0.03em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+              {fmtNum(totalActual)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 22, color: S.text, fontWeight: 700, letterSpacing: "-0.01em" }}>
+              Oppy <span style={{ color }}>{verb}</span>
+            </span>
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              fontSize: 44, fontWeight: 800, color,
+              letterSpacing: "-0.03em", lineHeight: 1,
+            }}>
+              <TrendIcon size={32} strokeWidth={2.6} />
+              {fmtPct(pct)}
+            </span>
+          </>
+        )}
       </div>
 
       <div style={{ position: "relative", fontSize: 12.5, color: S.muted, marginTop: 10 }}>
-        <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalActual)}</span>
-        <span style={{ color: S.dim, margin: "0 6px" }}>actual</span>
-        <span style={{ color: S.dim, margin: "0 4px" }}>vs</span>
-        <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalAnterior)}</span>
-        <span style={{ color: S.dim, margin: "0 6px" }}>anterior</span>
-        <span style={{ color: S.dim, margin: "0 6px" }}>·</span>
-        <span style={{ color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtNumSigned(delta)}</span>
+        {noComparison ? (
+          <span>{periodLabel ?? "período"} · sin período anterior para comparar</span>
+        ) : (
+          <>
+            <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalActual)}</span>
+            <span style={{ color: S.dim, margin: "0 6px" }}>actual</span>
+            <span style={{ color: S.dim, margin: "0 4px" }}>vs</span>
+            <span style={{ color: S.text, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmtNum(totalAnterior)}</span>
+            <span style={{ color: S.dim, margin: "0 6px" }}>anterior</span>
+            <span style={{ color: S.dim, margin: "0 6px" }}>·</span>
+            <span style={{ color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtNumSigned(delta)}</span>
+          </>
+        )}
       </div>
 
       <div style={{ position: "relative", fontSize: 10.5, color: S.dim, marginTop: 8, fontStyle: "italic" }}>
@@ -711,7 +789,7 @@ function CopyResumenButton({
    ========================================================================= */
 function ProductRow({
   aggs, expanded, onToggle, topMovers, csmByEmail, onClickClient,
-  mesActualLabel, mesPrevLabel,
+  mesActualLabel, mesPrevLabel, noComparison,
 }: {
   aggs: Record<Producto, { valor_actual: number; valor_anterior: number; variacion_pct: number | null; variacion_abs: number; counts: Record<Severidad, number> }>;
   expanded: Producto | null;
@@ -721,6 +799,7 @@ function ProductRow({
   onClickClient: (cliente_id: string) => void;
   mesActualLabel: string;
   mesPrevLabel: string;
+  noComparison?: boolean;
 }) {
   return (
     <div style={{ marginBottom: 26 }}>
@@ -735,6 +814,7 @@ function ProductRow({
             expanded={expanded === p}
             onClick={() => onToggle(p)}
             delay={i}
+            noComparison={noComparison}
           />
         ))}
       </div>
@@ -766,13 +846,14 @@ function ProductRow({
 }
 
 function ProductCard({
-  producto, agg, expanded, onClick, delay,
+  producto, agg, expanded, onClick, delay, noComparison,
 }: {
   producto: Producto;
   agg: { valor_actual: number; valor_anterior: number; variacion_pct: number | null; variacion_abs: number; counts: Record<Severidad, number> };
   expanded: boolean;
   onClick: () => void;
   delay: number;
+  noComparison?: boolean;
 }) {
   const m = PROD_META[producto];
   const [hover, setHover] = useState(false);
@@ -817,35 +898,45 @@ function ProductCard({
         <div style={{ fontSize: 28, fontWeight: 800, color: S.text, letterSpacing: "-0.02em", lineHeight: 1 }}>
           {fmtNum(agg.valor_actual)}
         </div>
-        <div style={{ fontSize: 12, color: S.muted }}>
-          vs <span style={{ color: S.text, fontWeight: 600 }}>{fmtNum(agg.valor_anterior)}</span>
+        {!noComparison && (
+          <div style={{ fontSize: 12, color: S.muted }}>
+            vs <span style={{ color: S.text, fontWeight: 600 }}>{fmtNum(agg.valor_anterior)}</span>
+          </div>
+        )}
+      </div>
+
+      {noComparison ? (
+        <div style={{ fontSize: 11.5, color: S.dim, fontWeight: 500, marginBottom: 16 }}>
+          consumo total del período
         </div>
-      </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 14, fontWeight: 700, color: deltaColor }}>
+            <TrendIcon size={14} strokeWidth={2.6} />
+            {fmtPct(agg.variacion_pct)}
+          </span>
+          <span style={{ fontSize: 11, color: S.muted, fontWeight: 500 }}>
+            ({fmtNumSigned(agg.variacion_abs)})
+          </span>
+        </div>
+      )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 14, fontWeight: 700, color: deltaColor }}>
-          <TrendIcon size={14} strokeWidth={2.6} />
-          {fmtPct(agg.variacion_pct)}
-        </span>
-        <span style={{ fontSize: 11, color: S.muted, fontWeight: 500 }}>
-          ({fmtNumSigned(agg.variacion_abs)})
-        </span>
-      </div>
-
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {agg.counts.critica > 0 && (
-          <SevBadge color={SEV_META.critica.color} label={`${agg.counts.critica} crítica${agg.counts.critica === 1 ? "" : "s"}`} />
-        )}
-        {agg.counts.fuerte > 0 && (
-          <SevBadge color={SEV_META.fuerte.color} label={`${agg.counts.fuerte} fuerte${agg.counts.fuerte === 1 ? "" : "s"}`} />
-        )}
-        {agg.counts.crecimiento > 0 && (
-          <SevBadge color={SEV_META.crecimiento.color} label={`${agg.counts.crecimiento} creciendo`} />
-        )}
-        {agg.counts.critica === 0 && agg.counts.fuerte === 0 && agg.counts.crecimiento === 0 && (
-          <span style={{ fontSize: 10.5, color: S.dim, fontWeight: 500 }}>Sin movimientos relevantes</span>
-        )}
-      </div>
+      {!noComparison && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {agg.counts.critica > 0 && (
+            <SevBadge color={SEV_META.critica.color} label={`${agg.counts.critica} crítica${agg.counts.critica === 1 ? "" : "s"}`} />
+          )}
+          {agg.counts.fuerte > 0 && (
+            <SevBadge color={SEV_META.fuerte.color} label={`${agg.counts.fuerte} fuerte${agg.counts.fuerte === 1 ? "" : "s"}`} />
+          )}
+          {agg.counts.crecimiento > 0 && (
+            <SevBadge color={SEV_META.crecimiento.color} label={`${agg.counts.crecimiento} creciendo`} />
+          )}
+          {agg.counts.critica === 0 && agg.counts.fuerte === 0 && agg.counts.crecimiento === 0 && (
+            <span style={{ fontSize: 10.5, color: S.dim, fontWeight: 500 }}>Sin movimientos relevantes</span>
+          )}
+        </div>
+      )}
     </motion.button>
   );
 }
@@ -1667,15 +1758,28 @@ function ProductSection({
 
       <ExtrasBlock producto={producto} alerta={alerta} />
 
-      {/* sparkline de variación: refleja la trayectoria real (cae cuando cae) */}
-      {history.length >= 2 && (
-        <VariacionSparklineBlock history={history} color={m.color} />
-      )}
+      {/* Consolidado: sparkline de VOLUMEN mensual. Semanal: variación %. */}
+      {isConsolidadoAlerta(alerta)
+        ? (history.length >= 2 && <TrendSparklineBlock history={history} color={m.color} />)
+        : (history.length >= 2 && <VariacionSparklineBlock history={history} color={m.color} />)}
 
       <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${S.border}`, fontSize: 10.5, color: S.dim }}>
-        {fmtRangeHumano(alerta.periodo_anterior_inicio, alerta.periodo_anterior_fin)}
-        {" → "}
-        {fmtRangeHumano(alerta.periodo_actual_inicio, alerta.periodo_actual_fin)}
+        {isConsolidadoAlerta(alerta) ? (
+          <>
+            {promedioMes(alerta) != null && (
+              <div style={{ marginBottom: 4, color: S.muted }}>
+                Promedio: <span style={{ color: S.text, fontWeight: 700 }}>{fmtNum(promedioMes(alerta))}</span> {m.metricaPlural}/mes
+              </div>
+            )}
+            {consolidadoRangeText(alerta)}
+          </>
+        ) : (
+          <>
+            {fmtRangeHumano(alerta.periodo_anterior_inicio, alerta.periodo_anterior_fin)}
+            {" → "}
+            {fmtRangeHumano(alerta.periodo_actual_inicio, alerta.periodo_actual_fin)}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1710,6 +1814,59 @@ function VariacionSparklineBlock({ history, color }: { history: Alerta[]; color:
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: S.dim, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
         <span>{fechaInicio}</span>
         <span>{fechaFin}</span>
+      </div>
+    </div>
+  );
+}
+
+/* ── Consolidado mensual: helpers + sparkline de VOLUMEN ── */
+function isConsolidadoAlerta(a: Alerta): boolean {
+  const e = a.metricas_extra as Record<string, unknown> | null;
+  return Boolean(e && e.consolidado);
+}
+function promedioMes(a: Alerta): number | null {
+  const e = a.metricas_extra as Record<string, unknown> | null;
+  const t = e ? Number(e.promedio_mes) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+/** "Jul–Dic 2025 → Ene–Jun 2026" desde las etiquetas guardadas en metricas_extra. */
+function consolidadoRangeText(a: Alerta): string {
+  const e = a.metricas_extra as Record<string, unknown> | null;
+  const prev = e?.rango_prev_label as string | undefined;
+  const act = e?.rango_actual_label as string | undefined;
+  if (prev && act) return `${prev}  →  ${act}`;
+  return act ?? "";
+}
+function fmtMesCorto(dateStr: string): string {
+  const p = dateStr.split("-");
+  if (p.length < 2) return "";
+  const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  return `${MESES[Number(p[1]) - 1] ?? ""} ${p[0].slice(2)}`;
+}
+function TrendSparklineBlock({ history, color }: { history: Alerta[]; color: string }) {
+  const points = history.map((r) => Number(r.valor_actual)).filter((v) => Number.isFinite(v));
+  if (points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const trendColor = last < first ? "#EF4444" : last > first ? "#10B981" : color;
+  const mesIni = fmtMesCorto(history[0].periodo_actual_fin);
+  const mesFin = fmtMesCorto(history[history.length - 1].periodo_actual_fin);
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "baseline",
+        fontSize: 10, color: S.muted, fontWeight: 600,
+        letterSpacing: "0.10em", textTransform: "uppercase", marginBottom: 6,
+      }}>
+        <span>Consumo mensual · {history.length} meses</span>
+        <span style={{ color: trendColor, fontWeight: 700, letterSpacing: 0, textTransform: "none" }}>
+          {fmtNum(first)} → {fmtNum(last)}
+        </span>
+      </div>
+      <Sparkline points={points} color={trendColor} />
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9.5, color: S.dim, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+        <span>{mesIni}</span>
+        <span>{mesFin}</span>
       </div>
     </div>
   );

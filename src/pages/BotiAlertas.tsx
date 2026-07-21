@@ -1,15 +1,63 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Bell, Calendar, ChevronDown, Users, User, Crown, CalendarPlus } from "lucide-react";
+import { ArrowLeft, Bell, Calendar, CalendarRange, ChevronDown, Users, User, Crown, CalendarPlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { MeshBackground } from "@/components/report-builder/MeshBackground";
 import DashboardView from "@/components/botialertas/DashboardView";
 import AdhocModal from "@/components/botialertas/AdhocModal";
+import RangePicker, { rangoLabel } from "@/components/botialertas/RangePicker";
+import ConsolidadoClientes from "@/components/botialertas/ConsolidadoClientes";
 import { S, fmtWeek, ADMIN_EMAILS, ADMIN_VIEW_EMAILS } from "@/components/botialertas/types";
 import type { Alerta } from "@/components/botialertas/types";
+import { useConsolidadoMensual, type Rango, type ConsolidadoMode } from "@/hooks/useConsolidadoMensual";
 
 type Scope = "all" | "mine";
+type ViewMode = "semanal" | "consolidado";
+
+/** Rango default de la vista consolidada: el último TRIMESTRE COMPLETO.
+ *  Su período-anterior (auto) = el trimestre previo → reproduce el reporte
+ *  trimestral (ej. hoy Q3 en curso → default Q2, comparado vs Q1). */
+function defaultRango(): Rango {
+  const now = new Date();
+  const curQ = Math.floor(now.getMonth() / 3); // 0..3 (trimestre en curso)
+  let y = now.getFullYear();
+  let q = curQ - 1;                              // último trimestre completo
+  if (q < 0) { q = 3; y -= 1; }
+  const sm = q * 3;                              // mes inicial 0-based (0,3,6,9)
+  const fmt = (yy: number, mm: number) => `${yy}-${String(mm + 1).padStart(2, "0")}-01`;
+  return { desde: fmt(y, sm), hasta: fmt(y, sm + 2) };
+}
+
+// ── DEV ONLY: bypass de login para probar en local sin sesión ────────────────
+// Gated a `import.meta.env.DEV` (Vite lo reemplaza por `false` en el build de
+// prod → rama muerta). En este modo supabaseClient.ts usa service_role (RLS
+// bypass), así que las tablas cargan sin sesión. NUNCA activo en prod.
+const DEV_BYPASS_LOGIN =
+  import.meta.env.DEV && String(import.meta.env.VITE_DEV_BYPASS_LOGIN).toLowerCase() === "true";
+const DEV_USER_EMAIL =
+  (import.meta.env.VITE_DEV_USER_EMAIL as string | undefined)?.trim() || "jpmesa@truora.com";
+
+const MESES_ABBR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+/** 'YYYY-MM-01' → "Ago 2025" */
+function mesCorto(mes: string): string {
+  if (!mes) return "—";
+  const [y, m] = mes.split("-").map(Number);
+  return `${MESES_ABBR[m - 1] ?? ""} ${y}`;
+}
+
+/** Secuencia de meses 'YYYY-MM-01' entre min y max (inclusive), ascendente. */
+function genMonths(min: string, max: string): string[] {
+  const out: string[] = [];
+  let [y, m] = min.slice(0, 7).split("-").map(Number);
+  const [my, mm] = max.slice(0, 7).split("-").map(Number);
+  for (let i = 0; i < 240; i++) {
+    out.push(`${y}-${String(m).padStart(2, "0")}-01`);
+    if (y === my && m === mm) break;
+    m += 1; if (m > 12) { m = 1; y += 1; }
+  }
+  return out;
+}
 
 type ClienteRow = {
   id: string;
@@ -73,6 +121,12 @@ export default function BotiAlertas() {
   const [adminCsmFilter, setAdminCsmFilter] = useState<string | null>(null);
   // Modal "Filtrar fechas" para que admins disparen una corrida ad-hoc
   const [adhocModalOpen, setAdhocModalOpen] = useState(false);
+  // Vista consolidada mensual (admin-only): rango de meses desde-hasta.
+  const [viewMode, setViewMode] = useState<ViewMode>("semanal");
+  const [metricMode, setMetricMode] = useState<ConsolidadoMode>("trayectoria");
+  const [rango, setRango] = useState<Rango>(defaultRango);
+  const [clientesState, setClientesState] = useState<ClienteRow[]>([]);
+  const [allMonths, setAllMonths] = useState<string[]>([]);
   // Cache de `clientes` (rellenado en initial fetch). Lo usamos al refrescar
   // después de un ad-hoc para aplicar el TCI override sin volver a pedir clientes.
   const clientesCacheRef = useRef<ClienteRow[]>([]);
@@ -104,13 +158,18 @@ export default function BotiAlertas() {
   /* ── auth + fetch initial ─────────────────────────────────────── */
   useEffect(() => {
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.email) {
-        navigate("/login");
-        return;
+      if (DEV_BYPASS_LOGIN) {
+        setUserEmail(DEV_USER_EMAIL);
+        setAuthChecked(true);
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.email) {
+          navigate("/login");
+          return;
+        }
+        setUserEmail(session.user.email);
+        setAuthChecked(true);
       }
-      setUserEmail(session.user.email);
-      setAuthChecked(true);
 
       const [
         { data: alertas, error: aErr },
@@ -129,8 +188,25 @@ export default function BotiAlertas() {
       // Guardar clientes en cache para refetch post-adhoc (sin re-fetch de clientes).
       const clientesArr = (clientes ?? []) as ClienteRow[];
       clientesCacheRef.current = clientesArr;
+      setClientesState(clientesArr);
 
       if (clErr) console.warn("BotiAlertas: error fetching clientes:", clErr.message);
+
+      // Rango de meses disponibles en portfolio_consumption (para el RangePicker
+      // de la vista consolidada). Fetch chico: min + max periodo_mes.
+      (async () => {
+        try {
+          const [{ data: minM }, { data: maxM }] = await Promise.all([
+            supabase.from("portfolio_consumption").select("periodo_mes").order("periodo_mes", { ascending: true }).limit(1),
+            supabase.from("portfolio_consumption").select("periodo_mes").order("periodo_mes", { ascending: false }).limit(1),
+          ]);
+          const minMes = (minM?.[0] as { periodo_mes?: string } | undefined)?.periodo_mes;
+          const maxMes = (maxM?.[0] as { periodo_mes?: string } | undefined)?.periodo_mes;
+          if (minMes && maxMes) setAllMonths(genMonths(minMes, maxMes));
+        } catch (e) {
+          console.warn("BotiAlertas: error fetching month bounds:", e);
+        }
+      })();
 
       if (aErr) setError(aErr.message);
       else {
@@ -218,6 +294,68 @@ export default function BotiAlertas() {
     return scopedAllWeeks.filter((r) => r.periodo_actual_fin === selectedWeek);
   }, [scopedAllWeeks, selectedWeek]);
 
+  /* ── Vista consolidada mensual (admin-only) ───────────────────────
+     Lee portfolio_consumption por rango de meses y arma filas sintéticas
+     con la trayectoria (primer→último mes). Solo se consulta cuando un admin
+     activa el modo consolidado. */
+  const consolidadoOn = isAdminView && viewMode === "consolidado";
+  const consolidado = useConsolidadoMensual(rango, clientesState, consolidadoOn, allMonths, metricMode);
+  // noComparison SOLO aplica al modo "vs período anterior" cuando el previo cae
+  // antes del piso de datos. En "trayectoria" siempre hay primer/último mes.
+  const consolidadoNoComparison = metricMode === "periodo-anterior" && !consolidado.prevComparable;
+
+  // Aplica el MISMO filtro de scope/adminCsmFilter que la vista semanal.
+  const applyScope = useCallback((rs: Alerta[]) => {
+    if (isAdminView && adminCsmFilter) return rs.filter((r) => r.cliente?.csm_email === adminCsmFilter);
+    if (scope === "mine" && userEmail) return rs.filter((r) => r.cliente?.csm_email === userEmail);
+    return rs;
+  }, [isAdminView, adminCsmFilter, scope, userEmail]);
+
+  const consolidadoRows = useMemo(() => applyScope(consolidado.rows), [applyScope, consolidado.rows]);
+  const consolidadoHistory = useMemo(() => applyScope(consolidado.allWeeksRows), [applyScope, consolidado.allWeeksRows]);
+  const consolidadoTitle = `Consolidado · ${rangoLabel(rango)}`;
+
+  // Combinado por cliente (scope aplicado sobre csm_email directo).
+  const consolidadoClientTotals = useMemo(() => {
+    let rs = consolidado.clientTotals;
+    if (isAdminView && adminCsmFilter) rs = rs.filter((c) => c.csm_email === adminCsmFilter);
+    else if (scope === "mine" && userEmail) rs = rs.filter((c) => c.csm_email === userEmail);
+    return rs;
+  }, [consolidado.clientTotals, isAdminView, adminCsmFilter, scope, userEmail]);
+
+  // Etiquetas de columna/rango, según el modo:
+  //  - trayectoria: primer mes ("Ago 2025") vs último mes ("Jun 2026").
+  //  - periodo-anterior: rango actual ("Abr–Jun 2026") vs rango anterior ("Ene–Mar 2026").
+  const consolidadoRangeLabels = useMemo(() => {
+    if (metricMode === "trayectoria") {
+      const ms = consolidado.meses;
+      const first = ms[0];
+      const last = ms[ms.length - 1];
+      return { actual: first ? mesCorto(last) : "—", anterior: first ? mesCorto(first) : "—" };
+    }
+    return {
+      actual: rangoLabel(rango),
+      anterior: consolidado.prevComparable ? rangoLabel(consolidado.prevRange) : "sin base comparable",
+    };
+  }, [metricMode, consolidado.meses, rango, consolidado.prevComparable, consolidado.prevRange]);
+
+  // Cobertura: clientes con consumo en el "actual" vs el "anterior" (según modo).
+  const coverage = useMemo(() => {
+    if (!consolidadoOn || consolidadoNoComparison) return undefined;
+    const act = new Set<string>();
+    const prev = new Set<string>();
+    for (const r of consolidadoRows) {
+      if ((r.valor_actual ?? 0) > 0) act.add(r.cliente_id);
+      if ((r.valor_anterior ?? 0) > 0) prev.add(r.cliente_id);
+    }
+    return {
+      inicioLabel: consolidadoRangeLabels.anterior,
+      finLabel: consolidadoRangeLabels.actual,
+      inicioCount: prev.size,
+      finCount: act.size,
+    };
+  }, [consolidadoOn, consolidadoNoComparison, consolidadoRows, consolidadoRangeLabels]);
+
   /* ── render ───────────────────────────────────────────────────── */
   if (!authChecked) return null;
 
@@ -242,43 +380,128 @@ export default function BotiAlertas() {
           setAdminCsmFilter={setAdminCsmFilter}
           realCsmList={realCsmList}
           onClickAdhoc={() => setAdhocModalOpen(true)}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          rango={rango}
+          setRango={setRango}
+          allMonths={allMonths}
         />
 
         <main style={{ maxWidth: 1280, margin: "0 auto", padding: "92px 28px 60px" }}>
-          {loading && <EmptyCard text="Cargando alertas…" />}
+          {/* ── Vista CONSOLIDADA mensual (admin-only) ── */}
+          {consolidadoOn && (
+            <>
+              {/* Toggle de métrica de crecimiento */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: S.muted, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Medir crecimiento
+                </span>
+                <ToggleGroup
+                  options={[
+                    { value: "trayectoria",     label: "Inicio vs fin del rango", icon: CalendarRange },
+                    { value: "periodo-anterior", label: "vs período anterior",     icon: Calendar },
+                  ]}
+                  value={metricMode}
+                  onChange={(v) => setMetricMode(v as ConsolidadoMode)}
+                  color="#7DD3FC"
+                />
+                <span style={{ fontSize: 11, color: S.dim }}>
+                  {metricMode === "trayectoria"
+                    ? "compara el primer mes vs el último mes del rango"
+                    : "compara el total del rango vs el rango anterior de igual duración (reproduce el reporte)"}
+                </span>
+              </div>
 
-          {error && (
-            <div style={{
-              background: "rgba(239,68,68,0.10)",
-              border: "1px solid rgba(239,68,68,0.30)",
-              borderRadius: 14, padding: 16,
-              fontSize: 13, color: "#FCA5A5",
-            }}>
-              Error al cargar: {error}
-            </div>
+              {consolidado.loading && <EmptyCard text="Calculando consolidado del rango…" />}
+              {consolidado.error && (
+                <div style={{
+                  background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.30)",
+                  borderRadius: 14, padding: 16, fontSize: 13, color: "#FCA5A5",
+                }}>
+                  Error al calcular el consolidado: {consolidado.error}
+                </div>
+              )}
+              {!consolidado.loading && !consolidado.error && consolidadoRows.length === 0 && (
+                <EmptyCard text="No hay consumo en el rango seleccionado para esta cartera. Prueba otro rango o 'Toda la cartera'." />
+              )}
+              {!consolidado.loading && !consolidado.error && consolidadoRows.length > 0 && consolidadoNoComparison && (
+                <div style={{
+                  background: "rgba(125,211,252,0.08)", border: "1px solid rgba(125,211,252,0.22)",
+                  borderRadius: 12, padding: "12px 16px", marginBottom: 20,
+                  fontSize: 12.5, color: S.muted, lineHeight: 1.5,
+                }}>
+                  <strong style={{ color: "#7DD3FC" }}>Sin período anterior para comparar.</strong>{" "}
+                  El período previo de igual duración cae antes del inicio de los datos (julio 2025), así que no hay base para medir crecimiento.
+                  Se muestran los <strong style={{ color: S.text }}>totales del período</strong>, sin %. Para comparar, elige un rango cuyo período anterior sea julio 2025 o posterior.
+                </div>
+              )}
+
+              {!consolidado.loading && !consolidado.error && consolidadoRows.length > 0 && (
+                <>
+                  <DashboardView
+                    rows={consolidadoRows}
+                    allWeeksRows={consolidadoHistory}
+                    csmByEmail={csmByEmail}
+                    weekFin={rango.hasta}
+                    scope={scope}
+                    userEmail={userEmail}
+                    periodTitle={consolidadoTitle}
+                    periodActualLabel={metricMode === "trayectoria" ? "Último mes" : "Este período"}
+                    periodAnteriorLabel={metricMode === "trayectoria" ? "Primer mes" : "Período anterior"}
+                    coverage={coverage}
+                    rangeLabels={consolidadoRangeLabels}
+                    noComparison={consolidadoNoComparison}
+                  />
+                  <ConsolidadoClientes
+                    clientTotals={consolidadoClientTotals}
+                    csmByEmail={csmByEmail}
+                    rangeLabels={consolidadoRangeLabels}
+                    comparable={!consolidadoNoComparison}
+                  />
+                </>
+              )}
+            </>
           )}
 
-          {!loading && !error && rows.length === 0 && (
-            <EmptyCard text="Aún no hay alertas. El flujo BotiAlertas corre los lunes a las 8:00 AM (hora Bogotá)." />
-          )}
+          {/* ── Vista SEMANAL (default) ── */}
+          {!consolidadoOn && (
+            <>
+              {loading && <EmptyCard text="Cargando alertas…" />}
 
-          {!loading && !error && rows.length > 0 && weekRows.length === 0 && scope === "mine" && !adminCsmFilter && (
-            <EmptyCard text="No tienes clientes con alertas esta semana. Cambia a 'Toda la cartera' para ver al equipo." />
-          )}
+              {error && (
+                <div style={{
+                  background: "rgba(239,68,68,0.10)",
+                  border: "1px solid rgba(239,68,68,0.30)",
+                  borderRadius: 14, padding: 16,
+                  fontSize: 13, color: "#FCA5A5",
+                }}>
+                  Error al cargar: {error}
+                </div>
+              )}
 
-          {!loading && !error && rows.length > 0 && weekRows.length === 0 && isAdminView && adminCsmFilter && (
-            <EmptyCard text={`No hay alertas para ${csmByEmail[adminCsmFilter]?.nombre ?? adminCsmFilter} esta semana. Selecciona otra cartera o vuelve a "Toda la cartera".`} />
-          )}
+              {!loading && !error && rows.length === 0 && (
+                <EmptyCard text="Aún no hay alertas. El flujo BotiAlertas corre los viernes a las 8:00 AM (hora Bogotá)." />
+              )}
 
-          {!loading && !error && weekRows.length > 0 && selectedWeek && (
-            <DashboardView
-              rows={weekRows}
-              allWeeksRows={scopedAllWeeks}
-              csmByEmail={csmByEmail}
-              weekFin={selectedWeek}
-              scope={scope}
-              userEmail={userEmail}
-            />
+              {!loading && !error && rows.length > 0 && weekRows.length === 0 && scope === "mine" && !adminCsmFilter && (
+                <EmptyCard text="No tienes clientes con alertas esta semana. Cambia a 'Toda la cartera' para ver al equipo." />
+              )}
+
+              {!loading && !error && rows.length > 0 && weekRows.length === 0 && isAdminView && adminCsmFilter && (
+                <EmptyCard text={`No hay alertas para ${csmByEmail[adminCsmFilter]?.nombre ?? adminCsmFilter} esta semana. Selecciona otra cartera o vuelve a "Toda la cartera".`} />
+              )}
+
+              {!loading && !error && weekRows.length > 0 && selectedWeek && (
+                <DashboardView
+                  rows={weekRows}
+                  allWeeksRows={scopedAllWeeks}
+                  csmByEmail={csmByEmail}
+                  weekFin={selectedWeek}
+                  scope={scope}
+                  userEmail={userEmail}
+                />
+              )}
+            </>
           )}
         </main>
       </div>
@@ -302,6 +525,7 @@ function TopBar({
   scope, setScope,
   isAdminView, isPureAdmin, adminCsmFilter, setAdminCsmFilter, realCsmList,
   onClickAdhoc,
+  viewMode, setViewMode, rango, setRango, allMonths,
 }: {
   onBack: () => void;
   weeks: string[];
@@ -316,7 +540,13 @@ function TopBar({
   setAdminCsmFilter: (e: string | null) => void;
   realCsmList: { email: string; nombre: string }[];
   onClickAdhoc: () => void;
+  viewMode: ViewMode;
+  setViewMode: (v: ViewMode) => void;
+  rango: Rango;
+  setRango: (r: Rango) => void;
+  allMonths: string[];
 }) {
+  const consolidadoOn = isAdminView && viewMode === "consolidado";
   return (
     <div style={{
       position: "fixed", top: 0, left: 0, right: 0,
@@ -361,6 +591,19 @@ function TopBar({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {/* Toggle de vista Semanal / Consolidado mensual — solo admins */}
+        {isAdminView && (
+          <ToggleGroup
+            options={[
+              { value: "semanal",     label: "Semanal",     icon: Calendar },
+              { value: "consolidado", label: "Consolidado", icon: CalendarRange },
+            ]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as ViewMode)}
+            color="#7DD3FC"
+          />
+        )}
+
         {/* Admin view (Ana, JD, JP): muestra dropdown ADMIN */}
         {isAdminView && (
           <AdminCsmDropdown
@@ -385,7 +628,8 @@ function TopBar({
           />
         )}
 
-        {isAdminView && (
+        {/* "Filtrar fechas" (ad-hoc) solo aplica a la vista semanal */}
+        {isAdminView && !consolidadoOn && (
           <button
             onClick={onClickAdhoc}
             title="Calcular alertas para una fecha personalizada"
@@ -412,7 +656,10 @@ function TopBar({
           </button>
         )}
 
-        <WeekDropdown weeks={weeks} adhocWeeks={adhocWeeks} selected={selectedWeek} onSelect={onSelectWeek} />
+        {/* Selector de periodo: RangePicker (consolidado) o WeekDropdown (semanal) */}
+        {consolidadoOn
+          ? <RangePicker rango={rango} onChange={setRango} months={allMonths} />
+          : <WeekDropdown weeks={weeks} adhocWeeks={adhocWeeks} selected={selectedWeek} onSelect={onSelectWeek} />}
       </div>
     </div>
   );
